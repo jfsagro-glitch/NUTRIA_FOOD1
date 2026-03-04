@@ -26,6 +26,10 @@ const openai = process.env.OPENAI_API_KEY ? new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 }) : null;
 
+function isDatabaseConfigured() {
+  return typeof process.env.DATABASE_URL === "string" && process.env.DATABASE_URL.trim().length > 0;
+}
+
 // AI Helper: Unified AI Generation with Fallback (Gemini -> DeepSeek -> OpenAI)
 async function generateAI(prompt: string, responseMimeType: string = "application/json", image?: { data: string, mimeType: string }) {
   // 1. Try Gemini
@@ -136,27 +140,36 @@ async function startServer() {
 
   // Auth Placeholder (Mock)
   app.post("/api/auth/login", async (req, res) => {
-    let user = await prisma.user.findFirst({ where: { email: "user@nutria.app" } });
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          email: "user@nutria.app",
-          passwordHash: "mock-hash",
-          role: "USER",
-          nutrientGoals: {
-            create: {
-              calories: 2100,
-              protein: 120,
-              fat: 70,
-              carbs: 250,
-              fiber: 30
+    if (!isDatabaseConfigured()) {
+      return res.status(503).json({ error: "Database is not configured", code: "DATABASE_URL_MISSING" });
+    }
+
+    try {
+      let user = await prisma.user.findFirst({ where: { email: "user@nutria.app" } });
+      if (!user) {
+        user = await prisma.user.create({
+          data: {
+            email: "user@nutria.app",
+            passwordHash: "mock-hash",
+            role: "USER",
+            nutrientGoals: {
+              create: {
+                calories: 2100,
+                protein: 120,
+                fat: 70,
+                carbs: 250,
+                fiber: 30
+              }
             }
           }
-        }
-      });
+        });
+      }
+      res.cookie("token", user.id, { httpOnly: true, secure: true, sameSite: "none" });
+      res.json({ success: true, user: { email: user.email, role: user.role } });
+    } catch (e: any) {
+      console.error("Auth Login Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
-    res.cookie("token", user.id, { httpOnly: true, secure: true, sameSite: "none" });
-    res.json({ success: true, user: { email: user.email, role: user.role } });
   });
 
   app.get("/api/auth/me", async (req, res) => {
@@ -430,86 +443,101 @@ async function startServer() {
 
   // Diary: Get daily meals and aggregates
   app.get("/api/diary", async (req, res) => {
+    if (!isDatabaseConfigured()) {
+      return res.status(503).json({ error: "Database is not configured", code: "DATABASE_URL_MISSING" });
+    }
+
     const userId = req.cookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
 
-    const meals = await prisma.meal.findMany({
-      where: {
-        userId,
-        date: { gte: startOfDay, lte: endOfDay }
-      },
-      include: {
-        items: {
-          include: { product: true }
+    try {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date();
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const meals = await prisma.meal.findMany({
+        where: {
+          userId,
+          date: { gte: startOfDay, lte: endOfDay }
+        },
+        include: {
+          items: {
+            include: { product: true }
+          }
         }
-      }
-    });
+      });
 
-    const goals = await prisma.nutrientGoal.findUnique({ where: { userId } });
+      const goals = await prisma.nutrientGoal.findUnique({ where: { userId } });
 
-    // Calculate water intake from special "WATER" meal type
-    const waterMeal = meals.find(m => m.type === 'WATER');
-    const waterIntake = waterMeal ? waterMeal.items.reduce((sum, item) => sum + item.amount, 0) : 0;
+      const waterMeal = meals.find(m => m.type === 'WATER');
+      const waterIntake = waterMeal ? waterMeal.items.reduce((sum, item) => sum + item.amount, 0) : 0;
 
-    // Parse micronutrients for each product in the diary
-    const parsedMeals = meals.filter(m => m.type !== 'WATER').map(m => ({
-      ...m,
-      items: m.items.map(i => {
-        let micro: any = {};
-        try {
-          micro = JSON.parse(i.product.micronutrients || '{}');
-        } catch (e) {}
-        return {
-          ...i,
-          product: { ...i.product, ...micro }
-        };
-      })
-    }));
+      const parsedMeals = meals.filter(m => m.type !== 'WATER').map(m => ({
+        ...m,
+        items: m.items.map(i => {
+          let micro: any = {};
+          try {
+            micro = JSON.parse(i.product.micronutrients || '{}');
+          } catch (e) {}
+          return {
+            ...i,
+            product: { ...i.product, ...micro }
+          };
+        })
+      }));
 
-    res.json({ meals: parsedMeals, goals, waterIntake });
+      res.json({ meals: parsedMeals, goals, waterIntake });
+    } catch (e: any) {
+      console.error("Diary Get Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
   });
 
   // Diary: Update water intake
   app.post("/api/diary/water", async (req, res) => {
+    if (!isDatabaseConfigured()) {
+      return res.status(503).json({ error: "Database is not configured", code: "DATABASE_URL_MISSING" });
+    }
+
     const userId = req.cookies.token;
     const { amount } = req.body; // amount can be positive or negative
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    try {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
 
-    let meal = await prisma.meal.findFirst({
-      where: { userId, type: 'WATER', date: { gte: startOfDay } }
-    });
-
-    if (!meal) {
-      meal = await prisma.meal.create({
-        data: { userId, type: 'WATER', date: new Date() }
+      let meal = await prisma.meal.findFirst({
+        where: { userId, type: 'WATER', date: { gte: startOfDay } }
       });
-    }
 
-    // We need a dummy product for water if it doesn't exist
-    let waterProduct = await prisma.product.findFirst({ where: { name: 'Water', brand: 'System' } });
-    if (!waterProduct) {
-      waterProduct = await prisma.product.create({
-        data: { name: 'Water', brand: 'System', calories: 0, protein: 0, fat: 0, carbs: 0 }
-      });
-    }
-
-    await prisma.mealItem.create({
-      data: {
-        mealId: meal.id,
-        productId: waterProduct.id,
-        amount: Number(amount)
+      if (!meal) {
+        meal = await prisma.meal.create({
+          data: { userId, type: 'WATER', date: new Date() }
+        });
       }
-    });
 
-    res.json({ success: true });
+      let waterProduct = await prisma.product.findFirst({ where: { name: 'Water', brand: 'System' } });
+      if (!waterProduct) {
+        waterProduct = await prisma.product.create({
+          data: { name: 'Water', brand: 'System', calories: 0, protein: 0, fat: 0, carbs: 0 }
+        });
+      }
+
+      await prisma.mealItem.create({
+        data: {
+          mealId: meal.id,
+          productId: waterProduct.id,
+          amount: Number(amount)
+        }
+      });
+
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("Diary Water Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
   });
 
   // Diary: Delete meal item
