@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "npm run db:push && npm start",
+    "startCommand": "node scripts/start-railway.mjs",
     "restartPolicyCondition": "ON_FAILURE",
     "numReplicas": 1
   }

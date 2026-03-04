@@ -30,8 +30,13 @@
 3. Railway автоматически выполнит:
    - `npm install`
    - `npm run build`
-   - `npm run db:push && npm start` (из `railway.json`)
+   - `node scripts/start-railway.mjs` (из `railway.json`)
 4. Сервер автоматически подхватывает `PORT` из окружения хостинга.
+
+Скрипт `scripts/start-railway.mjs` делает запуск автоматическим:
+- пытается взять `DATABASE_URL` (или fallback `DATABASE_PRIVATE_URL` / `POSTGRES_URL` / `PG*` переменные),
+- если URL найден — выполняет `prisma db push`,
+- если URL пустой — пропускает `db push` и запускает сервер с предупреждением в логах.
 
 ## База данных (PostgreSQL)
 
