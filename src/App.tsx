@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Html5Qrcode } from 'html5-qrcode';
 import { 
   Utensils, 
   BarChart3, 
@@ -290,7 +291,7 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
           <p className="text-zinc-500 text-sm">Вторник, 4 Марта</p>
         </div>
         <div className="w-10 h-10 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center overflow-hidden">
-          <img src="https://picsum.photos/seed/user/100/100" alt="Avatar" referrerPolicy="no-referrer" />
+          <img src="/logo.png" alt="NUTRIA logo" className="w-full h-full object-cover" />
         </div>
       </header>
 
@@ -667,10 +668,14 @@ export default function App() {
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [recognizedItems, setRecognizedItems] = useState<any[]>([]);
   const [barcodeQuery, setBarcodeQuery] = useState('');
+  const [barcodeScannerError, setBarcodeScannerError] = useState('');
+  const [isBarcodeScanning, setIsBarcodeScanning] = useState(false);
 
   const [selectedProductForAmount, setSelectedProductForAmount] = useState<Product | null>(null);
   const [foodAmount, setFoodAmount] = useState('100');
   const recognitionRef = useRef<any>(null);
+  const barcodeScannerRef = useRef<Html5Qrcode | null>(null);
+  const barcodeHandledRef = useRef(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -704,6 +709,57 @@ export default function App() {
       fetchHints();
     }
   }, [diaryData, isLoggedIn]);
+
+  const extractBarcodeCandidates = (input: string): string[] => {
+    const raw = String(input || '').trim();
+    if (!raw) return [];
+
+    const candidates = new Set<string>();
+    candidates.add(raw);
+
+    try {
+      const url = new URL(raw);
+      const queryKeys = ['barcode', 'code', 'ean', 'ean13', 'upc', 'gtin', 'id'];
+      for (const key of queryKeys) {
+        const value = url.searchParams.get(key);
+        if (value) candidates.add(value.trim());
+      }
+      const pathParts = url.pathname.split('/').map(p => p.trim()).filter(Boolean);
+      for (const part of pathParts) {
+        if (part.length >= 6) candidates.add(part);
+      }
+    } catch {
+      // not a url
+    }
+
+    const digitGroups = raw.match(/\d{8,14}/g) || [];
+    digitGroups.forEach(group => candidates.add(group));
+
+    const digitsOnly = raw.replace(/\D/g, '');
+    if (digitsOnly.length >= 8) candidates.add(digitsOnly);
+
+    return Array.from(candidates).map(v => v.trim()).filter(v => v.length > 0);
+  };
+
+  const stopBarcodeScanner = async () => {
+    const scanner = barcodeScannerRef.current;
+    if (!scanner) return;
+
+    try {
+      await scanner.stop();
+    } catch (e) {
+      console.warn('Stop scanner warning:', e);
+    }
+
+    try {
+      await scanner.clear();
+    } catch (e) {
+      console.warn('Clear scanner warning:', e);
+    }
+
+    barcodeScannerRef.current = null;
+    setIsBarcodeScanning(false);
+  };
 
   const checkAuth = async () => {
     try {
@@ -1000,25 +1056,110 @@ Output JSON array:
     }
   };
 
-  const handleBarcodeScan = async () => {
-    if (!barcodeQuery) return;
-    try {
-      const res = await fetch(`/api/products/barcode/${barcodeQuery}`);
-      if (res.ok) {
+  const findProductByBarcode = async (inputCode: string): Promise<boolean> => {
+    const candidates = extractBarcodeCandidates(inputCode);
+    if (candidates.length === 0) return false;
+
+    for (const code of candidates) {
+      try {
+        const res = await fetch(`/api/products/barcode/${encodeURIComponent(code)}`);
+        if (!res.ok) continue;
+
         const product = await res.json();
         const amount = prompt(`Найдено: ${product.name}. Введите количество (г):`, '100');
         if (amount) {
-          await addFood(product.id, Number(amount));
-          setIsBarcodeSheetOpen(false);
-          setBarcodeQuery('');
+          await addFood(
+            product.id,
+            Number(amount),
+            (product.isUsda || product.isAiEstimated) ? product : undefined
+          );
         }
-      } else {
+
+        setIsBarcodeSheetOpen(false);
+        setBarcodeQuery('');
+        setBarcodeScannerError('');
+        return true;
+      } catch (e) {
+        console.error('Barcode lookup error:', e);
+      }
+    }
+
+    return false;
+  };
+
+  const handleBarcodeScan = async () => {
+    if (!barcodeQuery.trim()) return;
+    try {
+      const found = await findProductByBarcode(barcodeQuery);
+      if (!found) {
         alert('Продукт не найден в базе');
       }
     } catch (e) {
       console.error(e);
     }
   };
+
+  useEffect(() => {
+    if (!isBarcodeSheetOpen) {
+      barcodeHandledRef.current = false;
+      stopBarcodeScanner();
+      return;
+    }
+
+    let cancelled = false;
+
+    const startScanner = async () => {
+      setBarcodeScannerError('');
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setBarcodeScannerError('Камера не поддерживается в этом браузере.');
+        return;
+      }
+
+      try {
+        const scanner = new Html5Qrcode('barcode-reader');
+        barcodeScannerRef.current = scanner;
+        barcodeHandledRef.current = false;
+
+        await scanner.start(
+          { facingMode: 'environment' },
+          {
+            fps: 10,
+            qrbox: { width: 240, height: 240 }
+          },
+          async (decodedText: string) => {
+            if (barcodeHandledRef.current || cancelled) return;
+            barcodeHandledRef.current = true;
+
+            setBarcodeQuery(decodedText);
+            const found = await findProductByBarcode(decodedText);
+            if (!found) {
+              setBarcodeScannerError('Код считан, но продукт не найден. Попробуйте вручную.');
+            }
+          },
+          () => {
+            // ignore per-frame decode errors
+          }
+        );
+
+        if (!cancelled) {
+          setIsBarcodeScanning(true);
+        }
+      } catch (e) {
+        console.error('Scanner start error:', e);
+        if (!cancelled) {
+          setBarcodeScannerError('Не удалось запустить камеру. Проверьте разрешение на доступ к камере.');
+        }
+      }
+    };
+
+    startScanner();
+
+    return () => {
+      cancelled = true;
+      stopBarcodeScanner();
+    };
+  }, [isBarcodeSheetOpen]);
 
   const startListening = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -1413,9 +1554,15 @@ Output JSON array:
       <BottomSheet isOpen={isBarcodeSheetOpen} onClose={() => setIsBarcodeSheetOpen(false)} title="Сканер штрих-кода">
         <div className="flex flex-col items-center py-6">
           <div className="w-full max-w-[280px] aspect-square border-2 border-emerald-500/30 rounded-3xl relative mb-8 overflow-hidden bg-zinc-800/50 flex items-center justify-center">
-            <ScanBarcode size={64} className="text-emerald-500/20" />
+            <div id="barcode-reader" className="absolute inset-0" />
+            {!isBarcodeScanning && (
+              <ScanBarcode size={64} className="text-emerald-500/20" />
+            )}
             <div className="absolute inset-x-0 top-1/2 h-0.5 bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)] animate-pulse" />
           </div>
+          {barcodeScannerError && (
+            <p className="text-xs text-orange-400 mb-3 text-center">{barcodeScannerError}</p>
+          )}
           <input 
             type="text" 
             placeholder="Введите штрих-код вручную..."

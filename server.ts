@@ -42,6 +42,36 @@ function getOrCreateInMemoryDiary(userId: string) {
   return inMemoryDiary.get(userId)!;
 }
 
+function extractBarcodeCandidates(input: string) {
+  const raw = String(input || "").trim();
+  if (!raw) return [] as string[];
+
+  const candidates = new Set<string>();
+  candidates.add(raw);
+
+  try {
+    const url = new URL(raw);
+    const queryKeys = ["barcode", "code", "ean", "ean13", "upc", "gtin", "id"];
+    for (const key of queryKeys) {
+      const value = url.searchParams.get(key);
+      if (value) candidates.add(value.trim());
+    }
+    for (const part of url.pathname.split("/").map((p) => p.trim()).filter(Boolean)) {
+      if (part.length >= 6) candidates.add(part);
+    }
+  } catch {
+    // not a URL
+  }
+
+  const digitGroups = raw.match(/\d{8,14}/g) || [];
+  digitGroups.forEach((group) => candidates.add(group));
+
+  const digitsOnly = raw.replace(/\D/g, "");
+  if (digitsOnly.length >= 8) candidates.add(digitsOnly);
+
+  return Array.from(candidates).map((v) => v.trim()).filter(Boolean);
+}
+
 // AI Helper: Unified AI Generation with Fallback (Gemini -> DeepSeek -> OpenAI)
 async function generateAI(prompt: string, responseMimeType: string = "application/json", image?: { data: string, mimeType: string }) {
   // For image recognition quality: prioritize OpenAI Vision first, then Gemini fallback.
@@ -176,12 +206,55 @@ async function startServer() {
     }
   });
 
-  // Barcode Scan (Mock)
+  // Barcode / QR lookup
   app.get("/api/products/barcode/:code", async (req, res) => {
-    const { code } = req.params;
-    const product = await prisma.product.findUnique({ where: { barcode: code } });
-    if (!product) return res.status(404).json({ error: "Not found" });
-    res.json(product);
+    try {
+      const { code } = req.params;
+      const candidates = extractBarcodeCandidates(code);
+      if (candidates.length === 0) return res.status(400).json({ error: "Invalid barcode" });
+
+      if (isDatabaseConfigured()) {
+        const product = await prisma.product.findFirst({
+          where: {
+            barcode: { in: candidates }
+          }
+        });
+
+        if (product) {
+          return res.json(product);
+        }
+      }
+
+      for (const candidate of candidates) {
+        const offRes = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(candidate)}.json`);
+        if (!offRes.ok) continue;
+
+        const offData: any = await offRes.json().catch(() => null);
+        if (!offData || offData.status !== 1 || !offData.product) continue;
+
+        const p = offData.product;
+        const nutr = p.nutriments || {};
+        const offProduct = {
+          id: `usda-off-${candidate}`,
+          name: p.product_name || p.product_name_ru || p.generic_name || `Product ${candidate}`,
+          brand: p.brands || "OpenFoodFacts",
+          calories: Number(nutr["energy-kcal_100g"] || nutr["energy-kcal"] || 0),
+          protein: Number(nutr["proteins_100g"] || 0),
+          fat: Number(nutr["fat_100g"] || 0),
+          carbs: Number(nutr["carbohydrates_100g"] || 0),
+          fiber: Number(nutr["fiber_100g"] || 0),
+          isUsda: true,
+          barcode: candidate,
+        };
+
+        return res.json(offProduct);
+      }
+
+      return res.status(404).json({ error: "Not found" });
+    } catch (e: any) {
+      console.error("Barcode lookup error:", e);
+      return res.status(500).json({ error: "Barcode lookup failed", message: e?.message || "Unknown error" });
+    }
   });
 
   // Auth Placeholder (Mock)
