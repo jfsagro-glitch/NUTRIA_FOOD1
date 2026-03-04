@@ -1381,30 +1381,50 @@ Output JSON array:
       }
 
       try {
+        const readerEl = document.getElementById('barcode-reader');
+        if (!readerEl) {
+          setBarcodeScannerError('Не удалось инициализировать область сканера.');
+          return;
+        }
+
+        readerEl.innerHTML = '';
+
         const scanner = new Html5Qrcode('barcode-reader');
         barcodeScannerRef.current = scanner;
         barcodeHandledRef.current = false;
 
-        await scanner.start(
-          { facingMode: 'environment' },
-          {
-            fps: 10,
-            qrbox: { width: 240, height: 240 }
-          },
-          async (decodedText: string) => {
-            if (barcodeHandledRef.current || cancelled) return;
-            barcodeHandledRef.current = true;
+        const cameras = await Html5Qrcode.getCameras().catch(() => [] as Array<{ id: string; label: string }>);
+        const backCamera = cameras.find((cam) => /back|rear|environment|зад/i.test(cam.label || ''));
+        const preferredCamera = backCamera ? { deviceId: { exact: backCamera.id } } : { facingMode: 'environment' };
 
-            setBarcodeQuery(decodedText);
-            const found = await findProductByBarcode(decodedText);
-            if (!found) {
-              setBarcodeScannerError('Код считан, но продукт не найден. Попробуйте вручную.');
-            }
-          },
-          () => {
-            // ignore per-frame decode errors
+        const scanConfig = {
+          fps: 12,
+          qrbox: { width: 240, height: 240 },
+          aspectRatio: 1,
+          disableFlip: false,
+        };
+
+        const onDecodeSuccess = async (decodedText: string) => {
+          if (barcodeHandledRef.current || cancelled) return;
+          barcodeHandledRef.current = true;
+
+          setBarcodeQuery(decodedText);
+          const found = await findProductByBarcode(decodedText);
+          if (!found) {
+            setBarcodeScannerError('Код считан, но продукт не найден. Попробуйте вручную.');
+            barcodeHandledRef.current = false;
           }
-        );
+        };
+
+        const onDecodeError = () => {
+          // ignore per-frame decode errors
+        };
+
+        try {
+          await scanner.start(preferredCamera as any, scanConfig, onDecodeSuccess, onDecodeError);
+        } catch {
+          await scanner.start({ facingMode: 'environment' }, scanConfig, onDecodeSuccess, onDecodeError);
+        }
 
         if (!cancelled) {
           setIsBarcodeScanning(true);
@@ -1412,7 +1432,7 @@ Output JSON array:
       } catch (e) {
         console.error('Scanner start error:', e);
         if (!cancelled) {
-          setBarcodeScannerError('Не удалось запустить камеру. Проверьте разрешение на доступ к камере.');
+          setBarcodeScannerError('Не удалось показать камеру. Проверьте разрешение, HTTPS и перезапустите сканер.');
         }
       }
     };
@@ -1828,11 +1848,11 @@ Output JSON array:
       <BottomSheet isOpen={isBarcodeSheetOpen} onClose={() => setIsBarcodeSheetOpen(false)} title="Сканер штрих-кода">
         <div className="flex flex-col items-center py-6">
           <div className="w-full max-w-[280px] aspect-square border-2 border-emerald-500/30 rounded-3xl relative mb-8 overflow-hidden bg-zinc-800/50 flex items-center justify-center">
-            <div id="barcode-reader" className="absolute inset-0" />
+            <div id="barcode-reader" className="absolute inset-0 z-10" />
             {!isBarcodeScanning && (
-              <ScanBarcode size={64} className="text-emerald-500/20" />
+              <ScanBarcode size={64} className="text-emerald-500/20 z-20" />
             )}
-            <div className="absolute inset-x-0 top-1/2 h-0.5 bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)] animate-pulse" />
+            <div className="absolute inset-x-0 top-1/2 h-0.5 bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)] animate-pulse z-20" />
           </div>
           {barcodeScannerError && (
             <p className="text-xs text-orange-400 mb-3 text-center">{barcodeScannerError}</p>

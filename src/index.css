@@ -38,3 +38,22 @@
 ::-webkit-scrollbar-thumb {
   @apply bg-zinc-800 rounded-full;
 }
+
+#barcode-reader {
+  width: 100%;
+  height: 100%;
+}
+
+#barcode-reader video,
+#barcode-reader canvas {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+  display: block;
+}
+
+#barcode-reader__dashboard,
+#barcode-reader__header_message,
+#barcode-reader__scan_region img {
+  display: none !important;
+}
