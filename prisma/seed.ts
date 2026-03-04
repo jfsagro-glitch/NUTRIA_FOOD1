@@ -101,12 +101,25 @@ async function main() {
   ];
 
   for (const product of products) {
+    const barcode = `seed-${Buffer.from(`${product.name}-${product.brand}`).toString('base64url').slice(0, 20)}`;
     await prisma.product.upsert({
-      where: { barcode: product.name }, // Use name as mock barcode for seed
-      update: {},
+      where: {
+        name_brand: {
+          name: product.name,
+          brand: product.brand,
+        },
+      },
+      update: {
+        calories: product.calories,
+        protein: product.protein,
+        fat: product.fat,
+        carbs: product.carbs,
+        fiber: product.fiber,
+        micronutrients: product.micronutrients,
+      },
       create: {
         ...product,
-        barcode: Math.random().toString(36).substring(7),
+        barcode,
       },
     });
   }
