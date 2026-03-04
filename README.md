@@ -13,6 +13,8 @@
 2. Создать `.env` (или задать переменные в системе) и указать минимум:
    - `GEMINI_API_KEY=...`
    - `USDA_FDC_API_KEY=...` (опционально)
+   - `BARCODE_PREFERRED_COUNTRY=ru` (опционально, по умолчанию `ru`)
+   - `BARCODE_PREFERRED_LANG=ru` (опционально, по умолчанию `ru`)
 3. Запустить проект:
    `npm run dev`
 
@@ -27,6 +29,8 @@
    - `DATABASE_URL=...` (из Railway PostgreSQL)
    - `GEMINI_API_KEY=...`
    - `USDA_FDC_API_KEY=...` (если нужен поиск по USDA)
+   - `BARCODE_PREFERRED_COUNTRY=ru`
+   - `BARCODE_PREFERRED_LANG=ru`
 3. Railway автоматически выполнит:
    - `npm install`
    - `npm run build`
@@ -48,3 +52,18 @@ Prisma уже настроена на PostgreSQL через `DATABASE_URL`.
 - `npm run db:seed` — заполнить базу стартовыми продуктами
 
 Для Railway: добавьте сервис PostgreSQL, скопируйте его `DATABASE_URL` в Variables вашего web-сервиса, затем выполните деплой.
+
+## QR / штрихкод (быстро и качественно)
+
+Сервер использует каскад поиска по коду:
+1. Кэш в памяти (мгновенный повторный ответ)
+2. Локальная БД (Prisma/PostgreSQL)
+3. OpenFoodFacts с приоритетом RU (`ru.openfoodfacts.org` → `world.openfoodfacts.org`)
+
+Если продукт найден в OpenFoodFacts и база подключена, он автоматически сохраняется в локальную БД — последующие сканы работают быстрее.
+
+Дополнительные параметры:
+- `BARCODE_LOOKUP_TIMEOUT_MS=3500` — timeout запроса к OpenFoodFacts
+- `BARCODE_CACHE_TTL_MS=21600000` — TTL кэша в ms (по умолчанию 6 часов)
+
+Для фото-распознавания уже используется AI fallback-цепочка на сервере (OpenAI Vision → Gemini для image), что покрывает случаи, когда точных совпадений в базе нет.

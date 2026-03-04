@@ -34,6 +34,12 @@ const DEMO_USER_ID = "demo-user";
 const DEMO_USER = { id: DEMO_USER_ID, email: "user@nutria.app", role: "USER" };
 const DEMO_GOALS = { calories: 2100, protein: 120, fat: 70, carbs: 250, fiber: 30 };
 const inMemoryDiary = new Map<string, { meals: any[]; goals: typeof DEMO_GOALS; waterIntake: number }>();
+const barcodeLookupCache = new Map<string, { expiresAt: number; product: any }>();
+
+const BARCODE_PREFERRED_COUNTRY = (process.env.BARCODE_PREFERRED_COUNTRY || "ru").toLowerCase();
+const BARCODE_PREFERRED_LANG = (process.env.BARCODE_PREFERRED_LANG || "ru").toLowerCase();
+const BARCODE_LOOKUP_TIMEOUT_MS = Number(process.env.BARCODE_LOOKUP_TIMEOUT_MS || 3500);
+const BARCODE_CACHE_TTL_MS = Number(process.env.BARCODE_CACHE_TTL_MS || 1000 * 60 * 60 * 6);
 
 function getOrCreateInMemoryDiary(userId: string) {
   if (!inMemoryDiary.has(userId)) {
@@ -70,6 +76,116 @@ function extractBarcodeCandidates(input: string) {
   if (digitsOnly.length >= 8) candidates.add(digitsOnly);
 
   return Array.from(candidates).map((v) => v.trim()).filter(Boolean);
+}
+
+function getCachedBarcodeProduct(candidates: string[]) {
+  const now = Date.now();
+  for (const candidate of candidates) {
+    const cached = barcodeLookupCache.get(candidate);
+    if (!cached) continue;
+    if (cached.expiresAt <= now) {
+      barcodeLookupCache.delete(candidate);
+      continue;
+    }
+    return cached.product;
+  }
+  return null;
+}
+
+function cacheBarcodeProduct(candidates: string[], product: any) {
+  const expiresAt = Date.now() + BARCODE_CACHE_TTL_MS;
+  for (const candidate of candidates) {
+    barcodeLookupCache.set(candidate, { expiresAt, product });
+  }
+}
+
+function numberOrZero(value: any) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeOpenFoodFactsProduct(rawProduct: any, barcode: string) {
+  const nutr = rawProduct?.nutriments || {};
+  return {
+    id: `off-${barcode}`,
+    name:
+      rawProduct?.product_name_ru ||
+      rawProduct?.product_name ||
+      rawProduct?.generic_name_ru ||
+      rawProduct?.generic_name ||
+      `Product ${barcode}`,
+    brand: rawProduct?.brands || "OpenFoodFacts",
+    calories: numberOrZero(nutr["energy-kcal_100g"] ?? nutr["energy-kcal"]),
+    protein: numberOrZero(nutr["proteins_100g"]),
+    fat: numberOrZero(nutr["fat_100g"]),
+    carbs: numberOrZero(nutr["carbohydrates_100g"]),
+    fiber: numberOrZero(nutr["fiber_100g"]),
+    barcode,
+    isUsda: true,
+    source: "openfoodfacts"
+  };
+}
+
+async function fetchOpenFoodFactsProduct(barcode: string) {
+  const apiUrls = [
+    `https://ru.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?lc=${BARCODE_PREFERRED_LANG}&cc=${BARCODE_PREFERRED_COUNTRY}`,
+    `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?lc=${BARCODE_PREFERRED_LANG}&cc=${BARCODE_PREFERRED_COUNTRY}`
+  ];
+
+  for (const url of apiUrls) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), BARCODE_LOOKUP_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) continue;
+
+      const payload: any = await response.json().catch(() => null);
+      if (!payload || payload.status !== 1 || !payload.product) continue;
+
+      return normalizeOpenFoodFactsProduct(payload.product, barcode);
+    } catch {
+      // try next endpoint
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  return null;
+}
+
+async function upsertProductFromBarcodeLookup(product: any) {
+  if (!isDatabaseConfigured()) return null;
+  if (!product?.barcode || !product?.name) return null;
+
+  try {
+    return await prisma.product.upsert({
+      where: { barcode: String(product.barcode) },
+      update: {
+        name: String(product.name),
+        brand: product.brand ? String(product.brand) : null,
+        calories: numberOrZero(product.calories),
+        protein: numberOrZero(product.protein),
+        fat: numberOrZero(product.fat),
+        carbs: numberOrZero(product.carbs),
+        fiber: numberOrZero(product.fiber),
+      },
+      create: {
+        name: String(product.name),
+        brand: product.brand ? String(product.brand) : null,
+        barcode: String(product.barcode),
+        calories: numberOrZero(product.calories),
+        protein: numberOrZero(product.protein),
+        fat: numberOrZero(product.fat),
+        carbs: numberOrZero(product.carbs),
+        fiber: numberOrZero(product.fiber),
+        micronutrients: "{}"
+      }
+    });
+  } catch (e) {
+    console.warn("Failed to upsert barcode product:", e);
+    return null;
+  }
 }
 
 // AI Helper: Unified AI Generation with Fallback (Gemini -> DeepSeek -> OpenAI)
@@ -213,6 +329,11 @@ async function startServer() {
       const candidates = extractBarcodeCandidates(code);
       if (candidates.length === 0) return res.status(400).json({ error: "Invalid barcode" });
 
+      const cached = getCachedBarcodeProduct(candidates);
+      if (cached) {
+        return res.json(cached);
+      }
+
       if (isDatabaseConfigured()) {
         const product = await prisma.product.findFirst({
           where: {
@@ -221,33 +342,19 @@ async function startServer() {
         });
 
         if (product) {
+          cacheBarcodeProduct(candidates, product);
           return res.json(product);
         }
       }
 
       for (const candidate of candidates) {
-        const offRes = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(candidate)}.json`);
-        if (!offRes.ok) continue;
+        const offProduct = await fetchOpenFoodFactsProduct(candidate);
+        if (!offProduct) continue;
 
-        const offData: any = await offRes.json().catch(() => null);
-        if (!offData || offData.status !== 1 || !offData.product) continue;
-
-        const p = offData.product;
-        const nutr = p.nutriments || {};
-        const offProduct = {
-          id: `usda-off-${candidate}`,
-          name: p.product_name || p.product_name_ru || p.generic_name || `Product ${candidate}`,
-          brand: p.brands || "OpenFoodFacts",
-          calories: Number(nutr["energy-kcal_100g"] || nutr["energy-kcal"] || 0),
-          protein: Number(nutr["proteins_100g"] || 0),
-          fat: Number(nutr["fat_100g"] || 0),
-          carbs: Number(nutr["carbohydrates_100g"] || 0),
-          fiber: Number(nutr["fiber_100g"] || 0),
-          isUsda: true,
-          barcode: candidate,
-        };
-
-        return res.json(offProduct);
+        const persisted = await upsertProductFromBarcodeLookup(offProduct);
+        const responseProduct = persisted || offProduct;
+        cacheBarcodeProduct(candidates, responseProduct);
+        return res.json(responseProduct);
       }
 
       return res.status(404).json({ error: "Not found" });
