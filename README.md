@@ -15,6 +15,7 @@
    - `USDA_FDC_API_KEY=...` (опционально)
    - `BARCODE_PREFERRED_COUNTRY=ru` (опционально, по умолчанию `ru`)
    - `BARCODE_PREFERRED_LANG=ru` (опционально, по умолчанию `ru`)
+   - `OPENAI_VISION_MODEL=gpt-4o-mini` (опционально; можно поставить более сильную vision-модель для фото)
 3. Запустить проект:
    `npm run dev`
 

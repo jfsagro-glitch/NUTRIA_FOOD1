@@ -25,6 +25,7 @@ const deepseek = process.env.DEEPSEEK_API_KEY ? new OpenAI({
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 }) : null;
+const OPENAI_VISION_MODEL = process.env.OPENAI_VISION_MODEL || "gpt-4o-mini";
 
 function isDatabaseConfigured() {
   return typeof process.env.DATABASE_URL === "string" && process.env.DATABASE_URL.trim().length > 0;
@@ -205,7 +206,7 @@ async function generateAI(prompt: string, responseMimeType: string = "applicatio
         ];
 
         const response = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
+          model: OPENAI_VISION_MODEL,
           messages,
           response_format: responseMimeType === "application/json" ? { type: "json_object" } : undefined
         });

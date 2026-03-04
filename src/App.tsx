@@ -104,6 +104,87 @@ const formatHms = (ms: number) => {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 };
 
+const readFileAsDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Не удалось прочитать файл'));
+    reader.readAsDataURL(file);
+  });
+
+const optimizeImageForRecognition = async (file: File): Promise<{ data: string; mimeType: string }> => {
+  const inputDataUrl = await readFileAsDataUrl(file);
+
+  const imageElement = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Не удалось обработать изображение'));
+    image.src = inputDataUrl;
+  });
+
+  const maxSide = 1280;
+  const sourceWidth = imageElement.width || 1;
+  const sourceHeight = imageElement.height || 1;
+  const scale = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
+  const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
+  const targetHeight = Math.max(1, Math.round(sourceHeight * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  const context = canvas.getContext('2d');
+  if (!context) {
+    return { data: inputDataUrl.split(',')[1] || '', mimeType: file.type || 'image/jpeg' };
+  }
+
+  context.drawImage(imageElement, 0, 0, targetWidth, targetHeight);
+  const optimizedMimeType = 'image/jpeg';
+  const optimizedDataUrl = canvas.toDataURL(optimizedMimeType, 0.86);
+
+  return {
+    data: optimizedDataUrl.split(',')[1] || '',
+    mimeType: optimizedMimeType,
+  };
+};
+
+const parseAiJsonPayload = (text: string) => {
+  const cleaned = String(text || '').trim();
+  if (!cleaned) return [] as any[];
+
+  const withoutFences = cleaned
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```$/i, '')
+    .trim();
+
+  try {
+    return JSON.parse(withoutFences);
+  } catch {
+    const objectStart = withoutFences.indexOf('{');
+    const objectEnd = withoutFences.lastIndexOf('}');
+    const arrayStart = withoutFences.indexOf('[');
+    const arrayEnd = withoutFences.lastIndexOf(']');
+
+    if (arrayStart !== -1 && arrayEnd > arrayStart) {
+      try {
+        return JSON.parse(withoutFences.slice(arrayStart, arrayEnd + 1));
+      } catch {
+        // continue
+      }
+    }
+
+    if (objectStart !== -1 && objectEnd > objectStart) {
+      try {
+        return JSON.parse(withoutFences.slice(objectStart, objectEnd + 1));
+      } catch {
+        // continue
+      }
+    }
+
+    return [] as any[];
+  }
+};
+
 // --- Components ---
 
 const BottomNav = ({ activeTab, onTabChange }: { activeTab: string, onTabChange: (tab: string) => void }) => {
@@ -786,6 +867,7 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [recognizedItems, setRecognizedItems] = useState<any[]>([]);
+  const [photoRecognitionError, setPhotoRecognitionError] = useState('');
   const [barcodeQuery, setBarcodeQuery] = useState('');
   const [barcodeScannerError, setBarcodeScannerError] = useState('');
   const [isBarcodeScanning, setIsBarcodeScanning] = useState(false);
@@ -1220,44 +1302,44 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setPhotoRecognitionError('');
+    setRecognizedItems([]);
     setIsRecognizing(true);
     setIsPhotoSheetOpen(true);
     setIsActionSheetOpen(false);
 
     try {
-      const reader = new FileReader();
-      const base64Promise = new Promise<string>((resolve) => {
-        reader.onload = () => {
-          const base64 = (reader.result as string).split(',')[1];
-          resolve(base64);
-        };
-      });
-      reader.readAsDataURL(file);
-      const base64Image = await base64Promise;
+      const optimizedImage = await optimizeImageForRecognition(file);
 
-      const prompt = `Analyze this food photo.
-Return ONLY valid JSON.
+      const prompt = `Analyze this food photo and return ONLY valid JSON.
 
-Goal: recognize both single foods and prepared dishes.
+Priority:
+1) If a barcode/QR with product code is visible, extract numeric code candidates.
+2) Recognize foods or dish components and estimate amount in grams.
+3) Prefer Russian names and include aliases (RU + EN) for search.
+
+Return JSON object in this exact shape:
+{
+  "items": [
+    {
+      "name": "основное название",
+      "amount": 120,
+      "aliases": ["алиас ru", "alias en"],
+      "barcodeCandidates": ["4601234567890"],
+      "confidence": 0.0,
+      "isPackaged": false
+    }
+  ]
+}
+
 Rules:
-1) If it is a packaged/single food (e.g. yogurt, apple), return one item.
-2) If it is a mixed dish (e.g. pasta with chicken, salad, soup), split into 2-5 main edible components.
-3) Ignore plate/table/background and non-food objects.
-4) amount must be estimated in grams (or ml for liquids), as a number.
-5) For each item include possible alternative names for better DB search.
+- For mixed dishes split to 2-5 main edible components.
+- Ignore plate/table/background.
+- amount must be positive number.
+- confidence from 0.0 to 1.0.`;
+      const responseText = await generateAI(prompt, "application/json", optimizedImage);
 
-Output JSON array:
-[
-  {
-    "name": "main canonical name",
-    "amount": 120,
-    "aliases": ["alt name ru", "alt name en"],
-    "confidence": 0.0
-  }
-]`;
-      const responseText = await generateAI(prompt, "application/json", { data: base64Image, mimeType: file.type });
-
-      const recognizedRaw = JSON.parse(responseText || "[]");
+      const recognizedRaw = parseAiJsonPayload(responseText || "[]");
       const recognizedList = Array.isArray(recognizedRaw)
         ? recognizedRaw
         : (Array.isArray(recognizedRaw?.items) ? recognizedRaw.items : []);
@@ -1270,9 +1352,12 @@ Output JSON array:
           const aliases = Array.isArray(item?.aliases)
             ? item.aliases.map((value: any) => String(value).trim()).filter((value: string) => value.length > 0)
             : [];
+          const barcodeCandidates = Array.isArray(item?.barcodeCandidates)
+            ? item.barcodeCandidates.map((value: any) => String(value).trim()).filter((value: string) => value.length > 0)
+            : (String(item?.barcode || '').trim() ? [String(item.barcode).trim()] : []);
           const confidenceValue = Number(item?.confidence);
           const confidence = Number.isFinite(confidenceValue) ? Math.max(0, Math.min(1, confidenceValue)) : undefined;
-          return { name, amount, aliases, confidence };
+          return { name, amount, aliases, barcodeCandidates, confidence };
         })
         .filter((item: any) => item.name.length > 0);
 
@@ -1287,6 +1372,7 @@ Output JSON array:
 
         existing.amount += item.amount;
         existing.aliases = Array.from(new Set([...(existing.aliases || []), ...(item.aliases || [])]));
+        existing.barcodeCandidates = Array.from(new Set([...(existing.barcodeCandidates || []), ...(item.barcodeCandidates || [])]));
         if (typeof existing.confidence === 'number' && typeof item.confidence === 'number') {
           existing.confidence = Math.max(existing.confidence, item.confidence);
         }
@@ -1296,9 +1382,36 @@ Output JSON array:
       
       // Match with database products (try canonical name + aliases)
       const matchedItems = await Promise.all(recognized.map(async (item: any) => {
-        const candidateQueries = Array.from(new Set([item.name, ...(item.aliases || [])])).filter(Boolean);
+        const barcodeCandidates = Array.from(new Set<string>(
+          (item.barcodeCandidates || []).flatMap((value: string) => extractBarcodeCandidates(value))
+        )).filter((value: string) => value.length > 0);
 
-        for (const query of candidateQueries) {
+        for (const barcodeCandidate of barcodeCandidates) {
+          const barcodeRes = await fetch(`/api/products/barcode/${encodeURIComponent(barcodeCandidate)}`);
+          if (!barcodeRes.ok) continue;
+
+          const barcodeProduct = await barcodeRes.json().catch(() => null);
+          if (barcodeProduct) {
+            return { ...item, matchedBy: `barcode:${barcodeCandidate}`, product: barcodeProduct };
+          }
+        }
+
+        const candidateQueries = Array.from(new Set([item.name, ...(item.aliases || [])])).filter(Boolean);
+        const expandedQueries = Array.from(new Set(
+          candidateQueries.flatMap((query: string) => {
+            const q = String(query).trim();
+            if (!q) return [];
+            const words = q.split(/\s+/).filter((w) => w.length > 2);
+            const stemmed = q
+              .replace(/\([^)]*\)/g, ' ')
+              .replace(/[.,;:!?'"`~]/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+            return [q, stemmed, ...words];
+          })
+        )).filter(Boolean);
+
+        for (const query of expandedQueries) {
           const res = await fetch(`/api/products/search?q=${encodeURIComponent(query)}`);
           if (!res.ok) continue;
 
@@ -1313,10 +1426,17 @@ Output JSON array:
       }));
 
       setRecognizedItems(matchedItems);
+      if (matchedItems.length === 0) {
+        setPhotoRecognitionError('На фото не удалось уверенно распознать продукты. Попробуйте сделать фото ближе и при хорошем освещении.');
+      }
     } catch (e) {
       console.error("Recognition Error:", e);
+      setPhotoRecognitionError('Ошибка распознавания фото. Попробуйте другое фото.');
     } finally {
       setIsRecognizing(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -1816,6 +1936,12 @@ Output JSON array:
           </div>
         ) : (
           <div className="space-y-4">
+            {photoRecognitionError && (
+              <p className="text-sm text-orange-400 text-center">{photoRecognitionError}</p>
+            )}
+            {recognizedItems.length === 0 && !photoRecognitionError && (
+              <p className="text-sm text-zinc-500 text-center">Загрузите четкое фото еды, и я попробую распознать состав блюда.</p>
+            )}
             {recognizedItems.map((item, i) => (
               <div key={i} className="bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center">
                 <div>
