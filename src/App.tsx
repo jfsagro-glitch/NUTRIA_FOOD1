@@ -1311,6 +1311,42 @@ export default function App() {
     try {
       const optimizedImage = await optimizeImageForRecognition(file);
 
+      const barcodeProbePrompt = `Read this photo and extract only barcode-like number strings from visible package labels.
+Return ONLY JSON object:
+{
+  "barcodeCandidates": ["4601234567890"]
+}
+Rules:
+- Include only strings with 8-14 digits.
+- No spaces, no dashes.
+- If no barcode is visible return empty array.`;
+      const barcodeProbeText = await generateAI(barcodeProbePrompt, "application/json", optimizedImage);
+      const barcodeProbeRaw = parseAiJsonPayload(barcodeProbeText || '{}');
+      const photoBarcodeCandidates = Array.from(new Set<string>(
+        (Array.isArray(barcodeProbeRaw?.barcodeCandidates) ? barcodeProbeRaw.barcodeCandidates : [])
+          .flatMap((value: any) => extractBarcodeCandidates(String(value || '')))
+      )).filter((value: string) => value.length > 0);
+
+      for (const barcodeCandidate of photoBarcodeCandidates) {
+        const barcodeRes = await fetch(`/api/products/barcode/${encodeURIComponent(barcodeCandidate)}`);
+        if (!barcodeRes.ok) continue;
+        const barcodeProduct = await barcodeRes.json().catch(() => null);
+        if (!barcodeProduct) continue;
+
+        setRecognizedItems([
+          {
+            name: barcodeProduct.name,
+            amount: 100,
+            aliases: [],
+            barcodeCandidates: [barcodeCandidate],
+            confidence: 0.95,
+            matchedBy: `barcode:${barcodeCandidate}`,
+            product: barcodeProduct,
+          }
+        ]);
+        return;
+      }
+
       const prompt = `Analyze this food photo and return ONLY valid JSON.
 
 Priority:
@@ -1344,7 +1380,29 @@ Rules:
         ? recognizedRaw
         : (Array.isArray(recognizedRaw?.items) ? recognizedRaw.items : []);
 
-      const normalizedItems = recognizedList
+      let recognizedItemsSource = recognizedList;
+      if (recognizedItemsSource.length === 0) {
+        const singleFoodFallbackPrompt = `Identify the main edible item in this photo.
+Return ONLY JSON object:
+{
+  "name": "банан",
+  "amount": 120,
+  "aliases": ["banana"],
+  "confidence": 0.0
+}
+Rules:
+- Return exactly one food item.
+- Ignore background and non-food objects.
+- amount is estimated grams (positive number).
+- If uncertain, still provide best guess.`;
+        const singleFoodText = await generateAI(singleFoodFallbackPrompt, "application/json", optimizedImage);
+        const singleFoodRaw = parseAiJsonPayload(singleFoodText || '{}');
+        if (singleFoodRaw && typeof singleFoodRaw === 'object' && !Array.isArray(singleFoodRaw)) {
+          recognizedItemsSource = [singleFoodRaw];
+        }
+      }
+
+      const normalizedItems = recognizedItemsSource
         .map((item: any) => {
           const name = String(item?.name || item?.food || item?.product || '').trim();
           const amountValue = Number(item?.amount ?? item?.grams ?? item?.weight ?? 100);
