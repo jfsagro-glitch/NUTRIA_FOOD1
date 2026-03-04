@@ -16,7 +16,9 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle2,
-  Trash2
+  Trash2,
+  Mic,
+  MicOff
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -642,7 +644,20 @@ export default function App() {
   const [isSearchSheetOpen, setIsSearchSheetOpen] = useState(false);
   const [isPhotoSheetOpen, setIsPhotoSheetOpen] = useState(false);
   const [isBarcodeSheetOpen, setIsBarcodeSheetOpen] = useState(false);
-  const [selectedMealType, setSelectedMealType] = useState('BREAKFAST');
+  const [isVoiceSheetOpen, setIsVoiceSheetOpen] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [isParsingVoice, setIsParsingVoice] = useState(false);
+  const [parsedVoiceItems, setParsedVoiceItems] = useState<any[]>([]);
+  const getCurrentMealType = () => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 11) return 'BREAKFAST';
+    if (hour >= 11 && hour < 16) return 'LUNCH';
+    if (hour >= 16 && hour < 22) return 'DINNER';
+    return 'SNACK';
+  };
+
+  const [selectedMealType, setSelectedMealType] = useState(getCurrentMealType());
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -656,8 +671,45 @@ export default function App() {
 
   const [selectedProductForAmount, setSelectedProductForAmount] = useState<Product | null>(null);
   const [foodAmount, setFoodAmount] = useState('100');
+  const recognitionRef = useRef<any>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const generateAI = async (prompt: string, responseMimeType: string = "application/json", image?: { data: string, mimeType: string }): Promise<string> => {
+    // 1. Try Gemini (Frontend)
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const contents = image 
+        ? { parts: [{ text: prompt }, { inlineData: { data: image.data, mimeType: image.mimeType } }] }
+        : prompt;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: contents as any,
+        config: { responseMimeType: responseMimeType as any }
+      });
+      if (response.text) return response.text;
+    } catch (e) {
+      console.warn("Gemini Frontend Error, falling back to Backend Proxy:", e);
+    }
+
+    // 2. Try Backend Proxy (DeepSeek -> OpenAI)
+    try {
+      const res = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, responseMimeType, image })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data.text;
+      }
+    } catch (e) {
+      console.error("Backend AI Proxy Error:", e);
+    }
+
+    throw new Error("All AI models failed.");
+  };
 
   useEffect(() => {
     checkAuth();
@@ -784,30 +836,11 @@ export default function App() {
         Generate 2-3 short, actionable nutrition hints in Russian. 
         Focus on deficiencies in vitamins or minerals if any.
         Each hint should have: severity (low, med, high), title, explanation, and cta (optional search query).
+        Return JSON array of objects.
       `;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                severity: { type: Type.STRING },
-                title: { type: Type.STRING },
-                explanation: { type: Type.STRING },
-                cta: { type: Type.STRING }
-              },
-              required: ["severity", "title", "explanation"]
-            }
-          }
-        }
-      });
-
-      setHints(JSON.parse(response.text || "[]"));
+      const responseText = await generateAI(prompt);
+      setHints(JSON.parse(responseText || "[]"));
     } catch (e) {
       console.error("AI Error:", e);
       setHints([
@@ -875,34 +908,10 @@ export default function App() {
       reader.readAsDataURL(file);
       const base64Image = await base64Promise;
 
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const prompt = "Identify food items in this image and estimate their weight in grams. Return as JSON array of objects with {name, amount}.";
+      const responseText = await generateAI(prompt, "application/json", { data: base64Image, mimeType: file.type });
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: {
-          parts: [
-            { text: prompt },
-            { inlineData: { data: base64Image, mimeType: file.type } }
-          ]
-        },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                amount: { type: Type.NUMBER }
-              },
-              required: ["name", "amount"]
-            }
-          }
-        }
-      });
-
-      const recognized = JSON.parse(response.text || "[]");
+      const recognized = JSON.parse(responseText || "[]");
       
       // Match with database products
       const matchedItems = await Promise.all(recognized.map(async (item: any) => {
@@ -936,6 +945,98 @@ export default function App() {
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const startListening = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Ваш браузер не поддерживает распознавание речи.');
+      return;
+    }
+
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch(e) {}
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'ru-RU';
+    recognition.interimResults = true;
+    recognition.continuous = true;
+    recognitionRef.current = recognition;
+
+    setVoiceTranscript('');
+    setParsedVoiceItems([]);
+    setIsListening(true);
+    
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
+
+    recognition.onresult = (event: any) => {
+      let fullTranscript = '';
+      for (let i = 0; i < event.results.length; i++) {
+        fullTranscript += event.results[i][0].transcript;
+      }
+      setVoiceTranscript(fullTranscript);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error', event.error);
+      if (event.error === 'not-allowed') {
+        alert('Доступ к микрофону запрещен. Пожалуйста, разрешите доступ в настройках браузера.');
+      } else if (event.error !== 'no-speech') {
+        // alert(`Ошибка распознавания: ${event.error}`);
+      }
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+    };
+
+    try {
+      recognition.start();
+    } catch (e) {
+      console.error('Start error:', e);
+      setIsListening(false);
+    }
+  };
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
+  };
+
+  const handleVoiceParse = async () => {
+    if (!voiceTranscript) {
+      alert('Сначала скажите что-нибудь!');
+      return;
+    }
+    setIsParsingVoice(true);
+    try {
+      const res = await fetch('/api/voice/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: voiceTranscript })
+      });
+      if (res.ok) {
+        const items = await res.json();
+        if (items.length === 0) {
+          alert('Не удалось распознать продукты. Попробуйте сказать иначе.');
+        }
+        setParsedVoiceItems(items);
+      } else {
+        const err = await res.json();
+        alert(`Ошибка сервера: ${err.error || 'Неизвестная ошибка'}`);
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Ошибка при разборе фразы. Проверьте интернет-соединение.');
+    } finally {
+      setIsParsingVoice(false);
     }
   };
 
@@ -1001,7 +1102,10 @@ export default function App() {
         </motion.div>
       </AnimatePresence>
 
-      <FAB onClick={() => setIsActionSheetOpen(true)} />
+      <FAB onClick={() => {
+        setSelectedMealType(getCurrentMealType());
+        setIsActionSheetOpen(true);
+      }} />
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
 
       <input 
@@ -1014,34 +1118,75 @@ export default function App() {
 
       {/* Быстрые действия */}
       <BottomSheet isOpen={isActionSheetOpen} onClose={() => setIsActionSheetOpen(false)} title="Быстрые действия">
-        <div className="grid grid-cols-3 gap-4">
-          <button 
-            onClick={() => { setIsActionSheetOpen(false); setIsSearchSheetOpen(true); }}
-            className="flex flex-col items-center gap-3"
-          >
-            <div className="w-16 h-16 rounded-2xl bg-zinc-800 flex items-center justify-center text-emerald-500 shadow-inner">
-              <Search size={28} />
-            </div>
-            <span className="text-xs font-medium text-zinc-300">Поиск</span>
-          </button>
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            className="flex flex-col items-center gap-3"
-          >
-            <div className="w-16 h-16 rounded-2xl bg-zinc-800 flex items-center justify-center text-emerald-500 shadow-inner">
-              <Camera size={28} />
-            </div>
-            <span className="text-xs font-medium text-zinc-300">Фото</span>
-          </button>
-          <button 
-            onClick={() => { setIsActionSheetOpen(false); setIsBarcodeSheetOpen(true); }}
-            className="flex flex-col items-center gap-3"
-          >
-            <div className="w-16 h-16 rounded-2xl bg-zinc-800 flex items-center justify-center text-emerald-500 shadow-inner">
-              <ScanBarcode size={28} />
-            </div>
-            <span className="text-xs font-medium text-zinc-300">Сканер</span>
-          </button>
+        <div className="space-y-6">
+          {/* Выбор приема пищи */}
+          <div className="flex bg-zinc-900/50 p-1 rounded-xl border border-white/5">
+            {[
+              { id: 'BREAKFAST', label: 'Завтрак' },
+              { id: 'LUNCH', label: 'Обед' },
+              { id: 'DINNER', label: 'Ужин' },
+              { id: 'SNACK', label: 'Перекус' },
+            ].map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setSelectedMealType(m.id)}
+                className={cn(
+                  "flex-1 py-2 text-xs font-medium rounded-lg transition-all",
+                  selectedMealType === m.id 
+                    ? "bg-emerald-500 text-white shadow-lg" 
+                    : "text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-4 gap-2">
+            <button 
+              onClick={() => { setIsActionSheetOpen(false); setIsSearchSheetOpen(true); }}
+              className="flex flex-col items-center gap-2"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center text-emerald-500 shadow-inner hover:bg-zinc-700 transition-colors">
+                <Search size={24} />
+              </div>
+              <span className="text-[10px] font-medium text-zinc-400">Поиск</span>
+            </button>
+            <button 
+              onClick={() => { setIsActionSheetOpen(false); fileInputRef.current?.click(); }}
+              className="flex flex-col items-center gap-2"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center text-emerald-500 shadow-inner hover:bg-zinc-700 transition-colors">
+                <Camera size={24} />
+              </div>
+              <span className="text-[10px] font-medium text-zinc-400">Фото</span>
+            </button>
+            <button 
+              onClick={() => { setIsActionSheetOpen(false); setIsBarcodeSheetOpen(true); }}
+              className="flex flex-col items-center gap-2"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center text-emerald-500 shadow-inner hover:bg-zinc-700 transition-colors">
+                <ScanBarcode size={24} />
+              </div>
+              <span className="text-[10px] font-medium text-zinc-400">Сканер</span>
+            </button>
+            <button 
+              onClick={() => { 
+                setIsActionSheetOpen(false); 
+                setIsVoiceSheetOpen(true); 
+                setVoiceTranscript(''); 
+                setParsedVoiceItems([]);
+                // Auto-start listening after a short delay to allow sheet animation
+                setTimeout(() => startListening(), 400);
+              }}
+              className="flex flex-col items-center gap-2"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center text-emerald-500 shadow-inner hover:bg-zinc-700 transition-colors">
+                <Mic size={24} />
+              </div>
+              <span className="text-[10px] font-medium text-zinc-400">Голос</span>
+            </button>
+          </div>
         </div>
       </BottomSheet>
 
@@ -1211,6 +1356,106 @@ export default function App() {
           >
             Найти продукт
           </button>
+        </div>
+      </BottomSheet>
+
+      {/* Голосовой ввод */}
+      <BottomSheet isOpen={isVoiceSheetOpen} onClose={() => { stopListening(); setIsVoiceSheetOpen(false); }} title="Голосовой дневник">
+        <div className="flex flex-col items-center py-6">
+          <motion.button
+            animate={isListening ? { scale: [1, 1.1, 1], opacity: [1, 0.8, 1] } : {}}
+            transition={{ repeat: Infinity, duration: 1.5 }}
+            onClick={isListening ? stopListening : startListening}
+            disabled={isParsingVoice}
+            className={cn(
+              "w-24 h-24 rounded-full flex items-center justify-center mb-6 transition-colors shadow-lg",
+              isListening ? "bg-red-500 shadow-red-500/40" : "bg-emerald-500 shadow-emerald-500/40"
+            )}
+          >
+            {isListening ? <MicOff size={40} className="text-white" /> : <Mic size={40} className="text-white" />}
+          </motion.button>
+
+          <div className="w-full bg-zinc-800/50 border border-zinc-700 rounded-2xl p-6 mb-6 min-h-[120px] flex flex-col items-center justify-center text-center">
+            {isListening && !voiceTranscript && (
+              <div className="mb-2 flex items-center gap-2 text-emerald-500 animate-pulse">
+                <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                <span className="text-xs font-bold uppercase tracking-widest">Говорите...</span>
+              </div>
+            )}
+            {voiceTranscript ? (
+              <p className="text-zinc-100 text-lg font-medium leading-relaxed italic">"{voiceTranscript}"</p>
+            ) : (
+              <p className="text-zinc-500 italic">
+                {!isListening ? "Нажмите на микрофон и скажите, что вы съели. Например: \"На завтрак съел два яйца, тост с авокадо и выпил кофе с молоком\"" : ""}
+              </p>
+            )}
+          </div>
+
+          {!isListening && voiceTranscript && !isParsingVoice && parsedVoiceItems.length === 0 && (
+            <button 
+              onClick={handleVoiceParse}
+              className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl mb-6 shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform"
+            >
+              Разобрать фразу
+            </button>
+          )}
+
+          {isListening && voiceTranscript && (
+            <button 
+              onClick={stopListening}
+              className="w-full py-4 bg-zinc-800 text-zinc-300 font-bold rounded-2xl mb-6 active:scale-95 transition-transform"
+            >
+              Закончить запись
+            </button>
+          )}
+
+          {isParsingVoice && (
+            <div className="flex flex-col items-center py-4">
+              <Loader2 className="animate-spin text-emerald-500 mb-2" size={32} />
+              <p className="text-zinc-400 text-sm">AI разбирает ваш рацион...</p>
+            </div>
+          )}
+
+          {parsedVoiceItems.length > 0 && (
+            <div className="w-full space-y-3 mt-4">
+              <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Распознанные продукты</p>
+              {parsedVoiceItems.map((item, i) => (
+                <div key={i} className="bg-zinc-800/80 border border-zinc-700 rounded-xl p-4 flex justify-between items-center">
+                  <div className="flex-1 mr-4">
+                    <p className="font-semibold text-zinc-200">{item.name}</p>
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{item.amount}г • {item.product?.brand || 'AI Оценка'}</p>
+                  </div>
+                  {item.product ? (
+                    <button 
+                      onClick={async () => {
+                        await addFood(item.product.id, item.amount, (item.product.isUsda || item.product.isAiEstimated) ? item.product : undefined);
+                        setParsedVoiceItems(prev => prev.filter((_, idx) => idx !== i));
+                        if (parsedVoiceItems.length === 1) setIsVoiceSheetOpen(false);
+                      }}
+                      className="px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform"
+                    >
+                      Добавить
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={async () => {
+                        alert('Продукт не найден. Попробуйте поиск вручную.');
+                      }}
+                      className="p-2 bg-zinc-700 text-zinc-500 rounded-lg"
+                    >
+                      <Search size={20} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button 
+                onClick={() => setIsVoiceSheetOpen(false)}
+                className="w-full py-4 bg-zinc-800 text-zinc-300 font-bold rounded-xl mt-4"
+              >
+                Готово
+              </button>
+            </div>
+          )}
         </div>
       </BottomSheet>
     </div>
