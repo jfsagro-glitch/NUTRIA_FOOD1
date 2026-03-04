@@ -15,7 +15,9 @@ const prisma = new PrismaClient();
 const upload = multer({ storage: multer.memoryStorage() });
 
 // AI Clients
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+const ai = process.env.GEMINI_API_KEY
+  ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
+  : null;
 const deepseek = process.env.DEEPSEEK_API_KEY ? new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY,
   baseURL: "https://api.deepseek.com"
@@ -27,19 +29,23 @@ const openai = process.env.OPENAI_API_KEY ? new OpenAI({
 // AI Helper: Unified AI Generation with Fallback (Gemini -> DeepSeek -> OpenAI)
 async function generateAI(prompt: string, responseMimeType: string = "application/json", image?: { data: string, mimeType: string }) {
   // 1. Try Gemini
-  try {
-    const contents = image 
-      ? { parts: [{ text: prompt }, { inlineData: { data: image.data, mimeType: image.mimeType } }] }
-      : prompt;
-    
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: contents as any,
-      config: { responseMimeType: responseMimeType as any }
-    });
-    if (response.text) return response.text;
-  } catch (e) {
-    console.warn("Gemini Error, falling back to DeepSeek:", e);
+  if (ai) {
+    try {
+      const contents = image 
+        ? { parts: [{ text: prompt }, { inlineData: { data: image.data, mimeType: image.mimeType } }] }
+        : prompt;
+      
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: contents as any,
+        config: { responseMimeType: responseMimeType as any }
+      });
+      if (response.text) return response.text;
+    } catch (e) {
+      console.warn("Gemini Error, falling back to DeepSeek:", e);
+    }
+  } else {
+    console.warn("GEMINI_API_KEY is missing, skipping Gemini and trying fallback providers.");
   }
 
   // 2. Try DeepSeek (Note: DeepSeek chat doesn't support images yet, so we skip if image present)
