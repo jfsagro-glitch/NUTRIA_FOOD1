@@ -78,6 +78,32 @@ interface Hint {
   cta?: string;
 }
 
+type FastingMode = 'OFF' | '16:8' | '18:6' | 'CUSTOM';
+
+const FASTING_PRESETS: Record<FastingMode, { label: string; fastingHours: number; eatingHours: number }> = {
+  OFF: { label: 'ВЫКЛ', fastingHours: 0, eatingHours: 24 },
+  '16:8': { label: '16:8', fastingHours: 16, eatingHours: 8 },
+  '18:6': { label: '18:6', fastingHours: 18, eatingHours: 6 },
+  CUSTOM: { label: 'Свой', fastingHours: 14, eatingHours: 10 },
+};
+
+const FASTING_STATE_STORAGE_KEY = 'nutria_fasting_timer_v1';
+
+const formatDurationShort = (ms: number) => {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  return `${hours}ч ${minutes}м`;
+};
+
+const formatHms = (ms: number) => {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
+
 // --- Components ---
 
 const BottomNav = ({ activeTab, onTabChange }: { activeTab: string, onTabChange: (tab: string) => void }) => {
@@ -621,7 +647,31 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
   );
 };
 
-const SummaryScreen = () => {
+const SummaryScreen = ({
+  fastingMode,
+  customFastingHours,
+  isFastingActive,
+  fastingEndAt,
+  nowTs,
+  onSetMode,
+  onSetCustomHours,
+  onStart,
+  onStop,
+}: {
+  fastingMode: FastingMode;
+  customFastingHours: number;
+  isFastingActive: boolean;
+  fastingEndAt: number | null;
+  nowTs: number;
+  onSetMode: (mode: FastingMode) => void;
+  onSetCustomHours: (hours: number) => void;
+  onStart: () => void;
+  onStop: () => void;
+}) => {
+  const fastingHours = fastingMode === 'CUSTOM' ? customFastingHours : FASTING_PRESETS[fastingMode].fastingHours;
+  const eatingHours = Math.max(0, 24 - fastingHours);
+  const remainingMs = isFastingActive && fastingEndAt ? Math.max(0, fastingEndAt - nowTs) : 0;
+
   return (
     <div className="p-4">
       <header className="mb-6 pt-4">
@@ -631,6 +681,75 @@ const SummaryScreen = () => {
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 flex flex-col items-center justify-center text-center">
         <BarChart3 size={48} className="text-zinc-700 mb-4" />
         <p className="text-zinc-400">Здесь будет ваша аналитика и тренды</p>
+      </div>
+
+      <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+        <h3 className="text-lg font-bold mb-4">Голодание</h3>
+
+        <div className="grid grid-cols-4 gap-2 mb-4 bg-zinc-800/40 p-1 rounded-xl border border-zinc-700/60">
+          {(['OFF', '16:8', '18:6', 'CUSTOM'] as FastingMode[]).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => onSetMode(mode)}
+              className={cn(
+                'py-2 text-sm rounded-lg transition-colors',
+                fastingMode === mode ? 'bg-zinc-600 text-zinc-100 font-semibold' : 'text-zinc-400 hover:text-zinc-200'
+              )}
+            >
+              {FASTING_PRESETS[mode].label}
+            </button>
+          ))}
+        </div>
+
+        {fastingMode === 'CUSTOM' && (
+          <div className="mb-4">
+            <label className="text-xs text-zinc-400 block mb-2">Длительность голодания (часы)</label>
+            <input
+              type="number"
+              min={12}
+              max={23}
+              value={customFastingHours}
+              onChange={(e) => onSetCustomHours(Number(e.target.value))}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100"
+            />
+          </div>
+        )}
+
+        <div className="mb-4 text-sm text-zinc-400">
+          {fastingMode === 'OFF'
+            ? 'Отслеживание голодания выключено'
+            : `Режим: ${fastingHours}:${eatingHours} • окно питания ${eatingHours}ч`}
+        </div>
+
+        <div className="flex justify-center mb-5">
+          <div className="w-40 h-40 rounded-full border-4 border-zinc-700 flex items-center justify-center text-center">
+            <div>
+              <div className="text-3xl font-bold text-zinc-100">{isFastingActive ? formatHms(remainingMs) : `${fastingHours}ч`}</div>
+              <div className="text-xs text-zinc-500 mt-1">{isFastingActive ? 'до конца' : 'длительность'}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onStart}
+            disabled={fastingMode === 'OFF'}
+            className={cn(
+              'flex-1 py-3 rounded-xl font-semibold',
+              fastingMode === 'OFF'
+                ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                : 'bg-emerald-500 text-white'
+            )}
+          >
+            Начать голодание
+          </button>
+          <button
+            onClick={onStop}
+            className="flex-1 py-3 rounded-xl font-semibold bg-zinc-800 text-zinc-300 border border-zinc-700"
+          >
+            Прервать голодание
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -670,12 +789,19 @@ export default function App() {
   const [barcodeQuery, setBarcodeQuery] = useState('');
   const [barcodeScannerError, setBarcodeScannerError] = useState('');
   const [isBarcodeScanning, setIsBarcodeScanning] = useState(false);
+  const [fastingMode, setFastingMode] = useState<FastingMode>('OFF');
+  const [customFastingHours, setCustomFastingHours] = useState(14);
+  const [isFastingActive, setIsFastingActive] = useState(false);
+  const [fastingStartAt, setFastingStartAt] = useState<number | null>(null);
+  const [fastingEndAt, setFastingEndAt] = useState<number | null>(null);
+  const [nowTs, setNowTs] = useState(Date.now());
 
   const [selectedProductForAmount, setSelectedProductForAmount] = useState<Product | null>(null);
   const [foodAmount, setFoodAmount] = useState('100');
   const recognitionRef = useRef<any>(null);
   const barcodeScannerRef = useRef<Html5Qrcode | null>(null);
   const barcodeHandledRef = useRef(false);
+  const fastingNotifiedRef = useRef(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -709,6 +835,144 @@ export default function App() {
       fetchHints();
     }
   }, [diaryData, isLoggedIn]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(FASTING_STATE_STORAGE_KEY);
+      if (!raw) return;
+
+      const saved = JSON.parse(raw);
+      if (saved?.fastingMode) setFastingMode(saved.fastingMode);
+      if (Number.isFinite(saved?.customFastingHours)) setCustomFastingHours(saved.customFastingHours);
+      if (typeof saved?.isFastingActive === 'boolean') setIsFastingActive(saved.isFastingActive);
+      if (Number.isFinite(saved?.fastingStartAt)) setFastingStartAt(saved.fastingStartAt);
+      if (Number.isFinite(saved?.fastingEndAt)) setFastingEndAt(saved.fastingEndAt);
+    } catch (e) {
+      console.warn('Failed to restore fasting timer state:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(FASTING_STATE_STORAGE_KEY, JSON.stringify({
+        fastingMode,
+        customFastingHours,
+        isFastingActive,
+        fastingStartAt,
+        fastingEndAt,
+      }));
+    } catch (e) {
+      console.warn('Failed to persist fasting timer state:', e);
+    }
+  }, [fastingMode, customFastingHours, isFastingActive, fastingStartAt, fastingEndAt]);
+
+  useEffect(() => {
+    if (!isFastingActive) return;
+    setNowTs(Date.now());
+    const timer = setInterval(() => setNowTs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [isFastingActive]);
+
+  const sendFastingDoneNotification = async () => {
+    const title = 'NUTRIA: Голодание завершено';
+    const body = 'Время голодания истекло. Можно открыть окно питания.';
+
+    try {
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.getRegistration();
+        if (registration) {
+          await registration.showNotification(title, {
+            body,
+            icon: '/icons/icon-192.png',
+            badge: '/icons/icon-192.png',
+            tag: 'fasting-finished',
+          });
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Service worker notification failed:', e);
+    }
+
+    try {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(title, { body, icon: '/icons/icon-192.png', tag: 'fasting-finished' });
+      }
+    } catch (e) {
+      console.warn('Window notification failed:', e);
+    }
+  };
+
+  const completeFasting = async () => {
+    if (fastingNotifiedRef.current) return;
+    fastingNotifiedRef.current = true;
+    setIsFastingActive(false);
+
+    if (navigator.vibrate) {
+      navigator.vibrate([250, 150, 250, 150, 450]);
+    }
+
+    await sendFastingDoneNotification();
+  };
+
+  useEffect(() => {
+    if (!isFastingActive || !fastingEndAt) return;
+
+    const remaining = fastingEndAt - Date.now();
+    if (remaining <= 0) {
+      completeFasting();
+      return;
+    }
+
+    const doneTimer = setTimeout(() => {
+      completeFasting();
+    }, remaining);
+
+    return () => clearTimeout(doneTimer);
+  }, [isFastingActive, fastingEndAt]);
+
+  const handleSetFastingMode = (mode: FastingMode) => {
+    setFastingMode(mode);
+    fastingNotifiedRef.current = false;
+    if (mode === 'OFF') {
+      setIsFastingActive(false);
+      setFastingStartAt(null);
+      setFastingEndAt(null);
+    }
+  };
+
+  const handleSetCustomFastingHours = (hours: number) => {
+    const normalized = Math.max(12, Math.min(23, Number.isFinite(hours) ? hours : 14));
+    setCustomFastingHours(normalized);
+  };
+
+  const handleStartFasting = () => {
+    if (fastingMode === 'OFF') {
+      alert('Выберите режим голодания.');
+      return;
+    }
+
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => null);
+    }
+
+    const fastingHours = fastingMode === 'CUSTOM' ? customFastingHours : FASTING_PRESETS[fastingMode].fastingHours;
+    const startAt = Date.now();
+    const endAt = startAt + fastingHours * 60 * 60 * 1000;
+
+    fastingNotifiedRef.current = false;
+    setFastingStartAt(startAt);
+    setFastingEndAt(endAt);
+    setIsFastingActive(true);
+    setNowTs(startAt);
+  };
+
+  const handleStopFasting = () => {
+    fastingNotifiedRef.current = false;
+    setIsFastingActive(false);
+    setFastingStartAt(null);
+    setFastingEndAt(null);
+  };
 
   const extractBarcodeCandidates = (input: string): string[] => {
     const raw = String(input || '').trim();
@@ -1311,7 +1575,17 @@ Output JSON array:
               onUpdateWater={updateWater}
             />
           ) : (
-            <SummaryScreen />
+            <SummaryScreen
+              fastingMode={fastingMode}
+              customFastingHours={customFastingHours}
+              isFastingActive={isFastingActive}
+              fastingEndAt={fastingEndAt}
+              nowTs={nowTs}
+              onSetMode={handleSetFastingMode}
+              onSetCustomHours={handleSetCustomFastingHours}
+              onStart={handleStartFasting}
+              onStop={handleStopFasting}
+            />
           )}
         </motion.div>
       </AnimatePresence>
