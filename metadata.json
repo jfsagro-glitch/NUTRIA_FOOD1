@@ -1,0 +1,5 @@
+{
+  "name": "NUTRIA",
+  "description": "Premium wellbeing platform for nutrition tracking and AI-driven health insights.",
+  "requestFramePermissions": ["camera", "microphone"]
+}

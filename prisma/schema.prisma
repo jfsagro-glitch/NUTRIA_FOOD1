@@ -1,0 +1,70 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  passwordHash  String
+  role          String         @default("USER") // USER, ADMIN
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  meals         Meal[]
+  nutrientGoals NutrientGoal?
+}
+
+model Product {
+  id           String     @id @default(cuid())
+  name         String
+  brand        String?
+  barcode      String?    @unique
+  calories     Float      // per 100g
+  protein      Float
+  fat          Float
+  carbs        Float
+  fiber        Float?
+  micronutrients String?  // JSON string for vitamins/minerals
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  mealItems    MealItem[]
+
+  @@unique([name, brand])
+}
+
+model Meal {
+  id        String     @id @default(cuid())
+  userId    String
+  user      User       @relation(fields: [userId], references: [id])
+  type      String     // BREAKFAST, LUNCH, DINNER, SNACK
+  date      DateTime   @default(now())
+  items     MealItem[]
+  createdAt DateTime   @default(now())
+}
+
+model MealItem {
+  id        String  @id @default(cuid())
+  mealId    String
+  meal      Meal    @relation(fields: [mealId], references: [id])
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  amount    Float   // in grams
+}
+
+model NutrientGoal {
+  id        String @id @default(cuid())
+  userId    String @unique
+  user      User   @relation(fields: [userId], references: [id])
+  calories  Float
+  protein   Float
+  fat       Float
+  carbs     Float
+  fiber     Float?
+}
