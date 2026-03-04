@@ -1072,8 +1072,8 @@ export default function App() {
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-bg-dark flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-20 h-20 bg-emerald-500/10 rounded-3xl flex items-center justify-center mb-8 border border-emerald-500/20">
-          <img src="/logo.png" alt="NUTRIA logo" className="w-12 h-12 object-contain" />
+        <div className="w-24 h-24 bg-emerald-500/10 rounded-3xl flex items-center justify-center mb-8 border border-emerald-500/20">
+          <img src="/logo.png" alt="NUTRIA logo" className="w-16 h-16 object-contain" />
         </div>
         <h1 className="text-4xl font-black tracking-tighter mb-2 italic">NUTRIA</h1>
         <p className="text-zinc-500 mb-12 max-w-[240px]">Ваш персональный гид в мире осознанного питания</p>
