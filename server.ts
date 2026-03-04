@@ -44,16 +44,55 @@ function getOrCreateInMemoryDiary(userId: string) {
 
 // AI Helper: Unified AI Generation with Fallback (Gemini -> DeepSeek -> OpenAI)
 async function generateAI(prompt: string, responseMimeType: string = "application/json", image?: { data: string, mimeType: string }) {
-  // 1. Try Gemini
+  // For image recognition quality: prioritize OpenAI Vision first, then Gemini fallback.
+  if (image) {
+    if (openai) {
+      try {
+        const messages: any[] = [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              { type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.data}` } }
+            ]
+          }
+        ];
+
+        const response = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages,
+          response_format: responseMimeType === "application/json" ? { type: "json_object" } : undefined
+        });
+        if (response.choices[0].message.content) return response.choices[0].message.content;
+      } catch (e) {
+        console.warn("OpenAI Vision Error, falling back to Gemini:", e);
+      }
+    }
+
+    if (ai) {
+      try {
+        const contents = { parts: [{ text: prompt }, { inlineData: { data: image.data, mimeType: image.mimeType } }] };
+
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: contents as any,
+          config: { responseMimeType: responseMimeType as any }
+        });
+        if (response.text) return response.text;
+      } catch (e) {
+        console.warn("Gemini image fallback Error:", e);
+      }
+    }
+
+    throw new Error("All image-capable AI models failed or keys are missing.");
+  }
+
+  // 1. Try Gemini for text tasks
   if (ai) {
     try {
-      const contents = image 
-        ? { parts: [{ text: prompt }, { inlineData: { data: image.data, mimeType: image.mimeType } }] }
-        : prompt;
-      
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: contents as any,
+        contents: prompt,
         config: { responseMimeType: responseMimeType as any }
       });
       if (response.text) return response.text;
@@ -64,7 +103,7 @@ async function generateAI(prompt: string, responseMimeType: string = "applicatio
     console.warn("GEMINI_API_KEY is missing, skipping Gemini and trying fallback providers.");
   }
 
-  // 2. Try DeepSeek (Note: DeepSeek chat doesn't support images yet, so we skip if image present)
+  // 2. Try DeepSeek (text only)
   if (deepseek && !image) {
     try {
       const response = await deepseek.chat.completions.create({
@@ -78,18 +117,13 @@ async function generateAI(prompt: string, responseMimeType: string = "applicatio
     }
   }
 
-  // 3. Try OpenAI (Supports images via GPT-4o)
+  // 3. Try OpenAI (text fallback)
   if (openai) {
     try {
       const messages: any[] = [
         {
           role: "user",
-          content: image 
-            ? [
-                { type: "text", text: prompt },
-                { type: "image_url", image_url: { url: `data:${image.mimeType};base64,${image.data}` } }
-              ]
-            : prompt
+          content: prompt
         }
       ];
 
