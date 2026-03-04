@@ -1073,7 +1073,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-bg-dark flex flex-col items-center justify-center p-6 text-center">
         <div className="w-20 h-20 bg-emerald-500/10 rounded-3xl flex items-center justify-center mb-8 border border-emerald-500/20">
-          <Utensils size={40} className="text-emerald-500" />
+          <img src="/logo.png" alt="NUTRIA logo" className="w-12 h-12 object-contain" />
         </div>
         <h1 className="text-4xl font-black tracking-tighter mb-2 italic">NUTRIA</h1>
         <p className="text-zinc-500 mb-12 max-w-[240px]">Ваш персональный гид в мире осознанного питания</p>
