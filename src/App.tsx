@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { GoogleGenAI, Type } from "@google/genai";
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -676,24 +675,7 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const generateAI = async (prompt: string, responseMimeType: string = "application/json", image?: { data: string, mimeType: string }): Promise<string> => {
-    // 1. Try Gemini (Frontend)
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const contents = image 
-        ? { parts: [{ text: prompt }, { inlineData: { data: image.data, mimeType: image.mimeType } }] }
-        : prompt;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: contents as any,
-        config: { responseMimeType: responseMimeType as any }
-      });
-      if (response.text) return response.text;
-    } catch (e) {
-      console.warn("Gemini Frontend Error, falling back to Backend Proxy:", e);
-    }
-
-    // 2. Try Backend Proxy (DeepSeek -> OpenAI)
+    // Use backend proxy only (Gemini -> DeepSeek -> OpenAI fallback is handled server-side)
     try {
       const res = await fetch('/api/ai/generate', {
         method: 'POST',
@@ -704,6 +686,8 @@ export default function App() {
         const data = await res.json();
         return data.text;
       }
+      const errorBody = await res.json().catch(() => ({}));
+      throw new Error(errorBody?.error || `AI proxy error: HTTP ${res.status}`);
     } catch (e) {
       console.error("Backend AI Proxy Error:", e);
     }
@@ -739,9 +723,19 @@ export default function App() {
   };
 
   const login = async () => {
-    await fetch('/api/auth/login', { method: 'POST' });
-    setIsLoggedIn(true);
-    fetchDiary();
+    try {
+      const res = await fetch('/api/auth/login', { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err?.error || 'Не удалось выполнить вход. Проверьте настройки сервера.');
+        return;
+      }
+      setIsLoggedIn(true);
+      fetchDiary();
+    } catch (e) {
+      console.error(e);
+      alert('Сервер недоступен. Попробуйте позже.');
+    }
   };
 
   const fetchDiary = async () => {
@@ -754,6 +748,9 @@ export default function App() {
         if (data.meals && data.meals.length > 0) {
           fetchHints(data);
         }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        console.warn('Diary fetch error:', err);
       }
     } catch (e) {
       console.error(e);
@@ -771,11 +768,16 @@ export default function App() {
 
   const updateWater = async (amount: number) => {
     try {
-      await fetch('/api/diary/water', {
+      const res = await fetch('/api/diary/water', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount })
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.warn('Water update error:', err);
+        return;
+      }
       fetchDiary();
     } catch (e) {
       console.error(e);
@@ -786,8 +788,6 @@ export default function App() {
     const data = dataOverride || diaryData;
     if (!data.meals || data.meals.length === 0) return;
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
       const totals = data.meals.reduce((acc: NutrientTotals, meal: any) => {
         meal.items.forEach((item: any) => {
           if (!item.product) return;
@@ -859,10 +859,17 @@ export default function App() {
     setIsSearching(true);
     try {
       const res = await fetch(`/api/products/search?q=${encodeURIComponent(val)}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        console.warn('Search error:', err);
+        setSearchResults([]);
+        return;
+      }
       const data = await res.json();
-      setSearchResults(data);
+      setSearchResults(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
+      setSearchResults([]);
     } finally {
       setIsSearching(false);
     }
@@ -911,13 +918,15 @@ export default function App() {
       const prompt = "Identify food items in this image and estimate their weight in grams. Return as JSON array of objects with {name, amount}.";
       const responseText = await generateAI(prompt, "application/json", { data: base64Image, mimeType: file.type });
 
-      const recognized = JSON.parse(responseText || "[]");
+      const recognizedRaw = JSON.parse(responseText || "[]");
+      const recognized = Array.isArray(recognizedRaw) ? recognizedRaw : [];
       
       // Match with database products
       const matchedItems = await Promise.all(recognized.map(async (item: any) => {
         const res = await fetch(`/api/products/search?q=${encodeURIComponent(item.name)}`);
-        const products = await res.json();
-        return { ...item, product: products[0] || null };
+        const products = await res.json().catch(() => []);
+        const productList = Array.isArray(products) ? products : [];
+        return { ...item, product: productList[0] || null };
       }));
 
       setRecognizedItems(matchedItems);
@@ -1023,7 +1032,8 @@ export default function App() {
         body: JSON.stringify({ transcript: voiceTranscript })
       });
       if (res.ok) {
-        const items = await res.json();
+        const itemsRaw = await res.json();
+        const items = Array.isArray(itemsRaw) ? itemsRaw : [];
         if (items.length === 0) {
           alert('Не удалось распознать продукты. Попробуйте сказать иначе.');
         }

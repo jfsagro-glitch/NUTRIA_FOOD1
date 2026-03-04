@@ -186,10 +186,12 @@ async function startServer() {
 
   // Food Match Engine: Search products
   app.get("/api/products/search", async (req, res) => {
-    const { q } = req.query;
-    if (!q) return res.json([]);
+    try {
+      const { q } = req.query;
+      if (!q) return res.json([]);
 
-    const query = String(q).trim();
+      const query = String(q).trim();
+      const dbReady = isDatabaseConfigured();
     
     // Stage A: Normalization & Translation (using Gemini)
     // We normalize the query to handle synonyms, units, and translate to English for USDA
@@ -223,20 +225,22 @@ async function startServer() {
 
     // Stage B: Fast Candidate Selection
     // 1. Search local DB (using token-based approach for better matching)
-    const tokens = query.split(/\s+/).filter(t => t.length > 1);
-    const localProducts = await prisma.product.findMany({
-      where: {
-        OR: [
-          { name: { contains: normalizedQuery } },
-          { name: { contains: query } },
-          { name: { contains: englishQuery } },
-          ...searchTerms.map(t => ({ name: { contains: t } })),
-          ...tokens.map(t => ({ name: { contains: t } })),
-          { brand: { contains: query } }
-        ]
-      },
-      take: 30
-    });
+      const tokens = query.split(/\s+/).filter(t => t.length > 1);
+      const localProducts = dbReady
+        ? await prisma.product.findMany({
+            where: {
+              OR: [
+                { name: { contains: normalizedQuery } },
+                { name: { contains: query } },
+                { name: { contains: englishQuery } },
+                ...searchTerms.map(t => ({ name: { contains: t } })),
+                ...tokens.map(t => ({ name: { contains: t } })),
+                { brand: { contains: query } }
+              ]
+            },
+            take: 30
+          })
+        : [];
     
     const parsedLocal = localProducts.map(p => {
       let micro: any = {};
@@ -438,7 +442,11 @@ async function startServer() {
       }
     }
 
-    res.json(finalResults.slice(0, 10));
+      res.json(finalResults.slice(0, 10));
+    } catch (e: any) {
+      console.error("Products Search Error:", e);
+      res.status(500).json({ error: "Products search failed", message: e.message });
+    }
   });
 
   // Diary: Get daily meals and aggregates
@@ -648,20 +656,24 @@ async function startServer() {
       const items = JSON.parse(responseText || "[]");
       
       // Match each item with database products
+      const dbReady = isDatabaseConfigured();
+
       const matchedItems = await Promise.all(items.map(async (item: any) => {
         // Use the existing search logic (internal call or refactor search logic)
         // For simplicity, we'll fetch from our own search endpoint or reuse the logic
         // Let's just do a quick search here
         const normalizedQuery = item.name;
-        const localProducts = await prisma.product.findMany({
-          where: {
-            OR: [
-              { name: { contains: normalizedQuery } },
-              { name: { contains: item.name } }
-            ]
-          },
-          take: 1
-        });
+        const localProducts = dbReady
+          ? await prisma.product.findMany({
+              where: {
+                OR: [
+                  { name: { contains: normalizedQuery } },
+                  { name: { contains: item.name } }
+                ]
+              },
+              take: 1
+            })
+          : [];
 
         if (localProducts.length > 0) {
           return { ...item, product: { ...localProducts[0], source: 'local' } };
