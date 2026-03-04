@@ -915,18 +915,81 @@ export default function App() {
       reader.readAsDataURL(file);
       const base64Image = await base64Promise;
 
-      const prompt = "Identify food items in this image and estimate their weight in grams. Return as JSON array of objects with {name, amount}.";
+      const prompt = `Analyze this food photo.
+Return ONLY valid JSON.
+
+Goal: recognize both single foods and prepared dishes.
+Rules:
+1) If it is a packaged/single food (e.g. yogurt, apple), return one item.
+2) If it is a mixed dish (e.g. pasta with chicken, salad, soup), split into 2-5 main edible components.
+3) Ignore plate/table/background and non-food objects.
+4) amount must be estimated in grams (or ml for liquids), as a number.
+5) For each item include possible alternative names for better DB search.
+
+Output JSON array:
+[
+  {
+    "name": "main canonical name",
+    "amount": 120,
+    "aliases": ["alt name ru", "alt name en"],
+    "confidence": 0.0
+  }
+]`;
       const responseText = await generateAI(prompt, "application/json", { data: base64Image, mimeType: file.type });
 
       const recognizedRaw = JSON.parse(responseText || "[]");
-      const recognized = Array.isArray(recognizedRaw) ? recognizedRaw : [];
+      const recognizedList = Array.isArray(recognizedRaw)
+        ? recognizedRaw
+        : (Array.isArray(recognizedRaw?.items) ? recognizedRaw.items : []);
+
+      const normalizedItems = recognizedList
+        .map((item: any) => {
+          const name = String(item?.name || item?.food || item?.product || '').trim();
+          const amountValue = Number(item?.amount ?? item?.grams ?? item?.weight ?? 100);
+          const amount = Number.isFinite(amountValue) && amountValue > 0 ? amountValue : 100;
+          const aliases = Array.isArray(item?.aliases)
+            ? item.aliases.map((value: any) => String(value).trim()).filter((value: string) => value.length > 0)
+            : [];
+          const confidenceValue = Number(item?.confidence);
+          const confidence = Number.isFinite(confidenceValue) ? Math.max(0, Math.min(1, confidenceValue)) : undefined;
+          return { name, amount, aliases, confidence };
+        })
+        .filter((item: any) => item.name.length > 0);
+
+      const deduplicatedMap = new Map<string, any>();
+      for (const item of normalizedItems) {
+        const key = item.name.toLowerCase();
+        const existing = deduplicatedMap.get(key);
+        if (!existing) {
+          deduplicatedMap.set(key, { ...item });
+          continue;
+        }
+
+        existing.amount += item.amount;
+        existing.aliases = Array.from(new Set([...(existing.aliases || []), ...(item.aliases || [])]));
+        if (typeof existing.confidence === 'number' && typeof item.confidence === 'number') {
+          existing.confidence = Math.max(existing.confidence, item.confidence);
+        }
+      }
+
+      const recognized = Array.from(deduplicatedMap.values());
       
-      // Match with database products
+      // Match with database products (try canonical name + aliases)
       const matchedItems = await Promise.all(recognized.map(async (item: any) => {
-        const res = await fetch(`/api/products/search?q=${encodeURIComponent(item.name)}`);
-        const products = await res.json().catch(() => []);
-        const productList = Array.isArray(products) ? products : [];
-        return { ...item, product: productList[0] || null };
+        const candidateQueries = Array.from(new Set([item.name, ...(item.aliases || [])])).filter(Boolean);
+
+        for (const query of candidateQueries) {
+          const res = await fetch(`/api/products/search?q=${encodeURIComponent(query)}`);
+          if (!res.ok) continue;
+
+          const products = await res.json().catch(() => []);
+          const productList = Array.isArray(products) ? products : [];
+          if (productList.length > 0) {
+            return { ...item, matchedBy: query, product: productList[0] };
+          }
+        }
+
+        return { ...item, product: null };
       }));
 
       setRecognizedItems(matchedItems);
