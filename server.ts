@@ -30,6 +30,18 @@ function isDatabaseConfigured() {
   return typeof process.env.DATABASE_URL === "string" && process.env.DATABASE_URL.trim().length > 0;
 }
 
+const DEMO_USER_ID = "demo-user";
+const DEMO_USER = { id: DEMO_USER_ID, email: "user@nutria.app", role: "USER" };
+const DEMO_GOALS = { calories: 2100, protein: 120, fat: 70, carbs: 250, fiber: 30 };
+const inMemoryDiary = new Map<string, { meals: any[]; goals: typeof DEMO_GOALS; waterIntake: number }>();
+
+function getOrCreateInMemoryDiary(userId: string) {
+  if (!inMemoryDiary.has(userId)) {
+    inMemoryDiary.set(userId, { meals: [], goals: { ...DEMO_GOALS }, waterIntake: 0 });
+  }
+  return inMemoryDiary.get(userId)!;
+}
+
 // AI Helper: Unified AI Generation with Fallback (Gemini -> DeepSeek -> OpenAI)
 async function generateAI(prompt: string, responseMimeType: string = "application/json", image?: { data: string, mimeType: string }) {
   // 1. Try Gemini
@@ -141,7 +153,8 @@ async function startServer() {
   // Auth Placeholder (Mock)
   app.post("/api/auth/login", async (req, res) => {
     if (!isDatabaseConfigured()) {
-      return res.status(503).json({ error: "Database is not configured", code: "DATABASE_URL_MISSING" });
+      res.cookie("token", DEMO_USER_ID, { httpOnly: true, secure: true, sameSite: "none" });
+      return res.json({ success: true, user: { email: DEMO_USER.email, role: DEMO_USER.role }, mode: "memory" });
     }
 
     try {
@@ -176,6 +189,12 @@ async function startServer() {
     try {
       const userId = req.cookies.token;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+      if (!isDatabaseConfigured()) {
+        if (userId !== DEMO_USER_ID) return res.status(401).json({ error: "Unauthorized" });
+        return res.json({ user: DEMO_USER, mode: "memory" });
+      }
+
       const user = await prisma.user.findUnique({ where: { id: userId } });
       res.json({ user });
     } catch (e: any) {
@@ -451,12 +470,18 @@ async function startServer() {
 
   // Diary: Get daily meals and aggregates
   app.get("/api/diary", async (req, res) => {
-    if (!isDatabaseConfigured()) {
-      return res.status(503).json({ error: "Database is not configured", code: "DATABASE_URL_MISSING" });
-    }
-
     const userId = req.cookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    if (!isDatabaseConfigured()) {
+      const memoryDiary = getOrCreateInMemoryDiary(userId);
+      return res.json({
+        meals: memoryDiary.meals,
+        goals: memoryDiary.goals,
+        waterIntake: memoryDiary.waterIntake,
+        mode: "memory",
+      });
+    }
 
     try {
       const startOfDay = new Date();
@@ -504,13 +529,15 @@ async function startServer() {
 
   // Diary: Update water intake
   app.post("/api/diary/water", async (req, res) => {
-    if (!isDatabaseConfigured()) {
-      return res.status(503).json({ error: "Database is not configured", code: "DATABASE_URL_MISSING" });
-    }
-
     const userId = req.cookies.token;
     const { amount } = req.body; // amount can be positive or negative
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    if (!isDatabaseConfigured()) {
+      const memoryDiary = getOrCreateInMemoryDiary(userId);
+      memoryDiary.waterIntake = Math.max(0, (memoryDiary.waterIntake || 0) + Number(amount || 0));
+      return res.json({ success: true, mode: "memory", waterIntake: memoryDiary.waterIntake });
+    }
 
     try {
       const startOfDay = new Date();
@@ -554,6 +581,14 @@ async function startServer() {
     const { id } = req.params;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
+    if (!isDatabaseConfigured()) {
+      const memoryDiary = getOrCreateInMemoryDiary(userId);
+      memoryDiary.meals = memoryDiary.meals
+        .map((meal: any) => ({ ...meal, items: meal.items.filter((item: any) => item.id !== id) }))
+        .filter((meal: any) => meal.items.length > 0);
+      return res.json({ success: true, mode: "memory" });
+    }
+
     // Verify ownership
     const item = await prisma.mealItem.findUnique({
       where: { id },
@@ -573,6 +608,38 @@ async function startServer() {
     const userId = req.cookies.token;
     let { productId, amount, type, usdaData } = req.body;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    if (!isDatabaseConfigured()) {
+      const memoryDiary = getOrCreateInMemoryDiary(userId);
+      const mealType = type || "SNACK";
+      const mealId = `${mealType}-${new Date().toISOString().slice(0, 10)}`;
+      let meal = memoryDiary.meals.find((m: any) => m.id === mealId);
+
+      if (!meal) {
+        meal = { id: mealId, type: mealType, items: [] };
+        memoryDiary.meals.push(meal);
+      }
+
+      const fallbackProduct = usdaData || {
+        id: String(productId || `manual-${Date.now()}`),
+        name: "Продукт",
+        brand: "Manual",
+        calories: 0,
+        protein: 0,
+        fat: 0,
+        carbs: 0,
+        fiber: 0,
+      };
+
+      const mealItem = {
+        id: `mi-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        amount: Number(amount) || 0,
+        product: fallbackProduct,
+      };
+
+      meal.items.push(mealItem);
+      return res.json({ ...mealItem, mode: "memory" });
+    }
 
     // If it's a USDA product, we need to ensure it exists in our local DB first
     if ((String(productId).startsWith('usda-') || String(productId).startsWith('ai-est-')) && usdaData) {
@@ -653,7 +720,8 @@ async function startServer() {
         Return JSON array of objects: [{ "name": "food name", "amount": number }].
         Focus on accuracy and common portion sizes.`);
 
-      const items = JSON.parse(responseText || "[]");
+      const itemsRaw = JSON.parse(responseText || "[]");
+      const items = Array.isArray(itemsRaw) ? itemsRaw : [];
       
       // Match each item with database products
       const dbReady = isDatabaseConfigured();
