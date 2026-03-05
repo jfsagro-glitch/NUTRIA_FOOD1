@@ -167,6 +167,49 @@ function normalizeUnitName(unit: any) {
   return String(unit || "").trim().toLowerCase();
 }
 
+function hasAnyPositiveValue(map: Record<string, any> | undefined) {
+  if (!map || typeof map !== "object") return false;
+  return Object.values(map).some((value) => numberOrZero(value) > 0);
+}
+
+function parseMicronutrients(rawMicronutrients: any) {
+  if (!rawMicronutrients) return {} as Record<string, any>;
+  if (typeof rawMicronutrients === "object") return rawMicronutrients as Record<string, any>;
+  try {
+    return JSON.parse(String(rawMicronutrients));
+  } catch {
+    return {} as Record<string, any>;
+  }
+}
+
+function shouldRefreshMicronutrients(existingRaw: any, incoming: any) {
+  const existing = parseMicronutrients(existingRaw);
+  const incomingAmino = incoming?.aminoAcids || {};
+  const incomingCarbs = incoming?.carbohydrateTypes || {};
+
+  if (!hasAnyPositiveValue(incomingAmino) && !hasAnyPositiveValue(incomingCarbs)) {
+    return false;
+  }
+
+  const existingAmino = existing?.aminoAcids || {};
+  const existingCarbs = existing?.carbohydrateTypes || {};
+
+  if (!hasAnyPositiveValue(existingAmino) && hasAnyPositiveValue(incomingAmino)) {
+    return true;
+  }
+
+  if (!hasAnyPositiveValue(existingCarbs) && hasAnyPositiveValue(incomingCarbs)) {
+    return true;
+  }
+
+  // Fructose is a common missing field in older mappings.
+  if (numberOrZero(existingCarbs?.Fructose) <= 0 && numberOrZero(incomingCarbs?.Fructose) > 0) {
+    return true;
+  }
+
+  return false;
+}
+
 function convertNutrientUnit(value: number, fromUnitRaw: any, targetUnitRaw: "mg" | "mcg" | "g") {
   const fromUnit = normalizeUnitName(fromUnitRaw);
   const targetUnit = normalizeUnitName(targetUnitRaw);
@@ -318,7 +361,7 @@ function extractUsdaExtendedNutrients(food: any) {
     targetUnit: "g"
   });
   carbohydrateTypes.Fructose = pickUsdaNutrient(food, {
-    nutrientNumbers: ["2124"],
+    nutrientNumbers: ["2122", "2124"],
     nameIncludes: ["fructose"],
     targetUnit: "g"
   });
@@ -354,26 +397,26 @@ function extractUsdaExtendedNutrients(food: any) {
     targetUnit: "g"
   });
 
-  aminoAcids.Alanine = pickUsdaNutrient(food, { ids: [1222], nameIncludes: ["alanine"], targetUnit: "mg" });
-  aminoAcids.Arginine = pickUsdaNutrient(food, { ids: [1220], nameIncludes: ["arginine"], targetUnit: "mg" });
+  aminoAcids.Alanine = pickUsdaNutrient(food, { ids: [1222], nutrientNumbers: ["513"], nameIncludes: ["alanine"], targetUnit: "mg" });
+  aminoAcids.Arginine = pickUsdaNutrient(food, { ids: [1220], nutrientNumbers: ["511"], nameIncludes: ["arginine"], targetUnit: "mg" });
   aminoAcids.Asparagine = pickUsdaNutrient(food, { nameIncludes: ["asparagine"], targetUnit: "mg" });
-  aminoAcids.AsparticAcid = pickUsdaNutrient(food, { ids: [1223], nameIncludes: ["aspartic acid"], targetUnit: "mg" });
-  aminoAcids.Valine = pickUsdaNutrient(food, { ids: [1219], nameIncludes: ["valine"], targetUnit: "mg" });
-  aminoAcids.Histidine = pickUsdaNutrient(food, { ids: [1221], nameIncludes: ["histidine"], targetUnit: "mg" });
-  aminoAcids.Glycine = pickUsdaNutrient(food, { ids: [1225], nameIncludes: ["glycine"], targetUnit: "mg" });
+  aminoAcids.AsparticAcid = pickUsdaNutrient(food, { ids: [1223], nutrientNumbers: ["514"], nameIncludes: ["aspartic acid"], targetUnit: "mg" });
+  aminoAcids.Valine = pickUsdaNutrient(food, { ids: [1219], nutrientNumbers: ["510"], nameIncludes: ["valine"], targetUnit: "mg" });
+  aminoAcids.Histidine = pickUsdaNutrient(food, { ids: [1221], nutrientNumbers: ["512"], nameIncludes: ["histidine"], targetUnit: "mg" });
+  aminoAcids.Glycine = pickUsdaNutrient(food, { ids: [1225], nutrientNumbers: ["516"], nameIncludes: ["glycine"], targetUnit: "mg" });
   aminoAcids.Glutamine = pickUsdaNutrient(food, { nameIncludes: ["glutamine"], targetUnit: "mg" });
-  aminoAcids.GlutamicAcid = pickUsdaNutrient(food, { ids: [1224], nameIncludes: ["glutamic acid"], targetUnit: "mg" });
-  aminoAcids.Isoleucine = pickUsdaNutrient(food, { ids: [1212], nameIncludes: ["isoleucine"], targetUnit: "mg" });
-  aminoAcids.Leucine = pickUsdaNutrient(food, { ids: [1213], nameIncludes: ["leucine"], targetUnit: "mg" });
-  aminoAcids.Lysine = pickUsdaNutrient(food, { ids: [1214], nameIncludes: ["lysine"], targetUnit: "mg" });
-  aminoAcids.Methionine = pickUsdaNutrient(food, { ids: [1215], nameIncludes: ["methionine"], targetUnit: "mg" });
-  aminoAcids.Proline = pickUsdaNutrient(food, { ids: [1226], nameIncludes: ["proline"], targetUnit: "mg" });
-  aminoAcids.Serine = pickUsdaNutrient(food, { ids: [1227], nameIncludes: ["serine"], targetUnit: "mg" });
-  aminoAcids.Tyrosine = pickUsdaNutrient(food, { ids: [1218], nameIncludes: ["tyrosine"], targetUnit: "mg" });
-  aminoAcids.Threonine = pickUsdaNutrient(food, { ids: [1211], nameIncludes: ["threonine"], targetUnit: "mg" });
-  aminoAcids.Tryptophan = pickUsdaNutrient(food, { ids: [1210], nameIncludes: ["tryptophan"], targetUnit: "mg" });
-  aminoAcids.Phenylalanine = pickUsdaNutrient(food, { ids: [1217], nameIncludes: ["phenylalanine"], targetUnit: "mg" });
-  aminoAcids.Cysteine = pickUsdaNutrient(food, { ids: [1216], nameIncludes: ["cysteine", "cystine"], targetUnit: "mg" });
+  aminoAcids.GlutamicAcid = pickUsdaNutrient(food, { ids: [1224], nutrientNumbers: ["515"], nameIncludes: ["glutamic acid"], targetUnit: "mg" });
+  aminoAcids.Isoleucine = pickUsdaNutrient(food, { ids: [1212], nutrientNumbers: ["503"], nameIncludes: ["isoleucine"], targetUnit: "mg" });
+  aminoAcids.Leucine = pickUsdaNutrient(food, { ids: [1213], nutrientNumbers: ["504"], nameIncludes: ["leucine"], targetUnit: "mg" });
+  aminoAcids.Lysine = pickUsdaNutrient(food, { ids: [1214], nutrientNumbers: ["505"], nameIncludes: ["lysine"], targetUnit: "mg" });
+  aminoAcids.Methionine = pickUsdaNutrient(food, { ids: [1215], nutrientNumbers: ["506"], nameIncludes: ["methionine"], targetUnit: "mg" });
+  aminoAcids.Proline = pickUsdaNutrient(food, { ids: [1226], nutrientNumbers: ["517"], nameIncludes: ["proline"], targetUnit: "mg" });
+  aminoAcids.Serine = pickUsdaNutrient(food, { ids: [1227], nutrientNumbers: ["518"], nameIncludes: ["serine"], targetUnit: "mg" });
+  aminoAcids.Tyrosine = pickUsdaNutrient(food, { ids: [1218], nutrientNumbers: ["509"], nameIncludes: ["tyrosine"], targetUnit: "mg" });
+  aminoAcids.Threonine = pickUsdaNutrient(food, { ids: [1211], nutrientNumbers: ["502"], nameIncludes: ["threonine"], targetUnit: "mg" });
+  aminoAcids.Tryptophan = pickUsdaNutrient(food, { ids: [1210], nutrientNumbers: ["501"], nameIncludes: ["tryptophan"], targetUnit: "mg" });
+  aminoAcids.Phenylalanine = pickUsdaNutrient(food, { ids: [1217], nutrientNumbers: ["508"], nameIncludes: ["phenylalanine"], targetUnit: "mg" });
+  aminoAcids.Cysteine = pickUsdaNutrient(food, { ids: [1216], nutrientNumbers: ["507"], nameIncludes: ["cysteine", "cystine"], targetUnit: "mg" });
 
   const compactObject = (obj: Record<string, any>) =>
     Object.fromEntries(Object.entries(obj).filter(([, value]) => numberOrZero(value) > 0));
@@ -1311,8 +1354,8 @@ async function startServer() {
             })
           }
         });
-      } else if (!product.micronutrients || product.micronutrients === '{}') {
-        // Update existing product if it lacks micronutrients
+      } else if (!product.micronutrients || product.micronutrients === '{}' || shouldRefreshMicronutrients(product.micronutrients, usdaData)) {
+        // Refresh existing product when micronutrient payload is incomplete.
         product = await prisma.product.update({
           where: { id: product.id },
           data: {
