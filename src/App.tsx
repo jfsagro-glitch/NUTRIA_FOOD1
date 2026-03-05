@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Html5Qrcode } from 'html5-qrcode';
+import type { Html5Qrcode as Html5QrcodeType } from 'html5-qrcode';
 import { 
   Utensils, 
   BarChart3, 
@@ -46,6 +46,8 @@ interface Product {
   vitamins?: Record<string, number>;
   minerals?: Record<string, number>;
   aminoAcids?: Record<string, number>;
+  fattyAcids?: Record<string, number>;
+  carbohydrateTypes?: Record<string, number>;
 }
 
 interface NutrientTotals {
@@ -57,6 +59,21 @@ interface NutrientTotals {
   vitamins: Record<string, number>;
   minerals: Record<string, number>;
   aminoAcids: Record<string, number>;
+  fattyAcids: Record<string, number>;
+  carbohydrateTypes: Record<string, number>;
+}
+
+interface NutrientGoalSet {
+  calories: number;
+  protein: number;
+  fat: number;
+  carbs: number;
+  fiber: number;
+  vitamins: Record<string, number>;
+  minerals: Record<string, number>;
+  aminoAcids: Record<string, number>;
+  fattyAcids: Record<string, number>;
+  carbohydrateTypes: Record<string, number>;
 }
 
 interface MealItem {
@@ -320,22 +337,178 @@ const BottomSheet = ({ isOpen, onClose, children, title }: { isOpen: boolean, on
   );
 };
 
-const DEFAULT_GOALS = { 
+const DEFAULT_GOALS: NutrientGoalSet = {
   calories: 2100, protein: 120, fat: 70, carbs: 250, fiber: 30,
-  vitamins: { 
-    A: 900, C: 90, D: 15, E: 15, K: 120, 
-    B1: 1.2, B2: 1.3, B3: 16, B5: 5, B6: 1.3, B7: 30, B9: 400, B12: 2.4 
+  vitamins: {
+    BetaCarotene: 3000,
+    B1: 1.2,
+    B2: 1.3,
+    B5: 5,
+    B6: 1.7,
+    B9: 400,
+    B12: 2.4,
+    C: 90,
+    A: 900,
+    D: 15,
+    E: 15,
+    K: 120,
+    B3: 16,
+    Biotin: 30,
+    Choline: 550,
   },
-  minerals: { 
-    Calcium: 1000, Iron: 18, Magnesium: 400, Zinc: 11, Potassium: 4700, Sodium: 2300,
-    Phosphorus: 700, Copper: 0.9, Selenium: 55
+  minerals: {
+    Potassium: 4700,
+    Calcium: 1000,
+    Silicon: 30,
+    Magnesium: 400,
+    Sodium: 1500,
+    Sulfur: 500,
+    Phosphorus: 700,
+    Chlorine: 2300,
+    Vanadium: 20,
+    Iron: 18,
+    Iodine: 150,
+    Cobalt: 5,
+    Manganese: 2.3,
+    Copper: 0.9,
+    Molybdenum: 45,
+    Selenium: 55,
+    Chromium: 35,
+    Zinc: 11,
+    Salt: 5000,
   },
-  aminoAcids: { 
-    Leucine: 2730, Isoleucine: 1400, Valine: 1820, Lysine: 2100,
-    Tryptophan: 280, Threonine: 1050, Methionine: 1050, Phenylalanine: 1750,
-    Histidine: 700, Arginine: 5000
-  }
+  aminoAcids: {
+    Alanine: 3000,
+    Arginine: 5000,
+    Asparagine: 3000,
+    AsparticAcid: 6000,
+    Valine: 1820,
+    Histidine: 700,
+    Glycine: 2000,
+    Glutamine: 4000,
+    GlutamicAcid: 10000,
+    Isoleucine: 1400,
+    Leucine: 2730,
+    Lysine: 2100,
+    Methionine: 1050,
+    Proline: 3000,
+    Serine: 2500,
+    Tyrosine: 1500,
+    Threonine: 1050,
+    Tryptophan: 280,
+    Phenylalanine: 1750,
+    Cysteine: 1050,
+  },
+  fattyAcids: {
+    Omega3: 1.6,
+    Omega6: 17,
+    Omega9: 20,
+    TransFats: 2,
+    Cholesterol: 300,
+  },
+  carbohydrateTypes: {
+    Glucose: 25,
+    Fructose: 25,
+    Galactose: 10,
+    Sucrose: 50,
+    Lactose: 20,
+    Maltose: 10,
+    Starch: 130,
+    Fiber: 30,
+  },
 };
+
+const VITAMIN_CONFIG = [
+  { key: 'BetaCarotene', label: 'Бета-каротин', unit: 'mcg' },
+  { key: 'B1', label: 'Витамин B1', unit: 'mg' },
+  { key: 'B2', label: 'Витамин B2', unit: 'mg' },
+  { key: 'B5', label: 'Витамин B5', unit: 'mg' },
+  { key: 'B6', label: 'Витамин B6', unit: 'mg' },
+  { key: 'B9', label: 'Витамин B9', unit: 'mcg' },
+  { key: 'B12', label: 'Витамин B12', unit: 'mcg' },
+  { key: 'C', label: 'Витамин C', unit: 'mg' },
+  { key: 'A', label: 'Витамин A', unit: 'mcg' },
+  { key: 'D', label: 'Витамин D', unit: 'mcg' },
+  { key: 'E', label: 'Витамин E', unit: 'mg' },
+  { key: 'K', label: 'Витамин K', unit: 'mcg' },
+  { key: 'B3', label: 'Витамин B3', unit: 'mg' },
+  { key: 'Biotin', label: 'Биотин', unit: 'mcg' },
+  { key: 'Choline', label: 'Холин', unit: 'mg' },
+];
+
+const MINERAL_CONFIG = [
+  { key: 'Potassium', label: 'Калий', unit: 'mg' },
+  { key: 'Calcium', label: 'Кальций', unit: 'mg' },
+  { key: 'Silicon', label: 'Кремний', unit: 'mg' },
+  { key: 'Magnesium', label: 'Магний', unit: 'mg' },
+  { key: 'Sodium', label: 'Натрий', unit: 'mg' },
+  { key: 'Sulfur', label: 'Сера', unit: 'mg' },
+  { key: 'Phosphorus', label: 'Фосфор', unit: 'mg' },
+  { key: 'Chlorine', label: 'Хлор', unit: 'mg' },
+  { key: 'Vanadium', label: 'Ванадий', unit: 'mcg' },
+  { key: 'Iron', label: 'Железо', unit: 'mg' },
+  { key: 'Iodine', label: 'Йод', unit: 'mcg' },
+  { key: 'Cobalt', label: 'Кобальт', unit: 'mcg' },
+  { key: 'Manganese', label: 'Марганец', unit: 'mg' },
+  { key: 'Copper', label: 'Медь', unit: 'mg' },
+  { key: 'Molybdenum', label: 'Молибден', unit: 'mcg' },
+  { key: 'Selenium', label: 'Селен', unit: 'mcg' },
+  { key: 'Chromium', label: 'Хром', unit: 'mcg' },
+  { key: 'Zinc', label: 'Цинк', unit: 'mg' },
+  { key: 'Salt', label: 'Соль', unit: 'mg' },
+];
+
+const AMINO_CONFIG = [
+  { key: 'Alanine', label: 'Аланин' },
+  { key: 'Arginine', label: 'Аргинин' },
+  { key: 'Asparagine', label: 'Аспарагин' },
+  { key: 'AsparticAcid', label: 'Аспарагиновая кислота' },
+  { key: 'Valine', label: 'Валин' },
+  { key: 'Histidine', label: 'Гистидин' },
+  { key: 'Glycine', label: 'Глицин' },
+  { key: 'Glutamine', label: 'Глутамин' },
+  { key: 'GlutamicAcid', label: 'Глутаминовая кислота' },
+  { key: 'Isoleucine', label: 'Изолейцин' },
+  { key: 'Leucine', label: 'Лейцин' },
+  { key: 'Lysine', label: 'Лизин' },
+  { key: 'Methionine', label: 'Метионин' },
+  { key: 'Proline', label: 'Пролин' },
+  { key: 'Serine', label: 'Серин' },
+  { key: 'Tyrosine', label: 'Тирозин' },
+  { key: 'Threonine', label: 'Треонин' },
+  { key: 'Tryptophan', label: 'Триптофан' },
+  { key: 'Phenylalanine', label: 'Фенилаланин' },
+  { key: 'Cysteine', label: 'Цистеин' },
+];
+
+const FATTY_ACID_CONFIG = [
+  { key: 'Omega3', label: 'Омега-3', unit: 'g' },
+  { key: 'Omega6', label: 'Омега-6', unit: 'g' },
+  { key: 'Omega9', label: 'Омега-9', unit: 'g' },
+  { key: 'TransFats', label: 'Трансжиры', unit: 'g' },
+  { key: 'Cholesterol', label: 'Холестерин', unit: 'mg' },
+];
+
+const CARB_TYPE_CONFIG = [
+  { key: 'Glucose', label: 'Глюкоза', unit: 'g' },
+  { key: 'Fructose', label: 'Фруктоза', unit: 'g' },
+  { key: 'Galactose', label: 'Галактоза', unit: 'g' },
+  { key: 'Sucrose', label: 'Сахароза', unit: 'g' },
+  { key: 'Lactose', label: 'Лактоза', unit: 'g' },
+  { key: 'Maltose', label: 'Мальтоза', unit: 'g' },
+  { key: 'Starch', label: 'Крахмал', unit: 'g' },
+  { key: 'Fiber', label: 'Клетчатка', unit: 'g' },
+];
+
+const mergeGoals = (rawGoals: Partial<NutrientGoalSet> | null | undefined): NutrientGoalSet => ({
+  ...DEFAULT_GOALS,
+  ...(rawGoals || {}),
+  vitamins: { ...DEFAULT_GOALS.vitamins, ...(rawGoals?.vitamins || {}) },
+  minerals: { ...DEFAULT_GOALS.minerals, ...(rawGoals?.minerals || {}) },
+  aminoAcids: { ...DEFAULT_GOALS.aminoAcids, ...(rawGoals?.aminoAcids || {}) },
+  fattyAcids: { ...DEFAULT_GOALS.fattyAcids, ...(rawGoals?.fattyAcids || {}) },
+  carbohydrateTypes: { ...DEFAULT_GOALS.carbohydrateTypes, ...(rawGoals?.carbohydrateTypes || {}) },
+});
 
 // --- Screens ---
 
@@ -351,10 +524,10 @@ const NutrientRow = ({ label, value, goal, unit, colorClass = "bg-emerald-500" }
 
 const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, onUpdateWater }: { data: any, onAddClick: (type: string) => void, hints: Hint[], onHintClick: (cta: string) => void, onDeleteItem: (id: string) => void, onUpdateWater: (amount: number) => void }) => {
   const { meals = [], waterIntake = 0 } = data;
-  const goals = data.goals ? { ...DEFAULT_GOALS, ...data.goals } : DEFAULT_GOALS;
+  const goals = mergeGoals(data.goals);
   const waterGoal = 2500; // 2.5L in ml
 
-  const totals = meals.reduce((acc: NutrientTotals, meal: any) => {
+  const totals = useMemo(() => meals.reduce((acc: NutrientTotals, meal: any) => {
     meal.items.forEach((item: any) => {
       if (!item.product) return;
       const factor = item.amount / 100;
@@ -363,8 +536,7 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
       acc.fat += item.product.fat * factor;
       acc.carbs += item.product.carbs * factor;
       acc.fiber += (item.product.fiber || 0) * factor;
-      
-      // Parse micronutrients if they exist
+
       if (item.product.vitamins) {
         Object.entries(item.product.vitamins).forEach(([k, v]) => {
           acc.vitamins[k] = (acc.vitamins[k] || 0) + (v as number) * factor;
@@ -380,12 +552,22 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
           acc.aminoAcids[k] = (acc.aminoAcids[k] || 0) + (v as number) * factor;
         });
       }
+      if (item.product.fattyAcids) {
+        Object.entries(item.product.fattyAcids).forEach(([k, v]) => {
+          acc.fattyAcids[k] = (acc.fattyAcids[k] || 0) + (v as number) * factor;
+        });
+      }
+      if (item.product.carbohydrateTypes) {
+        Object.entries(item.product.carbohydrateTypes).forEach(([k, v]) => {
+          acc.carbohydrateTypes[k] = (acc.carbohydrateTypes[k] || 0) + (v as number) * factor;
+        });
+      }
     });
     return acc;
-  }, { 
+  }, {
     calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0,
-    vitamins: {}, minerals: {}, aminoAcids: {}
-  });
+    vitamins: {}, minerals: {}, aminoAcids: {}, fattyAcids: {}, carbohydrateTypes: {}
+  }), [meals]);
 
   const mealTypes = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
   const mealLabels: any = { BREAKFAST: 'Завтрак', LUNCH: 'Обед', DINNER: 'Ужин', SNACK: 'Перекус' };
@@ -484,17 +666,11 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
         }
       >
         <div className="space-y-1">
-          <NutrientRow label="Витамин A" value={totals.vitamins['A'] || 0} goal={goals.vitamins['A']} unit="mcg" />
-          <NutrientRow label="Витамин C" value={totals.vitamins['C'] || 0} goal={goals.vitamins['C']} unit="mg" />
-          <NutrientRow label="Витамин D" value={totals.vitamins['D'] || 0} goal={goals.vitamins['D']} unit="mcg" />
-          <NutrientRow label="Витамин E" value={totals.vitamins['E'] || 0} goal={goals.vitamins['E']} unit="mg" />
-          <NutrientRow label="Витамин K" value={totals.vitamins['K'] || 0} goal={goals.vitamins['K']} unit="mcg" />
-          <NutrientRow label="Витамин B1 (Тиамин)" value={totals.vitamins['B1'] || 0} goal={goals.vitamins['B1']} unit="mg" />
-          <NutrientRow label="Витамин B2 (Рибофлавин)" value={totals.vitamins['B2'] || 0} goal={goals.vitamins['B2']} unit="mg" />
-          <NutrientRow label="Витамин B3 (Ниацин)" value={totals.vitamins['B3'] || 0} goal={goals.vitamins['B3']} unit="mg" />
-          <NutrientRow label="Витамин B6" value={totals.vitamins['B6'] || 0} goal={goals.vitamins['B6']} unit="mg" />
-          <NutrientRow label="Витамин B9 (Фолат)" value={totals.vitamins['B9'] || 0} goal={goals.vitamins['B9']} unit="mcg" />
-          <NutrientRow label="Витамин B12" value={totals.vitamins['B12'] || 0} goal={goals.vitamins['B12']} unit="mcg" />
+          {VITAMIN_CONFIG.map(({ key, label, unit }) => (
+            <React.Fragment key={key}>
+              <NutrientRow label={label} value={totals.vitamins[key] || 0} goal={goals.vitamins[key] || 1} unit={unit} />
+            </React.Fragment>
+          ))}
         </div>
       </CollapsibleCard>
 
@@ -514,18 +690,59 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
         }
       >
         <div className="space-y-1">
-          <h4 className="text-[10px] uppercase text-zinc-500 font-bold mb-2 tracking-widest">Электролиты</h4>
-          <NutrientRow label="Калий" value={totals.minerals['Potassium'] || 0} goal={goals.minerals['Potassium']} unit="mg" colorClass="bg-blue-400" />
-          <NutrientRow label="Натрий" value={totals.minerals['Sodium'] || 0} goal={goals.minerals['Sodium']} unit="mg" colorClass="bg-zinc-400" />
-          <NutrientRow label="Магний" value={totals.minerals['Magnesium'] || 0} goal={goals.minerals['Magnesium']} unit="mg" colorClass="bg-purple-400" />
-          
-          <h4 className="text-[10px] uppercase text-zinc-500 font-bold mt-4 mb-2 tracking-widest">Минералы</h4>
-          <NutrientRow label="Кальций" value={totals.minerals['Calcium'] || 0} goal={goals.minerals['Calcium']} unit="mg" />
-          <NutrientRow label="Железо" value={totals.minerals['Iron'] || 0} goal={goals.minerals['Iron']} unit="mg" colorClass="bg-red-400" />
-          <NutrientRow label="Магний" value={totals.minerals['Magnesium'] || 0} goal={goals.minerals['Magnesium']} unit="mg" />
-          <NutrientRow label="Цинк" value={totals.minerals['Zinc'] || 0} goal={goals.minerals['Zinc']} unit="mg" />
-          <NutrientRow label="Фосфор" value={totals.minerals['Phosphorus'] || 0} goal={goals.minerals['Phosphorus']} unit="mg" />
-          <NutrientRow label="Селен" value={totals.minerals['Selenium'] || 0} goal={goals.minerals['Selenium']} unit="mcg" />
+          {MINERAL_CONFIG.map(({ key, label, unit }) => (
+            <React.Fragment key={key}>
+              <NutrientRow label={label} value={totals.minerals[key] || 0} goal={goals.minerals[key] || 1} unit={unit} />
+            </React.Fragment>
+          ))}
+        </div>
+      </CollapsibleCard>
+
+      {/* Жиры (детализация) */}
+      <CollapsibleCard
+        id="fatty"
+        title="Жиры"
+        icon={Zap}
+        collapsedContent={
+          <div className="flex gap-2 overflow-x-auto no-scrollbar">
+            {['Omega3', 'Omega6', 'Omega9'].map((k) => (
+              <div key={k} className="px-2 py-1 bg-zinc-800 rounded text-[10px] text-zinc-400 whitespace-nowrap">
+                {k}: {Math.round((totals.fattyAcids[k] || 0) / (goals.fattyAcids[k] || 1) * 100)}%
+              </div>
+            ))}
+          </div>
+        }
+      >
+        <div className="space-y-1">
+          {FATTY_ACID_CONFIG.map(({ key, label, unit }) => (
+            <React.Fragment key={key}>
+              <NutrientRow label={label} value={totals.fattyAcids[key] || 0} goal={goals.fattyAcids[key] || 1} unit={unit} />
+            </React.Fragment>
+          ))}
+        </div>
+      </CollapsibleCard>
+
+      {/* Углеводы (детализация) */}
+      <CollapsibleCard
+        id="carbtypes"
+        title="Углеводы"
+        icon={Zap}
+        collapsedContent={
+          <div className="flex gap-2 overflow-x-auto no-scrollbar">
+            {['Glucose', 'Fructose', 'Sucrose', 'Starch'].map((k) => (
+              <div key={k} className="px-2 py-1 bg-zinc-800 rounded text-[10px] text-zinc-400 whitespace-nowrap">
+                {k}: {Math.round((totals.carbohydrateTypes[k] || 0) / (goals.carbohydrateTypes[k] || 1) * 100)}%
+              </div>
+            ))}
+          </div>
+        }
+      >
+        <div className="space-y-1">
+          {CARB_TYPE_CONFIG.map(({ key, label, unit }) => (
+            <React.Fragment key={key}>
+              <NutrientRow label={label} value={totals.carbohydrateTypes[key] || 0} goal={goals.carbohydrateTypes[key] || 1} unit={unit} />
+            </React.Fragment>
+          ))}
         </div>
       </CollapsibleCard>
 
@@ -548,16 +765,11 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
             <p className="text-[10px] text-emerald-500 font-bold uppercase mb-1">Nutria Insight</p>
             <p className="text-xs text-zinc-400">Ваш профиль незаменимых аминокислот. Лейцин является ключевым триггером синтеза мышечного белка.</p>
           </div>
-          <NutrientRow label="Лейцин" value={totals.aminoAcids['Leucine'] || 0} goal={goals.aminoAcids['Leucine']} unit="mg" />
-          <NutrientRow label="Изолейцин" value={totals.aminoAcids['Isoleucine'] || 0} goal={goals.aminoAcids['Isoleucine']} unit="mg" />
-          <NutrientRow label="Валин" value={totals.aminoAcids['Valine'] || 0} goal={goals.aminoAcids['Valine']} unit="mg" />
-          <NutrientRow label="Лизин" value={totals.aminoAcids['Lysine'] || 0} goal={goals.aminoAcids['Lysine']} unit="mg" />
-          <NutrientRow label="Треонин" value={totals.aminoAcids['Threonine'] || 0} goal={goals.aminoAcids['Threonine']} unit="mg" />
-          <NutrientRow label="Триптофан" value={totals.aminoAcids['Tryptophan'] || 0} goal={goals.aminoAcids['Tryptophan']} unit="mg" />
-          <NutrientRow label="Метионин" value={totals.aminoAcids['Methionine'] || 0} goal={goals.aminoAcids['Methionine']} unit="mg" />
-          <NutrientRow label="Фенилаланин" value={totals.aminoAcids['Phenylalanine'] || 0} goal={goals.aminoAcids['Phenylalanine']} unit="mg" />
-          <NutrientRow label="Гистидин" value={totals.aminoAcids['Histidine'] || 0} goal={goals.aminoAcids['Histidine']} unit="mg" />
-          <NutrientRow label="Аргинин" value={totals.aminoAcids['Arginine'] || 0} goal={goals.aminoAcids['Arginine']} unit="mg" />
+          {AMINO_CONFIG.map(({ key, label }) => (
+            <React.Fragment key={key}>
+              <NutrientRow label={label} value={totals.aminoAcids[key] || 0} goal={goals.aminoAcids[key] || 1} unit="mg" />
+            </React.Fragment>
+          ))}
         </div>
       </CollapsibleCard>
 
@@ -881,11 +1093,20 @@ export default function App() {
   const [selectedProductForAmount, setSelectedProductForAmount] = useState<Product | null>(null);
   const [foodAmount, setFoodAmount] = useState('100');
   const recognitionRef = useRef<any>(null);
-  const barcodeScannerRef = useRef<Html5Qrcode | null>(null);
+  const barcodeScannerRef = useRef<Html5QrcodeType | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const html5QrcodeModuleRef = useRef<typeof import('html5-qrcode') | null>(null);
   const barcodeHandledRef = useRef(false);
   const fastingNotifiedRef = useRef(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const getHtml5QrcodeModule = async () => {
+    if (!html5QrcodeModuleRef.current) {
+      html5QrcodeModuleRef.current = await import('html5-qrcode');
+    }
+    return html5QrcodeModuleRef.current;
+  };
 
   const generateAI = async (prompt: string, responseMimeType: string = "application/json", image?: { data: string, mimeType: string }): Promise<string> => {
     // Use backend proxy only (Gemini -> DeepSeek -> OpenAI fallback is handled server-side)
@@ -1215,14 +1436,24 @@ export default function App() {
               acc.aminoAcids[k] = (acc.aminoAcids[k] || 0) + (v as number) * factor;
             });
           }
+          if (item.product.fattyAcids) {
+            Object.entries(item.product.fattyAcids).forEach(([k, v]) => {
+              acc.fattyAcids[k] = (acc.fattyAcids[k] || 0) + (v as number) * factor;
+            });
+          }
+          if (item.product.carbohydrateTypes) {
+            Object.entries(item.product.carbohydrateTypes).forEach(([k, v]) => {
+              acc.carbohydrateTypes[k] = (acc.carbohydrateTypes[k] || 0) + (v as number) * factor;
+            });
+          }
         });
         return acc;
       }, { 
         calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0,
-        vitamins: {}, minerals: {}, aminoAcids: {}
+        vitamins: {}, minerals: {}, aminoAcids: {}, fattyAcids: {}, carbohydrateTypes: {}
       });
 
-      const goals = data.goals ? { ...DEFAULT_GOALS, ...data.goals } : DEFAULT_GOALS;
+      const goals = mergeGoals(data.goals);
 
       const prompt = `
         User current nutrition today:
@@ -1233,6 +1464,8 @@ export default function App() {
         Fiber: ${totals.fiber}/${goals.fiber}
         Vitamins: ${JSON.stringify(totals.vitamins)}
         Minerals: ${JSON.stringify(totals.minerals)}
+        Fatty Acids: ${JSON.stringify(totals.fattyAcids)}
+        Carbohydrate Types: ${JSON.stringify(totals.carbohydrateTypes)}
         Amino Acids: ${JSON.stringify(totals.aminoAcids)}
 
         Generate 2-3 short, actionable nutrition hints in Russian. 
@@ -1252,30 +1485,54 @@ export default function App() {
     }
   };
 
-  const handleSearch = async (val: string) => {
+  const handleSearch = (val: string) => {
     setSearchQuery(val);
+  };
+
+  useEffect(() => {
+    const val = searchQuery.trim();
+
+    if (searchAbortRef.current) {
+      searchAbortRef.current.abort();
+      searchAbortRef.current = null;
+    }
+
     if (val.length < 2) {
       setSearchResults([]);
+      setIsSearching(false);
       return;
     }
-    setIsSearching(true);
-    try {
-      const res = await fetch(`/api/products/search?q=${encodeURIComponent(val)}`);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        console.warn('Search error:', err);
-        setSearchResults([]);
-        return;
+
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const res = await fetch(`/api/products/search?q=${encodeURIComponent(val)}`, { signal: controller.signal });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          console.warn('Search error:', err);
+          setSearchResults([]);
+          return;
+        }
+        const data = await res.json();
+        setSearchResults(Array.isArray(data) ? data : []);
+      } catch (e: any) {
+        if (e?.name !== 'AbortError') {
+          console.error(e);
+          setSearchResults([]);
+        }
+      } finally {
+        setIsSearching(false);
       }
-      const data = await res.json();
-      setSearchResults(Array.isArray(data) ? data : []);
-    } catch (e) {
-      console.error(e);
-      setSearchResults([]);
-    } finally {
-      setIsSearching(false);
-    }
-  };
+    }, 280);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchQuery]);
 
   const addFood = async (productId: string, amount: number, usdaData?: Product) => {
     try {
@@ -1567,6 +1824,7 @@ Rules:
 
         readerEl.innerHTML = '';
 
+        const { Html5Qrcode } = await getHtml5QrcodeModule();
         const scanner = new Html5Qrcode('barcode-reader');
         barcodeScannerRef.current = scanner;
         barcodeHandledRef.current = false;

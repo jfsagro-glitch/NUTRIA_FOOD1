@@ -36,11 +36,13 @@ const DEMO_USER = { id: DEMO_USER_ID, email: "user@nutria.app", role: "USER" };
 const DEMO_GOALS = { calories: 2100, protein: 120, fat: 70, carbs: 250, fiber: 30 };
 const inMemoryDiary = new Map<string, { meals: any[]; goals: typeof DEMO_GOALS; waterIntake: number }>();
 const barcodeLookupCache = new Map<string, { expiresAt: number; product: any }>();
+const productSearchCache = new Map<string, { expiresAt: number; results: any[] }>();
 
 const BARCODE_PREFERRED_COUNTRY = (process.env.BARCODE_PREFERRED_COUNTRY || "ru").toLowerCase();
 const BARCODE_PREFERRED_LANG = (process.env.BARCODE_PREFERRED_LANG || "ru").toLowerCase();
 const BARCODE_LOOKUP_TIMEOUT_MS = Number(process.env.BARCODE_LOOKUP_TIMEOUT_MS || 3500);
 const BARCODE_CACHE_TTL_MS = Number(process.env.BARCODE_CACHE_TTL_MS || 1000 * 60 * 60 * 6);
+const PRODUCT_SEARCH_CACHE_TTL_MS = Number(process.env.PRODUCT_SEARCH_CACHE_TTL_MS || 1000 * 60 * 10);
 
 function getOrCreateInMemoryDiary(userId: string) {
   if (!inMemoryDiary.has(userId)) {
@@ -100,9 +102,254 @@ function cacheBarcodeProduct(candidates: string[], product: any) {
   }
 }
 
+function getCachedProductSearch(query: string) {
+  const key = String(query || "").trim().toLowerCase();
+  if (!key) return null;
+  const cached = productSearchCache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    productSearchCache.delete(key);
+    return null;
+  }
+  return cached.results;
+}
+
+function cacheProductSearch(query: string, results: any[]) {
+  const key = String(query || "").trim().toLowerCase();
+  if (!key) return;
+  productSearchCache.set(key, {
+    expiresAt: Date.now() + PRODUCT_SEARCH_CACHE_TTL_MS,
+    results,
+  });
+}
+
 function numberOrZero(value: any) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeUnitName(unit: any) {
+  return String(unit || "").trim().toLowerCase();
+}
+
+function convertNutrientUnit(value: number, fromUnitRaw: any, targetUnitRaw: "mg" | "mcg" | "g") {
+  const fromUnit = normalizeUnitName(fromUnitRaw);
+  const targetUnit = normalizeUnitName(targetUnitRaw);
+  if (!Number.isFinite(value)) return 0;
+
+  if (!fromUnit || fromUnit === targetUnit) return value;
+
+  if (fromUnit === "g") {
+    if (targetUnit === "mg") return value * 1000;
+    if (targetUnit === "mcg") return value * 1_000_000;
+  }
+
+  if (fromUnit === "mg") {
+    if (targetUnit === "g") return value / 1000;
+    if (targetUnit === "mcg") return value * 1000;
+  }
+
+  if (fromUnit === "mcg" || fromUnit === "ug" || fromUnit === "µg") {
+    if (targetUnit === "mg") return value / 1000;
+    if (targetUnit === "g") return value / 1_000_000;
+  }
+
+  if (fromUnit === "iu") {
+    // Keep value as-is for IU when no robust conversion context is available.
+    return value;
+  }
+
+  return value;
+}
+
+function pickUsdaNutrient(
+  food: any,
+  options: {
+    ids?: number[];
+    nutrientNumbers?: string[];
+    nameIncludes?: string[];
+    targetUnit?: "mg" | "mcg" | "g";
+  }
+) {
+  const nutrients = Array.isArray(food?.foodNutrients) ? food.foodNutrients : [];
+  const idSet = new Set((options.ids || []).map((v) => Number(v)));
+  const numSet = new Set((options.nutrientNumbers || []).map((v) => String(v).trim()));
+  const names = (options.nameIncludes || []).map((v) => String(v).toLowerCase());
+
+  const hit = nutrients.find((n: any) => {
+    const id = Number(n?.nutrientId);
+    const num = String(n?.nutrientNumber || "").trim();
+    const name = String(n?.nutrientName || n?.name || "").toLowerCase();
+
+    if (idSet.size > 0 && idSet.has(id)) return true;
+    if (numSet.size > 0 && numSet.has(num)) return true;
+    if (names.length > 0 && names.some((part) => name.includes(part))) return true;
+    return false;
+  });
+
+  if (!hit) return 0;
+
+  const raw = numberOrZero(hit?.value);
+  if (!raw) return 0;
+  if (!options.targetUnit) return raw;
+  return convertNutrientUnit(raw, hit?.unitName, options.targetUnit);
+}
+
+function extractUsdaExtendedNutrients(food: any) {
+  const vitamins: any = {};
+  const minerals: any = {};
+  const aminoAcids: any = {};
+  const fattyAcids: any = {};
+  const carbohydrateTypes: any = {};
+
+  vitamins.BetaCarotene = pickUsdaNutrient(food, {
+    ids: [1107],
+    nutrientNumbers: ["321", "334"],
+    nameIncludes: ["beta-carotene", "carotene, beta"],
+    targetUnit: "mcg"
+  });
+  vitamins.B1 = pickUsdaNutrient(food, { ids: [1165], nutrientNumbers: ["404"], nameIncludes: ["thiamin", "vitamin b-1"], targetUnit: "mg" });
+  vitamins.B2 = pickUsdaNutrient(food, { ids: [1166], nutrientNumbers: ["405"], nameIncludes: ["riboflavin", "vitamin b-2"], targetUnit: "mg" });
+  vitamins.B5 = pickUsdaNutrient(food, { ids: [1170], nutrientNumbers: ["410"], nameIncludes: ["pantothenic"], targetUnit: "mg" });
+  vitamins.B6 = pickUsdaNutrient(food, { ids: [1175], nutrientNumbers: ["415"], nameIncludes: ["vitamin b-6", "pyridoxine"], targetUnit: "mg" });
+  vitamins.B9 = pickUsdaNutrient(food, { ids: [1177], nutrientNumbers: ["417"], nameIncludes: ["folate"], targetUnit: "mcg" });
+  vitamins.B12 = pickUsdaNutrient(food, { ids: [1178], nutrientNumbers: ["418"], nameIncludes: ["vitamin b-12", "cobalamin"], targetUnit: "mcg" });
+  vitamins.C = pickUsdaNutrient(food, { ids: [1162], nutrientNumbers: ["401"], nameIncludes: ["vitamin c", "ascorbic acid"], targetUnit: "mg" });
+  vitamins.A = pickUsdaNutrient(food, { ids: [1104], nutrientNumbers: ["320"], nameIncludes: ["vitamin a"], targetUnit: "mcg" });
+  vitamins.D = pickUsdaNutrient(food, { ids: [1114], nutrientNumbers: ["324", "328"], nameIncludes: ["vitamin d"], targetUnit: "mcg" });
+  vitamins.E = pickUsdaNutrient(food, { ids: [1109], nutrientNumbers: ["323"], nameIncludes: ["vitamin e", "tocopherol"], targetUnit: "mg" });
+  vitamins.K = pickUsdaNutrient(food, { ids: [1185], nutrientNumbers: ["430"], nameIncludes: ["vitamin k"], targetUnit: "mcg" });
+  vitamins.B3 = pickUsdaNutrient(food, { ids: [1167], nutrientNumbers: ["406"], nameIncludes: ["niacin", "vitamin b-3"], targetUnit: "mg" });
+  vitamins.Biotin = pickUsdaNutrient(food, { ids: [1176], nutrientNumbers: ["416"], nameIncludes: ["biotin", "vitamin b-7"], targetUnit: "mcg" });
+  vitamins.Choline = pickUsdaNutrient(food, { ids: [1180], nutrientNumbers: ["421", "326"], nameIncludes: ["choline"], targetUnit: "mg" });
+
+  minerals.Potassium = pickUsdaNutrient(food, { ids: [1092], nutrientNumbers: ["306"], nameIncludes: ["potassium"], targetUnit: "mg" });
+  minerals.Calcium = pickUsdaNutrient(food, { ids: [1087], nutrientNumbers: ["301"], nameIncludes: ["calcium"], targetUnit: "mg" });
+  minerals.Silicon = pickUsdaNutrient(food, { nameIncludes: ["silicon"], targetUnit: "mg" });
+  minerals.Magnesium = pickUsdaNutrient(food, { ids: [1090], nutrientNumbers: ["304"], nameIncludes: ["magnesium"], targetUnit: "mg" });
+  minerals.Sodium = pickUsdaNutrient(food, { ids: [1093], nutrientNumbers: ["307"], nameIncludes: ["sodium"], targetUnit: "mg" });
+  minerals.Sulfur = pickUsdaNutrient(food, { nameIncludes: ["sulfur", "sulphur"], targetUnit: "mg" });
+  minerals.Phosphorus = pickUsdaNutrient(food, { ids: [1091], nutrientNumbers: ["305"], nameIncludes: ["phosphorus"], targetUnit: "mg" });
+  minerals.Chlorine = pickUsdaNutrient(food, { nameIncludes: ["chloride", "chlorine"], targetUnit: "mg" });
+  minerals.Vanadium = pickUsdaNutrient(food, { nameIncludes: ["vanadium"], targetUnit: "mcg" });
+  minerals.Iron = pickUsdaNutrient(food, { ids: [1089], nutrientNumbers: ["303"], nameIncludes: ["iron"], targetUnit: "mg" });
+  minerals.Iodine = pickUsdaNutrient(food, { ids: [1100], nutrientNumbers: ["314"], nameIncludes: ["iodine"], targetUnit: "mcg" });
+  minerals.Cobalt = pickUsdaNutrient(food, { nameIncludes: ["cobalt"], targetUnit: "mcg" });
+  minerals.Manganese = pickUsdaNutrient(food, { ids: [1101], nutrientNumbers: ["315"], nameIncludes: ["manganese"], targetUnit: "mg" });
+  minerals.Copper = pickUsdaNutrient(food, { ids: [1098], nutrientNumbers: ["312"], nameIncludes: ["copper"], targetUnit: "mg" });
+  minerals.Molybdenum = pickUsdaNutrient(food, { ids: [1102], nutrientNumbers: ["316"], nameIncludes: ["molybdenum"], targetUnit: "mcg" });
+  minerals.Selenium = pickUsdaNutrient(food, { ids: [1103], nutrientNumbers: ["317"], nameIncludes: ["selenium"], targetUnit: "mcg" });
+  minerals.Chromium = pickUsdaNutrient(food, { ids: [1096], nameIncludes: ["chromium"], targetUnit: "mcg" });
+  minerals.Zinc = pickUsdaNutrient(food, { ids: [1095], nutrientNumbers: ["309"], nameIncludes: ["zinc"], targetUnit: "mg" });
+
+  const sodiumMg = numberOrZero(minerals.Sodium);
+  if (sodiumMg > 0) {
+    minerals.Salt = sodiumMg * 2.5;
+  }
+
+  fattyAcids.Omega3 = pickUsdaNutrient(food, {
+    ids: [1272],
+    nutrientNumbers: ["629"],
+    nameIncludes: ["omega-3", "18:3 n-3", "22:6 n-3", "20:5 n-3"],
+    targetUnit: "g"
+  });
+  fattyAcids.Omega6 = pickUsdaNutrient(food, {
+    ids: [1277],
+    nutrientNumbers: ["672"],
+    nameIncludes: ["omega-6", "18:2 n-6", "20:4 n-6"],
+    targetUnit: "g"
+  });
+  fattyAcids.Omega9 = pickUsdaNutrient(food, {
+    nutrientNumbers: ["645"],
+    nameIncludes: ["omega-9", "monounsaturated", "18:1"],
+    targetUnit: "g"
+  });
+  fattyAcids.TransFats = pickUsdaNutrient(food, {
+    ids: [1257],
+    nutrientNumbers: ["605"],
+    nameIncludes: ["fatty acids, total trans", "trans"],
+    targetUnit: "g"
+  });
+  fattyAcids.Cholesterol = pickUsdaNutrient(food, {
+    ids: [1253],
+    nutrientNumbers: ["601"],
+    nameIncludes: ["cholesterol"],
+    targetUnit: "mg"
+  });
+
+  carbohydrateTypes.Glucose = pickUsdaNutrient(food, {
+    nutrientNumbers: ["2114"],
+    nameIncludes: ["glucose", "dextrose"],
+    targetUnit: "g"
+  });
+  carbohydrateTypes.Fructose = pickUsdaNutrient(food, {
+    nutrientNumbers: ["2124"],
+    nameIncludes: ["fructose"],
+    targetUnit: "g"
+  });
+  carbohydrateTypes.Galactose = pickUsdaNutrient(food, {
+    nutrientNumbers: ["2117"],
+    nameIncludes: ["galactose"],
+    targetUnit: "g"
+  });
+  carbohydrateTypes.Sucrose = pickUsdaNutrient(food, {
+    nutrientNumbers: ["2100"],
+    nameIncludes: ["sucrose"],
+    targetUnit: "g"
+  });
+  carbohydrateTypes.Lactose = pickUsdaNutrient(food, {
+    nutrientNumbers: ["2134"],
+    nameIncludes: ["lactose"],
+    targetUnit: "g"
+  });
+  carbohydrateTypes.Maltose = pickUsdaNutrient(food, {
+    nutrientNumbers: ["2145"],
+    nameIncludes: ["maltose"],
+    targetUnit: "g"
+  });
+  carbohydrateTypes.Starch = pickUsdaNutrient(food, {
+    nutrientNumbers: ["2098"],
+    nameIncludes: ["starch"],
+    targetUnit: "g"
+  });
+  carbohydrateTypes.Fiber = pickUsdaNutrient(food, {
+    ids: [1079],
+    nutrientNumbers: ["291"],
+    nameIncludes: ["fiber", "dietary fiber"],
+    targetUnit: "g"
+  });
+
+  aminoAcids.Alanine = pickUsdaNutrient(food, { ids: [1222], nameIncludes: ["alanine"], targetUnit: "mg" });
+  aminoAcids.Arginine = pickUsdaNutrient(food, { ids: [1220], nameIncludes: ["arginine"], targetUnit: "mg" });
+  aminoAcids.Asparagine = pickUsdaNutrient(food, { nameIncludes: ["asparagine"], targetUnit: "mg" });
+  aminoAcids.AsparticAcid = pickUsdaNutrient(food, { ids: [1223], nameIncludes: ["aspartic acid"], targetUnit: "mg" });
+  aminoAcids.Valine = pickUsdaNutrient(food, { ids: [1219], nameIncludes: ["valine"], targetUnit: "mg" });
+  aminoAcids.Histidine = pickUsdaNutrient(food, { ids: [1221], nameIncludes: ["histidine"], targetUnit: "mg" });
+  aminoAcids.Glycine = pickUsdaNutrient(food, { ids: [1225], nameIncludes: ["glycine"], targetUnit: "mg" });
+  aminoAcids.Glutamine = pickUsdaNutrient(food, { nameIncludes: ["glutamine"], targetUnit: "mg" });
+  aminoAcids.GlutamicAcid = pickUsdaNutrient(food, { ids: [1224], nameIncludes: ["glutamic acid"], targetUnit: "mg" });
+  aminoAcids.Isoleucine = pickUsdaNutrient(food, { ids: [1212], nameIncludes: ["isoleucine"], targetUnit: "mg" });
+  aminoAcids.Leucine = pickUsdaNutrient(food, { ids: [1213], nameIncludes: ["leucine"], targetUnit: "mg" });
+  aminoAcids.Lysine = pickUsdaNutrient(food, { ids: [1214], nameIncludes: ["lysine"], targetUnit: "mg" });
+  aminoAcids.Methionine = pickUsdaNutrient(food, { ids: [1215], nameIncludes: ["methionine"], targetUnit: "mg" });
+  aminoAcids.Proline = pickUsdaNutrient(food, { ids: [1226], nameIncludes: ["proline"], targetUnit: "mg" });
+  aminoAcids.Serine = pickUsdaNutrient(food, { ids: [1227], nameIncludes: ["serine"], targetUnit: "mg" });
+  aminoAcids.Tyrosine = pickUsdaNutrient(food, { ids: [1218], nameIncludes: ["tyrosine"], targetUnit: "mg" });
+  aminoAcids.Threonine = pickUsdaNutrient(food, { ids: [1211], nameIncludes: ["threonine"], targetUnit: "mg" });
+  aminoAcids.Tryptophan = pickUsdaNutrient(food, { ids: [1210], nameIncludes: ["tryptophan"], targetUnit: "mg" });
+  aminoAcids.Phenylalanine = pickUsdaNutrient(food, { ids: [1217], nameIncludes: ["phenylalanine"], targetUnit: "mg" });
+  aminoAcids.Cysteine = pickUsdaNutrient(food, { ids: [1216], nameIncludes: ["cysteine", "cystine"], targetUnit: "mg" });
+
+  const compactObject = (obj: Record<string, any>) =>
+    Object.fromEntries(Object.entries(obj).filter(([, value]) => numberOrZero(value) > 0));
+
+  return {
+    vitamins: compactObject(vitamins),
+    minerals: compactObject(minerals),
+    aminoAcids: compactObject(aminoAcids),
+    fattyAcids: compactObject(fattyAcids),
+    carbohydrateTypes: compactObject(carbohydrateTypes),
+  };
 }
 
 function normalizeOpenFoodFactsProduct(rawProduct: any, barcode: string) {
@@ -425,6 +672,11 @@ async function startServer() {
       if (!q) return res.json([]);
 
       const query = String(q).trim();
+      const cachedSearch = getCachedProductSearch(query);
+      if (cachedSearch) {
+        return res.json(cachedSearch);
+      }
+
       const dbReady = isDatabaseConfigured();
     
     // Stage A: Normalization & Translation (using Gemini)
@@ -494,56 +746,9 @@ async function startServer() {
         if (response.ok) {
           const data: any = await response.json();
           usdaProducts = (data.foods || []).map((f: any) => {
-            const getNutrient = (id: number) => f.foodNutrients?.find((n: any) => n.nutrientId === id || n.nutrientNumber === String(id))?.value || 0;
-            const getNutrientMg = (id: number) => (f.foodNutrients?.find((n: any) => n.nutrientId === id || n.nutrientNumber === String(id))?.value || 0) * 1000;
-            
-            const vitamins: any = {};
-            const minerals: any = {};
-            const aminoAcids: any = {};
-            
-            // Mapping
-            if (getNutrient(1104)) vitamins.A = getNutrient(1104);
-            if (getNutrient(1162)) vitamins.C = getNutrient(1162);
-            if (getNutrient(1114)) vitamins.D = getNutrient(1114);
-            if (getNutrient(1109)) vitamins.E = getNutrient(1109);
-            if (getNutrient(1185)) vitamins.K = getNutrient(1185);
-            if (getNutrient(1165)) vitamins.B1 = getNutrient(1165);
-            if (getNutrient(1166)) vitamins.B2 = getNutrient(1166);
-            if (getNutrient(1167)) vitamins.B3 = getNutrient(1167);
-            if (getNutrient(1170)) vitamins.B5 = getNutrient(1170);
-            if (getNutrient(1175)) vitamins.B6 = getNutrient(1175);
-            if (getNutrient(1176)) vitamins.B7 = getNutrient(1176);
-            if (getNutrient(1177)) vitamins.B9 = getNutrient(1177);
-            if (getNutrient(1178)) vitamins.B12 = getNutrient(1178);
-            
-            if (getNutrient(1087)) minerals.Calcium = getNutrient(1087);
-            if (getNutrient(1089)) minerals.Iron = getNutrient(1089);
-            if (getNutrient(1090)) minerals.Magnesium = getNutrient(1090);
-            if (getNutrient(1091)) minerals.Phosphorus = getNutrient(1091);
-            if (getNutrient(1092)) minerals.Potassium = getNutrient(1092);
-            if (getNutrient(1093)) minerals.Sodium = getNutrient(1093);
-            if (getNutrient(1095)) minerals.Zinc = getNutrient(1095);
-            if (getNutrient(1098)) minerals.Copper = getNutrient(1098);
-            if (getNutrient(1103)) minerals.Selenium = getNutrient(1103);
-
-            if (getNutrientMg(1210)) aminoAcids.Tryptophan = getNutrientMg(1210);
-            if (getNutrientMg(1211)) aminoAcids.Threonine = getNutrientMg(1211);
-            if (getNutrientMg(1212)) aminoAcids.Isoleucine = getNutrientMg(1212);
-            if (getNutrientMg(1213)) aminoAcids.Leucine = getNutrientMg(1213);
-            if (getNutrientMg(1214)) aminoAcids.Lysine = getNutrientMg(1214);
-            if (getNutrientMg(1215)) aminoAcids.Methionine = getNutrientMg(1215);
-            if (getNutrientMg(1216)) aminoAcids.Cystine = getNutrientMg(1216);
-            if (getNutrientMg(1217)) aminoAcids.Phenylalanine = getNutrientMg(1217);
-            if (getNutrientMg(1218)) aminoAcids.Tyrosine = getNutrientMg(1218);
-            if (getNutrientMg(1219)) aminoAcids.Valine = getNutrientMg(1219);
-            if (getNutrientMg(1220)) aminoAcids.Arginine = getNutrientMg(1220);
-            if (getNutrientMg(1221)) aminoAcids.Histidine = getNutrientMg(1221);
-            if (getNutrientMg(1222)) aminoAcids.Alanine = getNutrientMg(1222);
-            if (getNutrientMg(1223)) aminoAcids.AsparticAcid = getNutrientMg(1223);
-            if (getNutrientMg(1224)) aminoAcids.GlutamicAcid = getNutrientMg(1224);
-            if (getNutrientMg(1225)) aminoAcids.Glycine = getNutrientMg(1225);
-            if (getNutrientMg(1226)) aminoAcids.Proline = getNutrientMg(1226);
-            if (getNutrientMg(1227)) aminoAcids.Serine = getNutrientMg(1227);
+            const getNutrient = (id: number) =>
+              f.foodNutrients?.find((n: any) => n.nutrientId === id || n.nutrientNumber === String(id))?.value || 0;
+            const extended = extractUsdaExtendedNutrients(f);
 
             return {
               id: `usda-${f.fdcId}`,
@@ -554,9 +759,11 @@ async function startServer() {
               fat: getNutrient(1004) || getNutrient(204),
               carbs: getNutrient(1005) || getNutrient(205),
               fiber: getNutrient(1079) || getNutrient(291),
-              vitamins,
-              minerals,
-              aminoAcids,
+              vitamins: extended.vitamins,
+              minerals: extended.minerals,
+              aminoAcids: extended.aminoAcids,
+              fattyAcids: extended.fattyAcids,
+              carbohydrateTypes: extended.carbohydrateTypes,
               isUsda: true,
               fdcId: f.fdcId,
               source: 'usda'
@@ -623,10 +830,15 @@ async function startServer() {
             "fiber": number,
             "vitamins": { "C": number, ... },
             "minerals": { "Iron": number, ... },
-            "aminoAcids": { "Leucine": number, "Isoleucine": number, "Valine": number, "Lysine": number, "Threonine": number, "Tryptophan": number, "Methionine": number, "Phenylalanine": number, "Histidine": number, "Arginine": number },
+            "fattyAcids": { "Omega3": number, "Omega6": number, "Omega9": number, "TransFats": number, "Cholesterol": number },
+            "carbohydrateTypes": { "Glucose": number, "Fructose": number, "Galactose": number, "Sucrose": number, "Lactose": number, "Maltose": number, "Starch": number, "Fiber": number },
+            "aminoAcids": { "Alanine": number, "Arginine": number, "Asparagine": number, "AsparticAcid": number, "Valine": number, "Histidine": number, "Glycine": number, "Glutamine": number, "GlutamicAcid": number, "Isoleucine": number, "Leucine": number, "Lysine": number, "Methionine": number, "Proline": number, "Serine": number, "Tyrosine": number, "Threonine": number, "Tryptophan": number, "Phenylalanine": number, "Cysteine": number },
             "explanation": "Briefly why these values"
           }
-          IMPORTANT: Amino acid values MUST be in milligrams (mg) per 100g.`);
+          IMPORTANT:
+          - aminoAcids values are in milligrams (mg) per 100g
+          - fattyAcids values are in grams (g) per 100g, except Cholesterol in mg
+          - carbohydrateTypes values are in grams (g) per 100g`);
         const estData = JSON.parse(estimateResponseText || '{}');
         if (estData.name) {
           finalResults.unshift({
@@ -641,6 +853,8 @@ async function startServer() {
             vitamins: estData.vitamins || {},
             minerals: estData.minerals || {},
             aminoAcids: estData.aminoAcids || {},
+            fattyAcids: estData.fattyAcids || {},
+            carbohydrateTypes: estData.carbohydrateTypes || {},
             isAiEstimated: true,
             explanation: estData.explanation,
             matchScore: 0.95,
@@ -676,7 +890,9 @@ async function startServer() {
       }
     }
 
-      res.json(finalResults.slice(0, 10));
+      const responseResults = finalResults.slice(0, 10);
+      cacheProductSearch(query, responseResults);
+      res.json(responseResults);
     } catch (e: any) {
       console.error("Products Search Error:", e);
       res.status(500).json({ error: "Products search failed", message: e.message });
@@ -875,7 +1091,9 @@ async function startServer() {
             micronutrients: JSON.stringify({
               vitamins: usdaData.vitamins || {},
               minerals: usdaData.minerals || {},
-              aminoAcids: usdaData.aminoAcids || {}
+              aminoAcids: usdaData.aminoAcids || {},
+              fattyAcids: usdaData.fattyAcids || {},
+              carbohydrateTypes: usdaData.carbohydrateTypes || {}
             })
           }
         });
@@ -887,7 +1105,9 @@ async function startServer() {
             micronutrients: JSON.stringify({
               vitamins: usdaData.vitamins || {},
               minerals: usdaData.minerals || {},
-              aminoAcids: usdaData.aminoAcids || {}
+              aminoAcids: usdaData.aminoAcids || {},
+              fattyAcids: usdaData.fattyAcids || {},
+              carbohydrateTypes: usdaData.carbohydrateTypes || {}
             })
           }
         });
@@ -972,6 +1192,7 @@ async function startServer() {
               if (usdaData.foods && usdaData.foods.length > 0) {
                 const f = usdaData.foods[0];
                 const getNutrient = (id: number) => f.foodNutrients?.find((n: any) => n.nutrientId === id || n.nutrientNumber === String(id))?.value || 0;
+                const extended = extractUsdaExtendedNutrients(f);
                 return {
                   ...item,
                   product: {
@@ -983,6 +1204,11 @@ async function startServer() {
                     fat: getNutrient(1004) || getNutrient(204),
                     carbs: getNutrient(1005) || getNutrient(205),
                     fiber: getNutrient(1079) || getNutrient(291),
+                    vitamins: extended.vitamins,
+                    minerals: extended.minerals,
+                    aminoAcids: extended.aminoAcids,
+                    fattyAcids: extended.fattyAcids,
+                    carbohydrateTypes: extended.carbohydrateTypes,
                     source: 'usda',
                     isUsda: true
                   }
@@ -994,9 +1220,25 @@ async function startServer() {
 
         // If still no product, use AI to estimate
         try {
-          const estText = await generateAI(`Estimate nutritional values for 100g of "${item.name}". 
-            Return JSON: { "calories": number, "protein": number, "fat": number, "carbs": number, "fiber": number, "aminoAcids": { "Leucine": number, "Isoleucine": number, "Valine": number, "Lysine": number, "Threonine": number, "Tryptophan": number, "Methionine": number, "Phenylalanine": number, "Histidine": number, "Arginine": number }, "explanation": "string" }
-            IMPORTANT: Amino acid values MUST be in milligrams (mg) per 100g.`);
+          const estText = await generateAI(`Estimate nutritional values for 100g of "${item.name}".
+            Return JSON:
+            {
+              "calories": number,
+              "protein": number,
+              "fat": number,
+              "carbs": number,
+              "fiber": number,
+              "vitamins": { "BetaCarotene": number, "B1": number, "B2": number, "B5": number, "B6": number, "B9": number, "B12": number, "C": number, "A": number, "D": number, "E": number, "K": number, "B3": number, "Biotin": number, "Choline": number },
+              "minerals": { "Potassium": number, "Calcium": number, "Silicon": number, "Magnesium": number, "Sodium": number, "Sulfur": number, "Phosphorus": number, "Chlorine": number, "Vanadium": number, "Iron": number, "Iodine": number, "Cobalt": number, "Manganese": number, "Copper": number, "Molybdenum": number, "Selenium": number, "Chromium": number, "Zinc": number, "Salt": number },
+              "fattyAcids": { "Omega3": number, "Omega6": number, "Omega9": number, "TransFats": number, "Cholesterol": number },
+              "carbohydrateTypes": { "Glucose": number, "Fructose": number, "Galactose": number, "Sucrose": number, "Lactose": number, "Maltose": number, "Starch": number, "Fiber": number },
+              "aminoAcids": { "Alanine": number, "Arginine": number, "Asparagine": number, "AsparticAcid": number, "Valine": number, "Histidine": number, "Glycine": number, "Glutamine": number, "GlutamicAcid": number, "Isoleucine": number, "Leucine": number, "Lysine": number, "Methionine": number, "Proline": number, "Serine": number, "Tyrosine": number, "Threonine": number, "Tryptophan": number, "Phenylalanine": number, "Cysteine": number },
+              "explanation": "string"
+            }
+            IMPORTANT:
+            - aminoAcids are in mg per 100g
+            - fattyAcids are in g per 100g, except Cholesterol in mg
+            - carbohydrateTypes are in g per 100g`);
           const est = JSON.parse(estText || '{}');
           return {
             ...item,
@@ -1009,6 +1251,11 @@ async function startServer() {
               fat: est.fat || 0,
               carbs: est.carbs || 0,
               fiber: est.fiber || 0,
+              vitamins: est.vitamins || {},
+              minerals: est.minerals || {},
+              aminoAcids: est.aminoAcids || {},
+              fattyAcids: est.fattyAcids || {},
+              carbohydrateTypes: est.carbohydrateTypes || {},
               isAiEstimated: true,
               explanation: est.explanation,
               source: 'ai'
