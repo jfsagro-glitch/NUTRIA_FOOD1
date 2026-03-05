@@ -60,7 +60,7 @@
 
 /* Light theme overrides */
 .theme-light body {
-  background: #f6f1e6 !important;
+  background: #f7f1e6 !important;
   color: #1f1b14 !important;
 }
 
@@ -68,13 +68,13 @@
 .theme-light [class*="bg-zinc-950"],
 .theme-light [class*="bg-zinc-900"],
 .theme-light [class*="bg-zinc-800"] {
-  background-color: #fffaf0 !important;
+  background-color: #fdf7ed !important;
 }
 
 .theme-light [class*="border-zinc-900"],
 .theme-light [class*="border-zinc-800"],
 .theme-light [class*="border-zinc-700"] {
-  border-color: #e2d6bf !important;
+  border-color: #e7dac2 !important;
 }
 
 .theme-light [class*="text-zinc-100"],
@@ -90,9 +90,9 @@
 }
 
 .theme-light ::-webkit-scrollbar-track {
-  background: #efe5d3;
+  background: #f1e7d7;
 }
 
 .theme-light ::-webkit-scrollbar-thumb {
-  background: #cdbb99;
+  background: #d3c29f;
 }
