@@ -20,7 +20,9 @@ import {
   Trash2,
   Mic,
   MicOff,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -125,6 +127,8 @@ interface Hint {
   cta?: string;
 }
 
+type ThemeMode = 'light' | 'dark';
+
 type FastingMode = 'OFF' | '16:8' | '18:6' | 'CUSTOM';
 
 const FASTING_PRESETS: Record<FastingMode, { label: string; fastingHours: number; eatingHours: number }> = {
@@ -135,6 +139,7 @@ const FASTING_PRESETS: Record<FastingMode, { label: string; fastingHours: number
 };
 
 const FASTING_STATE_STORAGE_KEY = 'nutria_fasting_timer_v1';
+const THEME_MODE_STORAGE_KEY = 'nutria_theme_mode_v1';
 
 const formatDurationShort = (ms: number) => {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -1211,13 +1216,6 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
           })}
         </div>
 
-        <button 
-          onClick={() => onAddClick('SNACK')}
-          className="w-full mt-6 py-4 bg-zinc-900 border border-zinc-800 rounded-2xl flex items-center justify-center gap-2 text-zinc-400 font-medium active:bg-zinc-800 transition-colors"
-        >
-          <Plus size={20} />
-          <span>Добавить что-то еще</span>
-        </button>
       </div>
     </div>
   );
@@ -1227,6 +1225,7 @@ const SummaryScreen = ({
   goals,
   profile,
   weeklyHistory,
+  themeMode,
   fastingMode,
   customFastingHours,
   isFastingActive,
@@ -1237,10 +1236,12 @@ const SummaryScreen = ({
   onStart,
   onStop,
   onSaveProfileGoals,
+  onToggleTheme,
 }: {
   goals: NutrientGoalSet;
   profile: UserProfileSettings;
   weeklyHistory: DiaryHistoryPoint[];
+  themeMode: ThemeMode;
   fastingMode: FastingMode;
   customFastingHours: number;
   isFastingActive: boolean;
@@ -1251,6 +1252,7 @@ const SummaryScreen = ({
   onStart: () => void;
   onStop: () => void;
   onSaveProfileGoals: (profile: UserProfileSettings, goals: NutrientGoalSet) => Promise<void>;
+  onToggleTheme: () => void;
 }) => {
   const fastingHours = fastingMode === 'CUSTOM' ? customFastingHours : FASTING_PRESETS[fastingMode].fastingHours;
   const eatingHours = Math.max(0, 24 - fastingHours);
@@ -1577,6 +1579,20 @@ const SummaryScreen = ({
               <div className="p-4 border-t border-zinc-800/60">
                 <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
                   <p className="text-base font-semibold text-zinc-100 mb-3">Профиль и цели</p>
+                  <div className="mb-3 p-3 bg-zinc-900/60 border border-zinc-700 rounded-lg flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-widest text-zinc-500 mb-1">Тема интерфейса</p>
+                      <p className="text-sm text-zinc-300">{themeMode === 'light' ? 'Светлая' : 'Темная'}</p>
+                    </div>
+                    <button
+                      onClick={onToggleTheme}
+                      className="px-3 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-sm flex items-center gap-2"
+                    >
+                      {themeMode === 'light' ? <Moon size={14} /> : <Sun size={14} />}
+                      {themeMode === 'light' ? 'Темная' : 'Светлая'}
+                    </button>
+                  </div>
+
                   <div className="space-y-1 text-sm text-zinc-300">
                     <p>Пол: {profile.sex === 'male' ? 'мужской' : 'женский'}</p>
                     <p>Вес: {Math.round(profile.weightKg)} кг</p>
@@ -2016,6 +2032,14 @@ export default function App() {
   const [selectedDiaryDate] = useState<string>(toDateKey(new Date()));
   const [diaryData, setDiaryData] = useState<DiaryData>({ meals: [], goals: null, waterIntake: 0, date: selectedDiaryDate });
   const [weeklyHistory, setWeeklyHistory] = useState<DiaryHistoryPoint[]>([]);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    try {
+      const saved = localStorage.getItem(THEME_MODE_STORAGE_KEY);
+      return saved === 'dark' ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
+  });
   const [profileSettings, setProfileSettings] = useState<UserProfileSettings>(DEFAULT_PROFILE_SETTINGS);
   const [goalOverrides, setGoalOverrides] = useState<Partial<NutrientGoalSet> | null>(null);
   const [hints, setHints] = useState<Hint[]>([]);
@@ -2082,6 +2106,21 @@ export default function App() {
   useEffect(() => {
     checkAuth();
   }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (themeMode === 'light') {
+      root.classList.add('theme-light');
+    } else {
+      root.classList.remove('theme-light');
+    }
+
+    try {
+      localStorage.setItem(THEME_MODE_STORAGE_KEY, themeMode);
+    } catch {
+      // ignore storage failure
+    }
+  }, [themeMode]);
 
   useEffect(() => {
     try {
@@ -3061,6 +3100,7 @@ Rules:
               goals={effectiveGoals}
               profile={profileSettings}
               weeklyHistory={weeklyHistory}
+              themeMode={themeMode}
               fastingMode={fastingMode}
               customFastingHours={customFastingHours}
               isFastingActive={isFastingActive}
@@ -3071,6 +3111,7 @@ Rules:
               onStart={handleStartFasting}
               onStop={handleStopFasting}
               onSaveProfileGoals={saveProfileAndGoals}
+              onToggleTheme={() => setThemeMode((prev) => (prev === 'light' ? 'dark' : 'light'))}
             />
           )}
         </motion.div>
