@@ -34,7 +34,12 @@ function isDatabaseConfigured() {
 const DEMO_USER_ID = "demo-user";
 const DEMO_USER = { id: DEMO_USER_ID, email: "user@nutria.app", role: "USER" };
 const DEMO_GOALS = { calories: 2100, protein: 120, fat: 70, carbs: 250, fiber: 30 };
-const inMemoryDiary = new Map<string, { meals: any[]; goals: typeof DEMO_GOALS; waterIntake: number }>();
+type InMemoryDiaryState = {
+  meals: any[];
+  goals: typeof DEMO_GOALS;
+  waterByDate: Record<string, number>;
+};
+const inMemoryDiary = new Map<string, InMemoryDiaryState>();
 const barcodeLookupCache = new Map<string, { expiresAt: number; product: any }>();
 const productSearchCache = new Map<string, { expiresAt: number; results: any[] }>();
 
@@ -46,9 +51,39 @@ const PRODUCT_SEARCH_CACHE_TTL_MS = Number(process.env.PRODUCT_SEARCH_CACHE_TTL_
 
 function getOrCreateInMemoryDiary(userId: string) {
   if (!inMemoryDiary.has(userId)) {
-    inMemoryDiary.set(userId, { meals: [], goals: { ...DEMO_GOALS }, waterIntake: 0 });
+    inMemoryDiary.set(userId, { meals: [], goals: { ...DEMO_GOALS }, waterByDate: {} });
   }
   return inMemoryDiary.get(userId)!;
+}
+
+function toDateKey(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function dateFromQuery(value: any) {
+  const raw = String(value || "").trim();
+  if (!raw) return new Date();
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+function dayRangeFromDate(base: Date) {
+  const start = new Date(base);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(base);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
+
+function getMealDateKey(meal: any) {
+  const explicit = String(meal?.dateKey || "").trim();
+  if (explicit) return explicit;
+  const id = String(meal?.id || "");
+  const match = id.match(/(\d{4}-\d{2}-\d{2})$/);
+  return match ? match[1] : "";
 }
 
 function extractBarcodeCandidates(input: string) {
@@ -904,21 +939,23 @@ async function startServer() {
     const userId = req.cookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
+    const targetDate = dateFromQuery(req.query.date);
+    const targetDateKey = toDateKey(targetDate);
+
     if (!isDatabaseConfigured()) {
       const memoryDiary = getOrCreateInMemoryDiary(userId);
+      const meals = memoryDiary.meals.filter((m: any) => getMealDateKey(m) === targetDateKey);
       return res.json({
-        meals: memoryDiary.meals,
+        meals,
         goals: memoryDiary.goals,
-        waterIntake: memoryDiary.waterIntake,
+        waterIntake: Number(memoryDiary.waterByDate[targetDateKey] || 0),
+        date: targetDateKey,
         mode: "memory",
       });
     }
 
     try {
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date();
-      endOfDay.setHours(23, 59, 59, 999);
+      const { start: startOfDay, end: endOfDay } = dayRangeFromDate(targetDate);
 
       const meals = await prisma.meal.findMany({
         where: {
@@ -951,10 +988,123 @@ async function startServer() {
         })
       }));
 
-      res.json({ meals: parsedMeals, goals, waterIntake });
+      res.json({ meals: parsedMeals, goals, waterIntake, date: targetDateKey });
     } catch (e: any) {
       console.error("Diary Get Error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
+  });
+
+  // Diary: History for analytics (last N days)
+  app.get("/api/diary/history", async (req, res) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const days = Math.max(1, Math.min(31, Number(req.query.days) || 7));
+    const endDate = dateFromQuery(req.query.endDate);
+
+    const dayKeys = Array.from({ length: days }, (_, idx) => {
+      const d = new Date(endDate);
+      d.setDate(d.getDate() - (days - 1 - idx));
+      return toDateKey(d);
+    });
+
+    const defaultPoint = () => ({
+      mealsCount: 0,
+      waterIntake: 0,
+      totals: { calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 }
+    });
+
+    if (!isDatabaseConfigured()) {
+      const memoryDiary = getOrCreateInMemoryDiary(userId);
+      const bucket = new Map<string, ReturnType<typeof defaultPoint>>();
+      for (const key of dayKeys) {
+        bucket.set(key, defaultPoint());
+      }
+
+      for (const meal of memoryDiary.meals) {
+        const key = getMealDateKey(meal);
+        if (!bucket.has(key)) continue;
+        const point = bucket.get(key)!;
+        point.mealsCount += 1;
+
+        for (const item of Array.isArray(meal?.items) ? meal.items : []) {
+          const amount = numberOrZero(item?.amount);
+          const factor = amount / 100;
+          const product = item?.product || {};
+          point.totals.calories += numberOrZero(product.calories) * factor;
+          point.totals.protein += numberOrZero(product.protein) * factor;
+          point.totals.fat += numberOrZero(product.fat) * factor;
+          point.totals.carbs += numberOrZero(product.carbs) * factor;
+          point.totals.fiber += numberOrZero(product.fiber) * factor;
+        }
+      }
+
+      for (const key of dayKeys) {
+        const point = bucket.get(key)!;
+        point.waterIntake = numberOrZero(memoryDiary.waterByDate[key]);
+      }
+
+      return res.json({
+        days,
+        endDate: toDateKey(endDate),
+        history: dayKeys.map((key) => ({ date: key, ...bucket.get(key)! })),
+        mode: "memory"
+      });
+    }
+
+    try {
+      const startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - (days - 1));
+      const { start: startOfRange } = dayRangeFromDate(startDate);
+      const { end: endOfRange } = dayRangeFromDate(endDate);
+
+      const meals = await prisma.meal.findMany({
+        where: {
+          userId,
+          date: { gte: startOfRange, lte: endOfRange }
+        },
+        include: {
+          items: { include: { product: true } }
+        }
+      });
+
+      const bucket = new Map<string, ReturnType<typeof defaultPoint>>();
+      for (const key of dayKeys) {
+        bucket.set(key, defaultPoint());
+      }
+
+      for (const meal of meals) {
+        const key = toDateKey(new Date(meal.date));
+        if (!bucket.has(key)) continue;
+        const point = bucket.get(key)!;
+
+        if (meal.type === "WATER") {
+          point.waterIntake += meal.items.reduce((sum, item) => sum + numberOrZero(item.amount), 0);
+          continue;
+        }
+
+        point.mealsCount += 1;
+        for (const item of meal.items) {
+          const amount = numberOrZero(item.amount);
+          const factor = amount / 100;
+          const product = item.product || ({} as any);
+          point.totals.calories += numberOrZero(product.calories) * factor;
+          point.totals.protein += numberOrZero(product.protein) * factor;
+          point.totals.fat += numberOrZero(product.fat) * factor;
+          point.totals.carbs += numberOrZero(product.carbs) * factor;
+          point.totals.fiber += numberOrZero(product.fiber) * factor;
+        }
+      }
+
+      return res.json({
+        days,
+        endDate: toDateKey(endDate),
+        history: dayKeys.map((key) => ({ date: key, ...bucket.get(key)! }))
+      });
+    } catch (e: any) {
+      console.error("Diary History Error:", e);
+      return res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
   });
 
@@ -1018,26 +1168,30 @@ async function startServer() {
   // Diary: Update water intake
   app.post("/api/diary/water", async (req, res) => {
     const userId = req.cookies.token;
-    const { amount } = req.body; // amount can be positive or negative
+    const { amount, date } = req.body; // amount can be positive or negative
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const targetDate = dateFromQuery(date);
+    const targetDateKey = toDateKey(targetDate);
+    const delta = Number(amount || 0);
 
     if (!isDatabaseConfigured()) {
       const memoryDiary = getOrCreateInMemoryDiary(userId);
-      memoryDiary.waterIntake = Math.max(0, (memoryDiary.waterIntake || 0) + Number(amount || 0));
-      return res.json({ success: true, mode: "memory", waterIntake: memoryDiary.waterIntake });
+      const current = numberOrZero(memoryDiary.waterByDate[targetDateKey]);
+      memoryDiary.waterByDate[targetDateKey] = Math.max(0, current + delta);
+      return res.json({ success: true, mode: "memory", waterIntake: memoryDiary.waterByDate[targetDateKey], date: targetDateKey });
     }
 
     try {
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
+      const { start: startOfDay, end: endOfDay } = dayRangeFromDate(targetDate);
 
       let meal = await prisma.meal.findFirst({
-        where: { userId, type: 'WATER', date: { gte: startOfDay } }
+        where: { userId, type: 'WATER', date: { gte: startOfDay, lte: endOfDay } }
       });
 
       if (!meal) {
         meal = await prisma.meal.create({
-          data: { userId, type: 'WATER', date: new Date() }
+          data: { userId, type: 'WATER', date: startOfDay }
         });
       }
 
@@ -1052,11 +1206,11 @@ async function startServer() {
         data: {
           mealId: meal.id,
           productId: waterProduct.id,
-          amount: Number(amount)
+          amount: delta
         }
       });
 
-      res.json({ success: true });
+      res.json({ success: true, date: targetDateKey });
     } catch (e: any) {
       console.error("Diary Water Error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
@@ -1094,17 +1248,20 @@ async function startServer() {
   // Diary: Add meal item
   app.post("/api/diary/add", async (req, res) => {
     const userId = req.cookies.token;
-    let { productId, amount, type, usdaData } = req.body;
+    let { productId, amount, type, usdaData, date } = req.body;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const targetDate = dateFromQuery(date);
+    const targetDateKey = toDateKey(targetDate);
 
     if (!isDatabaseConfigured()) {
       const memoryDiary = getOrCreateInMemoryDiary(userId);
       const mealType = type || "SNACK";
-      const mealId = `${mealType}-${new Date().toISOString().slice(0, 10)}`;
-      let meal = memoryDiary.meals.find((m: any) => m.id === mealId);
+      const mealId = `${mealType}-${targetDateKey}`;
+      let meal = memoryDiary.meals.find((m: any) => m.id === mealId && getMealDateKey(m) === targetDateKey);
 
       if (!meal) {
-        meal = { id: mealId, type: mealType, items: [] };
+        meal = { id: mealId, type: mealType, dateKey: targetDateKey, items: [] };
         memoryDiary.meals.push(meal);
       }
 
@@ -1126,7 +1283,7 @@ async function startServer() {
       };
 
       meal.items.push(mealItem);
-      return res.json({ ...mealItem, mode: "memory" });
+      return res.json({ ...mealItem, mode: "memory", date: targetDateKey });
     }
 
     // If it's a USDA product, we need to ensure it exists in our local DB first
@@ -1172,20 +1329,19 @@ async function startServer() {
       productId = product.id;
     }
 
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    const { start: startOfDay, end: endOfDay } = dayRangeFromDate(targetDate);
 
     let meal = await prisma.meal.findFirst({
       where: {
         userId,
         type,
-        date: { gte: startOfDay }
+        date: { gte: startOfDay, lte: endOfDay }
       }
     });
 
     if (!meal) {
       meal = await prisma.meal.create({
-        data: { userId, type, date: new Date() }
+        data: { userId, type, date: startOfDay }
       });
     }
 

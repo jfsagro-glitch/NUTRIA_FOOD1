@@ -19,7 +19,8 @@ import {
   CheckCircle2,
   Trash2,
   Mic,
-  MicOff
+  MicOff,
+  SlidersHorizontal
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -76,6 +77,15 @@ interface NutrientGoalSet {
   carbohydrateTypes: Record<string, number>;
 }
 
+interface UserProfileSettings {
+  sex: 'male' | 'female';
+  weightKg: number;
+  heightCm: number;
+  age: number;
+  activity: 'low' | 'moderate' | 'high' | 'very_high';
+  goal: 'lose' | 'maintain' | 'gain' | 'recomposition';
+}
+
 interface MealItem {
   id: string;
   amount: number;
@@ -86,6 +96,26 @@ interface Meal {
   id: string;
   type: string;
   items: MealItem[];
+}
+
+interface DiaryHistoryPoint {
+  date: string;
+  mealsCount: number;
+  waterIntake: number;
+  totals: {
+    calories: number;
+    protein: number;
+    fat: number;
+    carbs: number;
+    fiber: number;
+  };
+}
+
+interface DiaryData {
+  meals: Meal[];
+  goals: Partial<NutrientGoalSet> | null;
+  waterIntake: number;
+  date?: string;
 }
 
 interface Hint {
@@ -119,6 +149,13 @@ const formatHms = (ms: number) => {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
+
+const toDateKey = (date: Date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 };
 
 const readFileAsDataUrl = (file: File): Promise<string> =>
@@ -687,6 +724,75 @@ const deriveProgramGoals = (
   };
 };
 
+const PROFILE_SETTINGS_STORAGE_KEY = 'nutria_profile_settings_v1';
+const GOAL_OVERRIDE_STORAGE_KEY = 'nutria_goal_override_v1';
+
+const DEFAULT_PROFILE_SETTINGS: UserProfileSettings = {
+  sex: 'male',
+  weightKg: 70,
+  heightCm: 175,
+  age: 30,
+  activity: 'moderate',
+  goal: 'maintain',
+};
+
+type GoalEditorGroup = 'macros' | 'vitamins' | 'minerals' | 'fatty' | 'carbs' | 'amino';
+
+const ACTIVITY_FACTORS: Record<UserProfileSettings['activity'], number> = {
+  low: 1.35,
+  moderate: 1.55,
+  high: 1.75,
+  very_high: 1.95,
+};
+
+function calculateAutoGoalsFromProfile(profile: UserProfileSettings): NutrientGoalSet {
+  const safeWeight = Math.max(35, profile.weightKg || 70);
+  const safeHeight = Math.max(130, profile.heightCm || 170);
+  const safeAge = Math.max(14, profile.age || 30);
+  const isMale = profile.sex === 'male';
+
+  const bmr = isMale
+    ? 10 * safeWeight + 6.25 * safeHeight - 5 * safeAge + 5
+    : 10 * safeWeight + 6.25 * safeHeight - 5 * safeAge - 161;
+
+  const tdee = bmr * ACTIVITY_FACTORS[profile.activity];
+  const goalMultiplier =
+    profile.goal === 'lose' ? 0.85 :
+    profile.goal === 'gain' ? 1.1 :
+    profile.goal === 'recomposition' ? 0.95 : 1;
+  const calories = Math.max(1200, Math.round(tdee * goalMultiplier));
+
+  const proteinPerKg =
+    profile.goal === 'lose' ? 1.9 :
+    profile.goal === 'gain' ? 1.8 :
+    profile.goal === 'recomposition' ? 2.0 : 1.4;
+
+  const protein = Math.round(safeWeight * proteinPerKg);
+  const fat = Math.round((calories * 0.3) / 9);
+  const carbs = Math.max(50, Math.round((calories - protein * 4 - fat * 9) / 4));
+  const fiber = Math.max(22, Math.round((calories / 1000) * 14));
+
+  const scale = calories / DEFAULT_GOALS.calories;
+
+  const scaleMap = (map: Record<string, number>, customScale = scale) =>
+    Object.fromEntries(
+      Object.entries(map).map(([key, value]) => [key, Math.round(value * customScale * 100) / 100])
+    ) as Record<string, number>;
+
+  return {
+    calories,
+    protein,
+    fat,
+    carbs,
+    fiber,
+    vitamins: scaleMap(DEFAULT_GOALS.vitamins),
+    minerals: scaleMap(DEFAULT_GOALS.minerals),
+    aminoAcids: scaleMap(DEFAULT_GOALS.aminoAcids, safeWeight / 70),
+    fattyAcids: scaleMap(DEFAULT_GOALS.fattyAcids),
+    carbohydrateTypes: scaleMap(DEFAULT_GOALS.carbohydrateTypes),
+  };
+}
+
 // --- Screens ---
 
 const NutrientRow = ({ label, value, goal, unit, colorClass = "bg-emerald-500" }: { label: string, value: number, goal: number, unit: string, colorClass?: string }) => (
@@ -1119,6 +1225,8 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
 
 const SummaryScreen = ({
   goals,
+  profile,
+  weeklyHistory,
   fastingMode,
   customFastingHours,
   isFastingActive,
@@ -1129,8 +1237,11 @@ const SummaryScreen = ({
   onStart,
   onStop,
   onApplyProgram,
+  onSaveProfileGoals,
 }: {
   goals: NutrientGoalSet;
+  profile: UserProfileSettings;
+  weeklyHistory: DiaryHistoryPoint[];
   fastingMode: FastingMode;
   customFastingHours: number;
   isFastingActive: boolean;
@@ -1141,6 +1252,7 @@ const SummaryScreen = ({
   onStart: () => void;
   onStop: () => void;
   onApplyProgram: (payload: { calories: number; protein: number; fat: number; carbs: number; fiber: number }) => Promise<void>;
+  onSaveProfileGoals: (profile: UserProfileSettings, goals: NutrientGoalSet) => Promise<void>;
 }) => {
   const fastingHours = fastingMode === 'CUSTOM' ? customFastingHours : FASTING_PRESETS[fastingMode].fastingHours;
   const eatingHours = Math.max(0, 24 - fastingHours);
@@ -1149,10 +1261,76 @@ const SummaryScreen = ({
   const [programWeightKg, setProgramWeightKg] = useState(70);
   const [programCalories, setProgramCalories] = useState(2100);
   const [isApplyingProgram, setIsApplyingProgram] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsProfile, setSettingsProfile] = useState<UserProfileSettings>(profile);
+  const [settingsGoals, setSettingsGoals] = useState<NutrientGoalSet>(goals);
+  const [goalEditorGroup, setGoalEditorGroup] = useState<GoalEditorGroup>('macros');
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [selectedHistoryDate, setSelectedHistoryDate] = useState('');
+  const [isFastingCollapsed, setIsFastingCollapsed] = useState(() => localStorage.getItem('collapse_summary_fasting') === 'true');
+
+  const dayLabel = (dateKey: string) => {
+    const date = new Date(`${dateKey}T12:00:00`);
+    return new Intl.DateTimeFormat('ru-RU', { weekday: 'short' }).format(date).replace('.', '');
+  };
+
+  const dayNumber = (dateKey: string) => {
+    const date = new Date(`${dateKey}T12:00:00`);
+    return date.getDate();
+  };
+
+  const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
+
+  const computeDayMetrics = (point: DiaryHistoryPoint) => {
+    const caloriesRatio = clamp(point.totals.calories / Math.max(1, goals.calories));
+    const proteinRatio = clamp(point.totals.protein / Math.max(1, goals.protein));
+    const fatRatio = clamp(point.totals.fat / Math.max(1, goals.fat));
+    const carbsRatio = clamp(point.totals.carbs / Math.max(1, goals.carbs));
+    const fiberRatio = clamp(point.totals.fiber / Math.max(1, goals.fiber || 30));
+    const waterRatio = clamp(point.waterIntake / 2000);
+
+    const macroBalance = (proteinRatio + fatRatio + carbsRatio) / 3;
+    const calorieAccuracy = clamp(1 - Math.abs(1 - caloriesRatio));
+    const recovery = (fiberRatio + waterRatio) / 2;
+    const score = Math.round(((macroBalance * 0.45) + (calorieAccuracy * 0.35) + (recovery * 0.2)) * 100);
+
+    return {
+      caloriesRatio,
+      macroBalance,
+      recovery,
+      waterRatio,
+      fiberRatio,
+      score,
+    };
+  };
+
+  const historyWithMetrics = useMemo(
+    () => weeklyHistory.map((point) => ({ point, metrics: computeDayMetrics(point) })),
+    [weeklyHistory, goals]
+  );
+
+  const selectedHistory = useMemo(() => {
+    if (historyWithMetrics.length === 0) return null;
+    return historyWithMetrics.find((item) => item.point.date === selectedHistoryDate) || historyWithMetrics[historyWithMetrics.length - 1];
+  }, [historyWithMetrics, selectedHistoryDate]);
 
   useEffect(() => {
     setProgramCalories(Math.max(1200, Math.round(goals.calories || 2100)));
   }, [goals.calories]);
+
+  useEffect(() => {
+    setSettingsProfile(profile);
+  }, [profile]);
+
+  useEffect(() => {
+    setSettingsGoals(goals);
+  }, [goals]);
+
+  useEffect(() => {
+    if (historyWithMetrics.length > 0 && !selectedHistoryDate) {
+      setSelectedHistoryDate(historyWithMetrics[historyWithMetrics.length - 1].point.date);
+    }
+  }, [historyWithMetrics, selectedHistoryDate]);
 
   const openProgram = (program: NutritionProgram) => {
     setSelectedProgram(program);
@@ -1174,12 +1352,125 @@ const SummaryScreen = ({
     }
   };
 
+  const activityLabelMap: Record<UserProfileSettings['activity'], string> = {
+    low: 'низкая',
+    moderate: 'умеренная',
+    high: 'высокая',
+    very_high: 'очень высокая',
+  };
+
+  const goalLabelMap: Record<UserProfileSettings['goal'], string> = {
+    lose: 'снижение веса',
+    maintain: 'поддержание',
+    gain: 'набор массы',
+    recomposition: 'рекомпозиция',
+  };
+
+  const openSettings = () => {
+    setSettingsProfile(profile);
+    setSettingsGoals(goals);
+    setGoalEditorGroup('macros');
+    setIsSettingsOpen(true);
+  };
+
+  const recalculateGoalsByProfile = () => {
+    const auto = calculateAutoGoalsFromProfile(settingsProfile);
+    setSettingsGoals(auto);
+  };
+
+  const updateMacroField = (key: 'calories' | 'protein' | 'fat' | 'carbs' | 'fiber', value: number) => {
+    setSettingsGoals((prev) => ({ ...prev, [key]: Number.isFinite(value) ? value : 0 }));
+  };
+
+  const updateNestedField = (
+    group: 'vitamins' | 'minerals' | 'fattyAcids' | 'carbohydrateTypes' | 'aminoAcids',
+    key: string,
+    value: number
+  ) => {
+    setSettingsGoals((prev) => ({
+      ...prev,
+      [group]: {
+        ...prev[group],
+        [key]: Number.isFinite(value) ? value : 0,
+      }
+    }));
+  };
+
+  const saveSettings = async () => {
+    setIsSavingSettings(true);
+    try {
+      await onSaveProfileGoals(settingsProfile, settingsGoals);
+      setIsSettingsOpen(false);
+      alert('Профиль и нормы успешно обновлены.');
+    } catch (e) {
+      console.error(e);
+      alert('Не удалось сохранить настройки.');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
   return (
     <div className="p-4">
       <header className="mb-6 pt-4">
         <h1 className="text-3xl font-bold tracking-tight">Сводки</h1>
         <p className="text-zinc-500 text-sm">Макроэлементы, анализ и программы</p>
       </header>
+
+      <div className="mb-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-3">
+        <div className="flex items-center justify-between mb-3 px-1">
+          <p className="text-sm font-semibold text-zinc-200">Пульс питания за 7 дней</p>
+          <p className="text-[10px] uppercase tracking-widest text-zinc-500">Хронология</p>
+        </div>
+
+        <div className="flex items-center justify-between gap-1">
+          {historyWithMetrics.map(({ point, metrics }) => {
+            const isActive = selectedHistory?.point.date === point.date;
+            const ringColor = metrics.score >= 80 ? '#22c55e' : metrics.score >= 60 ? '#f59e0b' : '#f43f5e';
+            const progress = Math.round((metrics.score / 100) * 360);
+            return (
+              <button
+                key={point.date}
+                onClick={() => setSelectedHistoryDate(point.date)}
+                className={cn(
+                  'flex-1 min-w-0 rounded-xl p-1.5 transition-colors border',
+                  isActive ? 'bg-zinc-800 border-zinc-600' : 'bg-zinc-900/70 border-zinc-800'
+                )}
+              >
+                <div className="mx-auto w-9 h-9 rounded-full p-[3px]" style={{ background: `conic-gradient(${ringColor} ${progress}deg, #27272a ${progress}deg 360deg)` }}>
+                  <div className="w-full h-full rounded-full bg-zinc-950 flex items-center justify-center">
+                    <span className="text-[10px] font-bold text-zinc-100">{dayNumber(point.date)}</span>
+                  </div>
+                </div>
+                <p className="text-[10px] mt-1 text-zinc-300 uppercase">{dayLabel(point.date)}</p>
+              </button>
+            );
+          })}
+        </div>
+
+        {selectedHistory && (
+          <div className="mt-3 bg-zinc-950/70 border border-zinc-800 rounded-xl p-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-zinc-400">{new Date(`${selectedHistory.point.date}T12:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</p>
+              <p className="text-sm font-semibold text-zinc-100">Рейтинг: {selectedHistory.metrics.score}%</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-[11px]">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-2">
+                <p className="text-zinc-500 uppercase">Ккал</p>
+                <p className="text-zinc-100 font-semibold">{Math.round(selectedHistory.point.totals.calories)}</p>
+              </div>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-2">
+                <p className="text-zinc-500 uppercase">БЖУ</p>
+                <p className="text-zinc-100 font-semibold">{Math.round(selectedHistory.metrics.macroBalance * 100)}%</p>
+              </div>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-2">
+                <p className="text-zinc-500 uppercase">Вода</p>
+                <p className="text-zinc-100 font-semibold">{Math.round(selectedHistory.point.waterIntake)} мл</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="space-y-3">
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
@@ -1225,73 +1516,360 @@ const SummaryScreen = ({
       </div>
 
       <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-        <h3 className="text-lg font-bold mb-4">Голодание</h3>
-
-        <div className="grid grid-cols-4 gap-2 mb-4 bg-zinc-800/40 p-1 rounded-xl border border-zinc-700/60">
-          {(['OFF', '16:8', '18:6', 'CUSTOM'] as FastingMode[]).map((mode) => (
-            <button
-              key={mode}
-              onClick={() => onSetMode(mode)}
-              className={cn(
-                'py-2 text-sm rounded-lg transition-colors',
-                fastingMode === mode ? 'bg-zinc-600 text-zinc-100 font-semibold' : 'text-zinc-400 hover:text-zinc-200'
-              )}
-            >
-              {FASTING_PRESETS[mode].label}
-            </button>
-          ))}
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-bold">Настройки</h3>
+          <SlidersHorizontal size={16} className="text-zinc-500" />
         </div>
 
-        {fastingMode === 'CUSTOM' && (
-          <div className="mb-4">
-            <label className="text-xs text-zinc-400 block mb-2">Длительность голодания (часы)</label>
-            <input
-              type="number"
-              min={12}
-              max={23}
-              value={customFastingHours}
-              onChange={(e) => onSetCustomHours(Number(e.target.value))}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100"
-            />
+        <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+          <p className="text-base font-semibold text-zinc-100 mb-3">Профиль и цели</p>
+          <div className="space-y-1 text-sm text-zinc-300">
+            <p>Пол: {profile.sex === 'male' ? 'мужской' : 'женский'}</p>
+            <p>Вес: {Math.round(profile.weightKg)} кг</p>
+            <p>Рост: {Math.round(profile.heightCm)} см</p>
+            <p>Возраст: {Math.round(profile.age)}</p>
+            <p>Активность: {activityLabelMap[profile.activity]}</p>
+            <p>Цель: {goalLabelMap[profile.goal]}</p>
           </div>
-        )}
 
-        <div className="mb-4 text-sm text-zinc-400">
-          {fastingMode === 'OFF'
-            ? 'Отслеживание голодания выключено'
-            : `Режим: ${fastingHours}:${eatingHours} • окно питания ${eatingHours}ч`}
-        </div>
-
-        <div className="flex justify-center mb-5">
-          <div className="w-40 h-40 rounded-full border-4 border-zinc-700 flex items-center justify-center text-center">
-            <div>
-              <div className="text-3xl font-bold text-zinc-100">{isFastingActive ? formatHms(remainingMs) : `${fastingHours}ч`}</div>
-              <div className="text-xs text-zinc-500 mt-1">{isFastingActive ? 'до конца' : 'длительность'}</div>
-            </div>
+          <div className="mt-4 p-3 bg-zinc-900/60 border border-zinc-700 rounded-lg">
+            <p className="text-sm font-semibold text-zinc-200 mb-1">Текущие нормы</p>
+            <p className="text-sm text-zinc-300">Калории: {Math.round(goals.calories).toLocaleString('ru-RU')} ккал</p>
+            <p className="text-sm text-zinc-300">Белки: {Math.round(goals.protein)} г</p>
+            <p className="text-sm text-zinc-300">Жиры: {Math.round(goals.fat)} г</p>
+            <p className="text-sm text-zinc-300">Углеводы: {Math.round(goals.carbs)} г</p>
           </div>
-        </div>
 
-        <div className="flex gap-3">
           <button
-            onClick={onStart}
-            disabled={fastingMode === 'OFF'}
-            className={cn(
-              'flex-1 py-3 rounded-xl font-semibold',
-              fastingMode === 'OFF'
-                ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-                : 'bg-emerald-500 text-white'
-            )}
+            onClick={openSettings}
+            className="mt-4 px-4 py-2 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-sm font-medium transition-colors"
           >
-            Начать голодание
-          </button>
-          <button
-            onClick={onStop}
-            className="flex-1 py-3 rounded-xl font-semibold bg-zinc-800 text-zinc-300 border border-zinc-700"
-          >
-            Прервать голодание
+            Изменить (MVP)
           </button>
         </div>
       </div>
+
+      <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+        <button
+          onClick={() => {
+            const next = !isFastingCollapsed;
+            setIsFastingCollapsed(next);
+            localStorage.setItem('collapse_summary_fasting', String(next));
+          }}
+          className="w-full px-4 py-3 flex items-center justify-between active:bg-zinc-800/50 transition-colors"
+        >
+          <h3 className="text-lg font-bold">Голодание</h3>
+          {isFastingCollapsed ? <ChevronDown size={20} className="text-zinc-500" /> : <ChevronUp size={20} className="text-zinc-500" />}
+        </button>
+
+        <AnimatePresence initial={false}>
+          {!isFastingCollapsed && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+            >
+              <div className="px-4 pb-4 border-t border-zinc-800/60 pt-4">
+                <div className="grid grid-cols-4 gap-2 mb-4 bg-zinc-800/40 p-1 rounded-xl border border-zinc-700/60">
+                  {(['OFF', '16:8', '18:6', 'CUSTOM'] as FastingMode[]).map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => onSetMode(mode)}
+                      className={cn(
+                        'py-2 text-sm rounded-lg transition-colors',
+                        fastingMode === mode ? 'bg-zinc-600 text-zinc-100 font-semibold' : 'text-zinc-400 hover:text-zinc-200'
+                      )}
+                    >
+                      {FASTING_PRESETS[mode].label}
+                    </button>
+                  ))}
+                </div>
+
+                {fastingMode === 'CUSTOM' && (
+                  <div className="mb-4">
+                    <label className="text-xs text-zinc-400 block mb-2">Длительность голодания (часы)</label>
+                    <input
+                      type="number"
+                      min={12}
+                      max={23}
+                      value={customFastingHours}
+                      onChange={(e) => onSetCustomHours(Number(e.target.value))}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100"
+                    />
+                  </div>
+                )}
+
+                <div className="mb-4 text-sm text-zinc-400">
+                  {fastingMode === 'OFF'
+                    ? 'Отслеживание голодания выключено'
+                    : `Режим: ${fastingHours}:${eatingHours} • окно питания ${eatingHours}ч`}
+                </div>
+
+                <div className="flex justify-center mb-5">
+                  <div className="w-40 h-40 rounded-full border-4 border-zinc-700 flex items-center justify-center text-center">
+                    <div>
+                      <div className="text-3xl font-bold text-zinc-100">{isFastingActive ? formatHms(remainingMs) : `${fastingHours}ч`}</div>
+                      <div className="text-xs text-zinc-500 mt-1">{isFastingActive ? 'до конца' : 'длительность'}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={onStart}
+                    disabled={fastingMode === 'OFF'}
+                    className={cn(
+                      'flex-1 py-3 rounded-xl font-semibold',
+                      fastingMode === 'OFF'
+                        ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                        : 'bg-emerald-500 text-white'
+                    )}
+                  >
+                    Начать голодание
+                  </button>
+                  <button
+                    onClick={onStop}
+                    className="flex-1 py-3 rounded-xl font-semibold bg-zinc-800 text-zinc-300 border border-zinc-700"
+                  >
+                    Прервать голодание
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <BottomSheet isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} title="Профиль и цели">
+        <div className="space-y-4">
+          <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+            <p className="text-sm font-semibold text-zinc-200 mb-3">Профиль</p>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-xs text-zinc-400">
+                Пол
+                <select
+                  value={settingsProfile.sex}
+                  onChange={(e) => setSettingsProfile((prev) => ({ ...prev, sex: e.target.value as UserProfileSettings['sex'] }))}
+                  className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
+                >
+                  <option value="male">Мужской</option>
+                  <option value="female">Женский</option>
+                </select>
+              </label>
+
+              <label className="text-xs text-zinc-400">
+                Вес (кг)
+                <input
+                  type="number"
+                  min={35}
+                  max={250}
+                  value={settingsProfile.weightKg}
+                  onChange={(e) => setSettingsProfile((prev) => ({ ...prev, weightKg: Number(e.target.value) }))}
+                  className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
+                />
+              </label>
+
+              <label className="text-xs text-zinc-400">
+                Рост (см)
+                <input
+                  type="number"
+                  min={130}
+                  max={230}
+                  value={settingsProfile.heightCm}
+                  onChange={(e) => setSettingsProfile((prev) => ({ ...prev, heightCm: Number(e.target.value) }))}
+                  className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
+                />
+              </label>
+
+              <label className="text-xs text-zinc-400">
+                Возраст
+                <input
+                  type="number"
+                  min={14}
+                  max={100}
+                  value={settingsProfile.age}
+                  onChange={(e) => setSettingsProfile((prev) => ({ ...prev, age: Number(e.target.value) }))}
+                  className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
+                />
+              </label>
+
+              <label className="text-xs text-zinc-400">
+                Активность
+                <select
+                  value={settingsProfile.activity}
+                  onChange={(e) => setSettingsProfile((prev) => ({ ...prev, activity: e.target.value as UserProfileSettings['activity'] }))}
+                  className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
+                >
+                  <option value="low">Низкая</option>
+                  <option value="moderate">Умеренная</option>
+                  <option value="high">Высокая</option>
+                  <option value="very_high">Очень высокая</option>
+                </select>
+              </label>
+
+              <label className="text-xs text-zinc-400">
+                Цель
+                <select
+                  value={settingsProfile.goal}
+                  onChange={(e) => setSettingsProfile((prev) => ({ ...prev, goal: e.target.value as UserProfileSettings['goal'] }))}
+                  className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
+                >
+                  <option value="lose">Снижение веса</option>
+                  <option value="maintain">Поддержание</option>
+                  <option value="gain">Набор массы</option>
+                  <option value="recomposition">Рекомпозиция</option>
+                </select>
+              </label>
+            </div>
+            <button
+              onClick={recalculateGoalsByProfile}
+              className="mt-3 px-4 py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-sm"
+            >
+              Пересчитать нормы автоматически
+            </button>
+          </div>
+
+          <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+            <p className="text-sm font-semibold text-zinc-200 mb-3">Корректировка норм</p>
+
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {([
+                { id: 'macros', label: 'Макро' },
+                { id: 'vitamins', label: 'Витамины' },
+                { id: 'minerals', label: 'Минералы' },
+                { id: 'fatty', label: 'Жиры' },
+                { id: 'carbs', label: 'Углеводы' },
+                { id: 'amino', label: 'Аминокисл.' },
+              ] as const satisfies Array<{ id: GoalEditorGroup; label: string }>).map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setGoalEditorGroup(tab.id)}
+                  className={cn(
+                    'py-2 rounded-lg text-xs',
+                    goalEditorGroup === tab.id ? 'bg-zinc-600 text-zinc-100' : 'bg-zinc-900 text-zinc-400'
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {goalEditorGroup === 'macros' && (
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { key: 'calories', label: 'Калории', unit: 'ккал' },
+                  { key: 'protein', label: 'Белки', unit: 'г' },
+                  { key: 'fat', label: 'Жиры', unit: 'г' },
+                  { key: 'carbs', label: 'Углеводы', unit: 'г' },
+                  { key: 'fiber', label: 'Клетчатка', unit: 'г' },
+                ].map((field) => (
+                  <label key={field.key} className="text-xs text-zinc-400">
+                    {field.label} ({field.unit})
+                    <input
+                      type="number"
+                      value={settingsGoals[field.key as 'calories' | 'protein' | 'fat' | 'carbs' | 'fiber']}
+                      onChange={(e) => updateMacroField(field.key as 'calories' | 'protein' | 'fat' | 'carbs' | 'fiber', Number(e.target.value))}
+                      className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {goalEditorGroup === 'vitamins' && (
+              <div className="space-y-2 max-h-[38vh] overflow-y-auto pr-1">
+                {VITAMIN_CONFIG.map((item) => (
+                  <label key={item.key} className="text-xs text-zinc-400 block">
+                    {item.label} ({item.unit})
+                    <input
+                      type="number"
+                      value={settingsGoals.vitamins[item.key] || 0}
+                      onChange={(e) => updateNestedField('vitamins', item.key, Number(e.target.value))}
+                      className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {goalEditorGroup === 'minerals' && (
+              <div className="space-y-2 max-h-[38vh] overflow-y-auto pr-1">
+                {MINERAL_CONFIG.map((item) => (
+                  <label key={item.key} className="text-xs text-zinc-400 block">
+                    {item.label} ({item.unit})
+                    <input
+                      type="number"
+                      value={settingsGoals.minerals[item.key] || 0}
+                      onChange={(e) => updateNestedField('minerals', item.key, Number(e.target.value))}
+                      className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {goalEditorGroup === 'fatty' && (
+              <div className="space-y-2 max-h-[38vh] overflow-y-auto pr-1">
+                {FATTY_ACID_CONFIG.map((item) => (
+                  <label key={item.key} className="text-xs text-zinc-400 block">
+                    {item.label} ({item.unit})
+                    <input
+                      type="number"
+                      value={settingsGoals.fattyAcids[item.key] || 0}
+                      onChange={(e) => updateNestedField('fattyAcids', item.key, Number(e.target.value))}
+                      className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {goalEditorGroup === 'carbs' && (
+              <div className="space-y-2 max-h-[38vh] overflow-y-auto pr-1">
+                {CARB_TYPE_CONFIG.map((item) => (
+                  <label key={item.key} className="text-xs text-zinc-400 block">
+                    {item.label} ({item.unit})
+                    <input
+                      type="number"
+                      value={settingsGoals.carbohydrateTypes[item.key] || 0}
+                      onChange={(e) => updateNestedField('carbohydrateTypes', item.key, Number(e.target.value))}
+                      className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {goalEditorGroup === 'amino' && (
+              <div className="space-y-2 max-h-[38vh] overflow-y-auto pr-1">
+                {AMINO_CONFIG.map((item) => (
+                  <label key={item.key} className="text-xs text-zinc-400 block">
+                    {item.label} (mg)
+                    <input
+                      type="number"
+                      value={settingsGoals.aminoAcids[item.key] || 0}
+                      onChange={(e) => updateNestedField('aminoAcids', item.key, Number(e.target.value))}
+                      className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={saveSettings}
+            disabled={isSavingSettings}
+            className={cn(
+              'w-full py-3 rounded-xl font-semibold',
+              isSavingSettings ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed' : 'bg-emerald-500 text-white'
+            )}
+          >
+            {isSavingSettings ? 'Сохраняем...' : 'Сохранить профиль и цели'}
+          </button>
+        </div>
+      </BottomSheet>
 
       <BottomSheet isOpen={!!selectedProgram} onClose={() => setSelectedProgram(null)} title={selectedProgram ? `${selectedProgram.icon} ${selectedProgram.name}` : 'Программа'}>
         {selectedProgram && (
@@ -1402,7 +1980,11 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [diaryData, setDiaryData] = useState<any>({ meals: [], goals: null });
+  const [selectedDiaryDate] = useState<string>(toDateKey(new Date()));
+  const [diaryData, setDiaryData] = useState<DiaryData>({ meals: [], goals: null, waterIntake: 0, date: selectedDiaryDate });
+  const [weeklyHistory, setWeeklyHistory] = useState<DiaryHistoryPoint[]>([]);
+  const [profileSettings, setProfileSettings] = useState<UserProfileSettings>(DEFAULT_PROFILE_SETTINGS);
+  const [goalOverrides, setGoalOverrides] = useState<Partial<NutrientGoalSet> | null>(null);
   const [hints, setHints] = useState<Hint[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -1437,6 +2019,12 @@ export default function App() {
     return html5QrcodeModuleRef.current;
   };
 
+  const autoGoals = useMemo(() => calculateAutoGoalsFromProfile(profileSettings), [profileSettings]);
+  const effectiveGoals = useMemo(
+    () => mergeGoals(goalOverrides || diaryData.goals || autoGoals),
+    [goalOverrides, diaryData.goals, autoGoals]
+  );
+
   const generateAI = async (prompt: string, responseMimeType: string = "application/json", image?: { data: string, mimeType: string }): Promise<string> => {
     // Use backend proxy only (Gemini -> DeepSeek -> OpenAI fallback is handled server-side)
     try {
@@ -1461,6 +2049,44 @@ export default function App() {
   useEffect(() => {
     checkAuth();
   }, []);
+
+  useEffect(() => {
+    try {
+      const rawProfile = localStorage.getItem(PROFILE_SETTINGS_STORAGE_KEY);
+      if (rawProfile) {
+        const parsed = JSON.parse(rawProfile);
+        setProfileSettings({ ...DEFAULT_PROFILE_SETTINGS, ...parsed });
+      }
+
+      const rawGoals = localStorage.getItem(GOAL_OVERRIDE_STORAGE_KEY);
+      if (rawGoals) {
+        const parsed = JSON.parse(rawGoals);
+        setGoalOverrides(parsed);
+      }
+    } catch (e) {
+      console.warn('Failed to restore profile/goals settings:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PROFILE_SETTINGS_STORAGE_KEY, JSON.stringify(profileSettings));
+    } catch (e) {
+      console.warn('Failed to persist profile settings:', e);
+    }
+  }, [profileSettings]);
+
+  useEffect(() => {
+    try {
+      if (goalOverrides) {
+        localStorage.setItem(GOAL_OVERRIDE_STORAGE_KEY, JSON.stringify(goalOverrides));
+      } else {
+        localStorage.removeItem(GOAL_OVERRIDE_STORAGE_KEY);
+      }
+    } catch (e) {
+      console.warn('Failed to persist goal overrides:', e);
+    }
+  }, [goalOverrides]);
 
   useEffect(() => {
     if (isLoggedIn && diaryData.meals.length > 0) {
@@ -1690,12 +2316,25 @@ export default function App() {
     }
   };
 
-  const fetchDiary = async () => {
+  const fetchHistory = async (targetDate = selectedDiaryDate) => {
     try {
-      const res = await fetch('/api/diary');
+      const res = await fetch(`/api/diary/history?days=7&endDate=${encodeURIComponent(targetDate)}`);
+      if (!res.ok) return;
+      const payload = await res.json().catch(() => null);
+      const history = Array.isArray(payload?.history) ? payload.history : [];
+      setWeeklyHistory(history);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchDiary = async (targetDate = selectedDiaryDate) => {
+    try {
+      const res = await fetch(`/api/diary?date=${encodeURIComponent(targetDate)}`);
       if (res.ok) {
         const data = await res.json();
         setDiaryData(data);
+        fetchHistory(targetDate);
         // Automatically fetch hints after diary is updated
         if (data.meals && data.meals.length > 0) {
           fetchHints(data);
@@ -1723,14 +2362,14 @@ export default function App() {
       const res = await fetch('/api/diary/water', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount })
+        body: JSON.stringify({ amount, date: selectedDiaryDate })
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         console.warn('Water update error:', err);
         return;
       }
-      fetchDiary();
+      fetchDiary(selectedDiaryDate);
     } catch (e) {
       console.error(e);
     }
@@ -1748,7 +2387,43 @@ export default function App() {
       throw new Error(err?.error || 'Не удалось обновить цели');
     }
 
-    await fetchDiary();
+    setGoalOverrides((prev) => {
+      const base = mergeGoals(prev || diaryData.goals || autoGoals);
+      return {
+        ...base,
+        calories: payload.calories,
+        protein: payload.protein,
+        fat: payload.fat,
+        carbs: payload.carbs,
+        fiber: payload.fiber,
+      };
+    });
+
+    await fetchDiary(selectedDiaryDate);
+  };
+
+  const saveProfileAndGoals = async (nextProfile: UserProfileSettings, nextGoals: NutrientGoalSet) => {
+    setProfileSettings(nextProfile);
+    setGoalOverrides(nextGoals);
+
+    const res = await fetch('/api/diary/goals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        calories: nextGoals.calories,
+        protein: nextGoals.protein,
+        fat: nextGoals.fat,
+        carbs: nextGoals.carbs,
+        fiber: nextGoals.fiber,
+      })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || 'Не удалось обновить цели');
+    }
+
+    await fetchDiary(selectedDiaryDate);
   };
 
   const fetchHints = async (dataOverride?: any) => {
@@ -1797,7 +2472,7 @@ export default function App() {
         vitamins: {}, minerals: {}, aminoAcids: {}, fattyAcids: {}, carbohydrateTypes: {}
       });
 
-      const goals = mergeGoals(data.goals);
+      const goals = effectiveGoals;
 
       const prompt = `
         User current nutrition today:
@@ -1887,11 +2562,12 @@ export default function App() {
           productId,
           amount,
           type: selectedMealType,
+          date: selectedDiaryDate,
           usdaData
         })
       });
       if (res.ok) {
-        fetchDiary();
+        fetchDiary(selectedDiaryDate);
         fetchHints();
       }
     } catch (e) {
@@ -2367,7 +3043,7 @@ Rules:
         >
           {activeTab === 'nutrition' ? (
             <NutritionScreen 
-              data={diaryData} 
+              data={{ ...diaryData, goals: effectiveGoals }} 
               onAddClick={openAddFood} 
               hints={hints}
               onHintClick={handleHintClick}
@@ -2376,7 +3052,9 @@ Rules:
             />
           ) : (
             <SummaryScreen
-              goals={mergeGoals(diaryData.goals)}
+              goals={effectiveGoals}
+              profile={profileSettings}
+              weeklyHistory={weeklyHistory}
               fastingMode={fastingMode}
               customFastingHours={customFastingHours}
               isFastingActive={isFastingActive}
@@ -2387,6 +3065,7 @@ Rules:
               onStart={handleStartFasting}
               onStop={handleStopFasting}
               onApplyProgram={updateGoals}
+              onSaveProfileGoals={saveProfileAndGoals}
             />
           )}
         </motion.div>
