@@ -958,6 +958,63 @@ async function startServer() {
     }
   });
 
+  // Diary: Update nutrient goals
+  app.post("/api/diary/goals", async (req, res) => {
+    const userId = req.cookies.token;
+    const { calories, protein, fat, carbs, fiber } = req.body || {};
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const nextGoals = {
+      calories: numberOrZero(calories),
+      protein: numberOrZero(protein),
+      fat: numberOrZero(fat),
+      carbs: numberOrZero(carbs),
+      fiber: numberOrZero(fiber),
+    };
+
+    if (!nextGoals.calories || !nextGoals.protein || !nextGoals.fat || !nextGoals.carbs) {
+      return res.status(400).json({ error: "Invalid goals payload" });
+    }
+
+    if (!isDatabaseConfigured()) {
+      const memoryDiary = getOrCreateInMemoryDiary(userId);
+      memoryDiary.goals = {
+        calories: nextGoals.calories,
+        protein: nextGoals.protein,
+        fat: nextGoals.fat,
+        carbs: nextGoals.carbs,
+        fiber: nextGoals.fiber || DEMO_GOALS.fiber,
+      };
+      return res.json({ success: true, goals: memoryDiary.goals, mode: "memory" });
+    }
+
+    try {
+      const goals = await prisma.nutrientGoal.upsert({
+        where: { userId },
+        update: {
+          calories: nextGoals.calories,
+          protein: nextGoals.protein,
+          fat: nextGoals.fat,
+          carbs: nextGoals.carbs,
+          fiber: nextGoals.fiber,
+        },
+        create: {
+          userId,
+          calories: nextGoals.calories,
+          protein: nextGoals.protein,
+          fat: nextGoals.fat,
+          carbs: nextGoals.carbs,
+          fiber: nextGoals.fiber,
+        }
+      });
+
+      return res.json({ success: true, goals });
+    } catch (e: any) {
+      console.error("Diary Goals Update Error:", e);
+      return res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
+  });
+
   // Diary: Update water intake
   app.post("/api/diary/water", async (req, res) => {
     const userId = req.cookies.token;

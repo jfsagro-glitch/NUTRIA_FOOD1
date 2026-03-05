@@ -510,6 +510,183 @@ const mergeGoals = (rawGoals: Partial<NutrientGoalSet> | null | undefined): Nutr
   carbohydrateTypes: { ...DEFAULT_GOALS.carbohydrateTypes, ...(rawGoals?.carbohydrateTypes || {}) },
 });
 
+interface ProgramMealExample {
+  meal: string;
+  items: string[];
+  proteinNote?: string;
+}
+
+interface NutritionProgram {
+  id: string;
+  icon: string;
+  name: string;
+  tagline: string;
+  description: string;
+  bjuRatio: string;
+  proteinRecommendation: string;
+  suitableFor: string;
+  sampleDay: ProgramMealExample[];
+  macros: { proteinPct: number; fatPct: number; carbsPct: number };
+  proteinPerKg?: [number, number];
+  fastingWindow?: string;
+}
+
+const NUTRITION_PROGRAMS: NutritionProgram[] = [
+  {
+    id: 'high-protein',
+    icon: '🥩',
+    name: 'Фитнес / Высокобелковая',
+    tagline: 'Рекомпозиция и набор сухой массы',
+    description: 'Высокий белок для роста и удержания мышц, умеренные жиры и контролируемые углеводы.',
+    bjuRatio: 'Белки 30-35% • Жиры 25-30% • Углеводы 30-40%',
+    proteinRecommendation: '1.6-2.0 г/кг',
+    suitableFor: 'Фитнес, рекомпозиция тела',
+    macros: { proteinPct: 32, fatPct: 28, carbsPct: 40 },
+    proteinPerKg: [1.6, 2.0],
+    sampleDay: [
+      { meal: 'Завтрак', items: ['3 яйца', '100 г творога'], proteinNote: '≈ 30 г белка' },
+      { meal: 'Обед', items: ['150 г курицы', '200 г гречки'], proteinNote: '≈ 40 г белка' },
+      { meal: 'Перекус', items: ['Протеиновый коктейль'], proteinNote: '≈ 25 г белка' },
+      { meal: 'Ужин', items: ['150 г рыбы', 'Овощи'], proteinNote: '≈ 25 г белка' },
+    ],
+  },
+  {
+    id: 'mediterranean',
+    icon: '🥗',
+    name: 'Средиземноморская',
+    tagline: 'Здоровье сердца и долголетие',
+    description: 'Основа на рыбе, овощах, цельных злаках и оливковом масле.',
+    bjuRatio: 'Белки 18% • Жиры 37% • Углеводы 45%',
+    proteinRecommendation: '≈ 1.2 г/кг',
+    suitableFor: 'Общее здоровье, кардиориски',
+    macros: { proteinPct: 18, fatPct: 37, carbsPct: 45 },
+    proteinPerKg: [1.1, 1.3],
+    sampleDay: [
+      { meal: 'Завтрак', items: ['Греческий йогурт', 'Орехи', 'Ягоды'] },
+      { meal: 'Обед', items: ['Лосось', 'Булгур', 'Салат'] },
+      { meal: 'Перекус', items: ['Сыр', 'Яблоко'] },
+      { meal: 'Ужин', items: ['Овощи', 'Тунец'] },
+    ],
+  },
+  {
+    id: 'keto',
+    icon: '🧈',
+    name: 'Кето',
+    tagline: 'Терапевтический низкоуглеводный режим',
+    description: 'Высокий жир, умеренный белок и минимальные углеводы.',
+    bjuRatio: 'Белки 20% • Жиры 70% • Углеводы <10%',
+    proteinRecommendation: '≈ 1.2-1.6 г/кг',
+    suitableFor: 'Терапевтические протоколы, инсулинорезистентность',
+    macros: { proteinPct: 20, fatPct: 70, carbsPct: 10 },
+    proteinPerKg: [1.2, 1.6],
+    sampleDay: [
+      { meal: 'Завтрак', items: ['Яйца', 'Авокадо'] },
+      { meal: 'Обед', items: ['Лосось', 'Зелень'] },
+      { meal: 'Перекус', items: ['Орехи'] },
+      { meal: 'Ужин', items: ['Говядина', 'Оливковое масло'] },
+    ],
+  },
+  {
+    id: 'low-carb',
+    icon: '🥑',
+    name: 'Низкоуглеводная',
+    tagline: 'Контроль сахара и аппетита',
+    description: 'Умеренно высокий белок, сниженные углеводы и акцент на овощи.',
+    bjuRatio: 'Белки 30% • Жиры 45% • Углеводы 25%',
+    proteinRecommendation: '≈ 1.5 г/кг',
+    suitableFor: 'Контроль сахара, снижение веса',
+    macros: { proteinPct: 30, fatPct: 45, carbsPct: 25 },
+    proteinPerKg: [1.4, 1.6],
+    sampleDay: [
+      { meal: 'Завтрак', items: ['Омлет (3 яйца)', 'Авокадо'] },
+      { meal: 'Обед', items: ['Говядина', 'Салат'] },
+      { meal: 'Перекус', items: ['Греческий йогурт'] },
+      { meal: 'Ужин', items: ['Рыба', 'Брокколи'] },
+    ],
+  },
+  {
+    id: 'who-balance',
+    icon: '⚖',
+    name: 'Баланс (WHO)',
+    tagline: 'Универсальный стандарт питания',
+    description: 'Сбалансированный шаблон для большинства пользователей.',
+    bjuRatio: 'Белки 18% • Жиры 27% • Углеводы 55%',
+    proteinRecommendation: '≈ 1.0-1.2 г/кг',
+    suitableFor: 'Базовая программа на каждый день',
+    macros: { proteinPct: 18, fatPct: 27, carbsPct: 55 },
+    proteinPerKg: [1.0, 1.2],
+    sampleDay: [
+      { meal: 'Завтрак', items: ['Овсянка', 'Яйцо'] },
+      { meal: 'Обед', items: ['Курица', 'Рис', 'Овощи'] },
+      { meal: 'Перекус', items: ['Йогурт'] },
+      { meal: 'Ужин', items: ['Рыба', 'Салат'] },
+    ],
+  },
+  {
+    id: 'if-168',
+    icon: '🕒',
+    name: 'Периодическое голодание',
+    tagline: '16/8: окно питания 12:00-20:00',
+    description: 'Фокус на тайминге приемов пищи с плотной питательной загрузкой в окне питания.',
+    bjuRatio: 'Белки 28% • Жиры 32% • Углеводы 40%',
+    proteinRecommendation: '≈ 1.4-1.8 г/кг',
+    suitableFor: 'Контроль аппетита и режима питания',
+    macros: { proteinPct: 28, fatPct: 32, carbsPct: 40 },
+    proteinPerKg: [1.4, 1.8],
+    fastingWindow: '12:00 - 20:00',
+    sampleDay: [
+      { meal: '12:00', items: ['Яйца', 'Авокадо', 'Рыба'] },
+      { meal: '16:00', items: ['Греческий йогурт', 'Орехи'] },
+      { meal: '19:00', items: ['Курица', 'Рис', 'Овощи'] },
+    ],
+  },
+  {
+    id: 'recomposition',
+    icon: '🧬',
+    name: 'Рекомпозиция тела',
+    tagline: 'Снижение жира с сохранением мышц',
+    description: 'Высокий белок, умеренный дефицит калорий и равномерное распределение белка по приемам.',
+    bjuRatio: 'Белки 30% • Жиры 30% • Углеводы 40%',
+    proteinRecommendation: '1.8-2.2 г/кг',
+    suitableFor: 'Одновременное жиросжигание и поддержка мышц',
+    macros: { proteinPct: 30, fatPct: 30, carbsPct: 40 },
+    proteinPerKg: [1.8, 2.2],
+    sampleDay: [
+      { meal: 'Завтрак', items: ['Омлет', 'Творог'], proteinNote: '≈ 30 г белка' },
+      { meal: 'Обед', items: ['Индейка', 'Киноа', 'Овощи'], proteinNote: '≈ 40 г белка' },
+      { meal: 'Перекус', items: ['Протеиновый коктейль', 'Орехи'], proteinNote: '≈ 25 г белка' },
+      { meal: 'Ужин', items: ['Рыба', 'Салат'], proteinNote: '≈ 25 г белка' },
+    ],
+  },
+];
+
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+const deriveProgramGoals = (
+  program: NutritionProgram,
+  caloriesTarget: number,
+  weightKg: number,
+  currentFiberGoal: number
+) => {
+  const safeCalories = Math.max(1200, Number.isFinite(caloriesTarget) ? caloriesTarget : 2100);
+  const safeWeight = Math.max(35, Number.isFinite(weightKg) ? weightKg : 70);
+
+  const proteinByPct = (safeCalories * program.macros.proteinPct) / 100 / 4;
+  const minProtein = program.proteinPerKg ? program.proteinPerKg[0] * safeWeight : proteinByPct;
+  const maxProtein = program.proteinPerKg ? program.proteinPerKg[1] * safeWeight : proteinByPct;
+  const protein = clamp(proteinByPct, minProtein, maxProtein);
+  const fat = (safeCalories * program.macros.fatPct) / 100 / 9;
+  const carbs = (safeCalories * program.macros.carbsPct) / 100 / 4;
+
+  return {
+    calories: Math.round(safeCalories),
+    protein: Math.round(protein),
+    fat: Math.round(fat),
+    carbs: Math.round(carbs),
+    fiber: Math.max(20, Math.round(currentFiberGoal || 30)),
+  };
+};
+
 // --- Screens ---
 
 const NutrientRow = ({ label, value, goal, unit, colorClass = "bg-emerald-500" }: { label: string, value: number, goal: number, unit: string, colorClass?: string }) => (
@@ -941,6 +1118,7 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
 };
 
 const SummaryScreen = ({
+  goals,
   fastingMode,
   customFastingHours,
   isFastingActive,
@@ -950,7 +1128,9 @@ const SummaryScreen = ({
   onSetCustomHours,
   onStart,
   onStop,
+  onApplyProgram,
 }: {
+  goals: NutrientGoalSet;
   fastingMode: FastingMode;
   customFastingHours: number;
   isFastingActive: boolean;
@@ -960,20 +1140,88 @@ const SummaryScreen = ({
   onSetCustomHours: (hours: number) => void;
   onStart: () => void;
   onStop: () => void;
+  onApplyProgram: (payload: { calories: number; protein: number; fat: number; carbs: number; fiber: number }) => Promise<void>;
 }) => {
   const fastingHours = fastingMode === 'CUSTOM' ? customFastingHours : FASTING_PRESETS[fastingMode].fastingHours;
   const eatingHours = Math.max(0, 24 - fastingHours);
   const remainingMs = isFastingActive && fastingEndAt ? Math.max(0, fastingEndAt - nowTs) : 0;
+  const [selectedProgram, setSelectedProgram] = useState<NutritionProgram | null>(null);
+  const [programWeightKg, setProgramWeightKg] = useState(70);
+  const [programCalories, setProgramCalories] = useState(2100);
+  const [isApplyingProgram, setIsApplyingProgram] = useState(false);
+
+  useEffect(() => {
+    setProgramCalories(Math.max(1200, Math.round(goals.calories || 2100)));
+  }, [goals.calories]);
+
+  const openProgram = (program: NutritionProgram) => {
+    setSelectedProgram(program);
+  };
+
+  const applyProgram = async () => {
+    if (!selectedProgram) return;
+    setIsApplyingProgram(true);
+    try {
+      const payload = deriveProgramGoals(selectedProgram, programCalories, programWeightKg, goals.fiber || 30);
+      await onApplyProgram(payload);
+      alert(`Программа "${selectedProgram.name}" применена к дневнику.`);
+      setSelectedProgram(null);
+    } catch (e) {
+      console.error(e);
+      alert('Не удалось применить программу. Попробуйте снова.');
+    } finally {
+      setIsApplyingProgram(false);
+    }
+  };
 
   return (
     <div className="p-4">
       <header className="mb-6 pt-4">
         <h1 className="text-3xl font-bold tracking-tight">Сводки</h1>
-        <p className="text-zinc-500 text-sm">Аналитика за 7 дней</p>
+        <p className="text-zinc-500 text-sm">Макроэлементы, анализ и программы</p>
       </header>
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 flex flex-col items-center justify-center text-center">
-        <BarChart3 size={48} className="text-zinc-700 mb-4" />
-        <p className="text-zinc-400">Здесь будет ваша аналитика и тренды</p>
+
+      <div className="space-y-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+          <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Макроэлементы</p>
+          <p className="text-sm text-zinc-300">Цели на день: {Math.round(goals.protein)}Б / {Math.round(goals.fat)}Ж / {Math.round(goals.carbs)}У</p>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+          <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Витамины</p>
+          <p className="text-sm text-zinc-300">Контроль ключевых дефицитов: A, D, B12, C, магний и железо.</p>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+          <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Гликемическая нагрузка</p>
+          <p className="text-sm text-zinc-300">AI оценивает качество углеводов и стабильность сахара крови.</p>
+        </div>
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+          <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Анализ AI</p>
+          <p className="text-sm text-zinc-300">Персональные рекомендации по меню, дефицитам и распределению БЖУ.</p>
+        </div>
+      </div>
+
+      <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-bold">Программы питания</h3>
+          <span className="text-[10px] uppercase tracking-widest text-zinc-500">Сводки</span>
+        </div>
+        <div className="space-y-2">
+          {NUTRITION_PROGRAMS.map((program) => (
+            <button
+              key={program.id}
+              onClick={() => openProgram(program)}
+              className="w-full text-left bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 transition-colors"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-zinc-100">{program.icon} {program.name}</p>
+                  <p className="text-xs text-zinc-400 mt-0.5">{program.tagline}</p>
+                </div>
+                <span className="text-[10px] uppercase tracking-widest text-emerald-400">Открыть</span>
+              </div>
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
@@ -1044,6 +1292,87 @@ const SummaryScreen = ({
           </button>
         </div>
       </div>
+
+      <BottomSheet isOpen={!!selectedProgram} onClose={() => setSelectedProgram(null)} title={selectedProgram ? `${selectedProgram.icon} ${selectedProgram.name}` : 'Программа'}>
+        {selectedProgram && (
+          <div className="space-y-4">
+            <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+              <p className="text-sm text-zinc-200 font-semibold mb-2">Описание</p>
+              <p className="text-sm text-zinc-400 leading-relaxed">{selectedProgram.description}</p>
+              <p className="text-xs text-zinc-500 mt-3">Подходит: {selectedProgram.suitableFor}</p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
+              <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-3">
+                <p className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1">Соотношение БЖУ</p>
+                <p className="text-sm text-zinc-200">{selectedProgram.bjuRatio}</p>
+              </div>
+              <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-3">
+                <p className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1">Рекомендация белка</p>
+                <p className="text-sm text-zinc-200">{selectedProgram.proteinRecommendation}</p>
+              </div>
+              {selectedProgram.fastingWindow && (
+                <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-3">
+                  <p className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1">Окно питания</p>
+                  <p className="text-sm text-zinc-200">{selectedProgram.fastingWindow}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+              <p className="text-sm font-semibold text-zinc-200 mb-3">Пример дня питания</p>
+              <div className="space-y-3">
+                {selectedProgram.sampleDay.map((entry, idx) => (
+                  <div key={`${entry.meal}-${idx}`} className="border border-zinc-700/70 rounded-lg p-3 bg-zinc-900/40">
+                    <p className="text-xs uppercase tracking-widest text-zinc-500 mb-1">{entry.meal}</p>
+                    <p className="text-sm text-zinc-300">{entry.items.join(' + ')}</p>
+                    {entry.proteinNote && <p className="text-xs text-emerald-400 mt-1">{entry.proteinNote}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+              <p className="text-sm font-semibold text-zinc-200 mb-3">Параметры применения</p>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-xs text-zinc-400">
+                  Вес (кг)
+                  <input
+                    type="number"
+                    min={35}
+                    max={250}
+                    value={programWeightKg}
+                    onChange={(e) => setProgramWeightKg(Number(e.target.value))}
+                    className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
+                  />
+                </label>
+                <label className="text-xs text-zinc-400">
+                  Калории/день
+                  <input
+                    type="number"
+                    min={1200}
+                    max={6000}
+                    value={programCalories}
+                    onChange={(e) => setProgramCalories(Number(e.target.value))}
+                    className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <button
+              onClick={applyProgram}
+              disabled={isApplyingProgram}
+              className={cn(
+                'w-full py-3 rounded-xl font-semibold',
+                isApplyingProgram ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed' : 'bg-emerald-500 text-white'
+              )}
+            >
+              {isApplyingProgram ? 'Применяем...' : 'Применить к дневнику'}
+            </button>
+          </div>
+        )}
+      </BottomSheet>
     </div>
   );
 };
@@ -1405,6 +1734,21 @@ export default function App() {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const updateGoals = async (payload: { calories: number; protein: number; fat: number; carbs: number; fiber: number }) => {
+    const res = await fetch('/api/diary/goals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || 'Не удалось обновить цели');
+    }
+
+    await fetchDiary();
   };
 
   const fetchHints = async (dataOverride?: any) => {
@@ -2032,6 +2376,7 @@ Rules:
             />
           ) : (
             <SummaryScreen
+              goals={mergeGoals(diaryData.goals)}
               fastingMode={fastingMode}
               customFastingHours={customFastingHours}
               isFastingActive={isFastingActive}
@@ -2041,6 +2386,7 @@ Rules:
               onSetCustomHours={handleSetCustomFastingHours}
               onStart={handleStartFasting}
               onStop={handleStopFasting}
+              onApplyProgram={updateGoals}
             />
           )}
         </motion.div>
