@@ -814,6 +814,16 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
   const { meals = [], waterIntake = 0 } = data;
   const goals = mergeGoals(data.goals);
   const waterGoal = 2500; // 2.5L in ml
+  const headerDateText = useMemo(() => {
+    const rawDate = String(data?.date || '').trim();
+    const parsed = rawDate ? new Date(`${rawDate}T12:00:00`) : new Date();
+    const safeDate = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+    return new Intl.DateTimeFormat('ru-RU', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    }).format(safeDate);
+  }, [data?.date]);
 
   const totals = useMemo(() => meals.reduce((acc: NutrientTotals, meal: any) => {
     meal.items.forEach((item: any) => {
@@ -865,7 +875,7 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
       <header className="mb-6 pt-4 flex justify-between items-end">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Питание</h1>
-          <p className="text-zinc-500 text-sm">Вторник, 4 Марта</p>
+          <p className="text-zinc-500 text-sm">{headerDateText}</p>
         </div>
         <div className="w-10 h-10 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center overflow-hidden">
           <img src="/logo.png" alt="NUTRIA logo" className="w-full h-full object-cover" />
@@ -2521,22 +2531,22 @@ export default function App() {
       const goals = effectiveGoals;
 
       const prompt = `
-        User current nutrition today:
-        Calories: ${totals.calories}/${goals.calories}
-        Protein: ${totals.protein}/${goals.protein}
-        Fat: ${totals.fat}/${goals.fat}
-        Carbs: ${totals.carbs}/${goals.carbs}
-        Fiber: ${totals.fiber}/${goals.fiber}
-        Vitamins: ${JSON.stringify(totals.vitamins)}
-        Minerals: ${JSON.stringify(totals.minerals)}
-        Fatty Acids: ${JSON.stringify(totals.fattyAcids)}
-        Carbohydrate Types: ${JSON.stringify(totals.carbohydrateTypes)}
-        Amino Acids: ${JSON.stringify(totals.aminoAcids)}
+        Текущее питание пользователя за сегодня:
+        Калории: ${totals.calories}/${goals.calories}
+        Белки: ${totals.protein}/${goals.protein}
+        Жиры: ${totals.fat}/${goals.fat}
+        Углеводы: ${totals.carbs}/${goals.carbs}
+        Клетчатка: ${totals.fiber}/${goals.fiber}
+        Витамины: ${JSON.stringify(totals.vitamins)}
+        Минералы: ${JSON.stringify(totals.minerals)}
+        Жирные кислоты: ${JSON.stringify(totals.fattyAcids)}
+        Типы углеводов: ${JSON.stringify(totals.carbohydrateTypes)}
+        Аминокислоты: ${JSON.stringify(totals.aminoAcids)}
 
-        Generate 2-3 short, actionable nutrition hints in Russian. 
-        Focus on deficiencies in vitamins or minerals if any.
-        Each hint should have: severity (low, med, high), title, explanation, and cta (optional search query).
-        Return JSON array of objects.
+        Сгенерируй 2-3 короткие практичные подсказки на русском языке.
+        Сделай акцент на дефицитах витаминов и минералов, если они есть.
+        Формат каждого элемента: severity (одно из low|med|high), title, explanation, cta (необязательный поисковый запрос).
+        Верни только JSON-массив объектов.
       `;
 
       const responseText = await generateAI(prompt);
@@ -2634,15 +2644,15 @@ export default function App() {
     try {
       const optimizedImage = await optimizeImageForRecognition(file);
 
-      const barcodeProbePrompt = `Read this photo and extract only barcode-like number strings from visible package labels.
-Return ONLY JSON object:
+      const barcodeProbePrompt = `Проанализируй фото и извлеки только строки, похожие на штрихкоды, с упаковки.
+    Верни ТОЛЬКО JSON-объект:
 {
   "barcodeCandidates": ["4601234567890"]
 }
-Rules:
-- Include only strings with 8-14 digits.
-- No spaces, no dashes.
-- If no barcode is visible return empty array.`;
+    Правила:
+    - Включай только строки из 8-14 цифр.
+    - Без пробелов и дефисов.
+    - Если штрихкод не виден, верни пустой массив.`;
       const barcodeProbeText = await generateAI(barcodeProbePrompt, "application/json", optimizedImage);
       const barcodeProbeRaw = parseAiJsonPayload(barcodeProbeText || '{}');
       const photoBarcodeCandidates = Array.from(new Set<string>(
@@ -2670,14 +2680,14 @@ Rules:
         return;
       }
 
-      const prompt = `Analyze this food photo and return ONLY valid JSON.
+      const prompt = `Проанализируй фото еды и верни ТОЛЬКО корректный JSON.
 
-Priority:
-1) If a barcode/QR with product code is visible, extract numeric code candidates.
-2) Recognize foods or dish components and estimate amount in grams.
-3) Prefer Russian names and include aliases (RU + EN) for search.
+    Приоритет:
+    1) Если виден штрихкод/QR с кодом товара, извлеки кандидаты числовых кодов.
+    2) Распознай продукты или компоненты блюда и оцени количество в граммах.
+    3) Используй русские названия как основные и добавь алиасы (RU + EN) для поиска.
 
-Return JSON object in this exact shape:
+    Верни JSON-объект строго в формате:
 {
   "items": [
     {
@@ -2691,11 +2701,11 @@ Return JSON object in this exact shape:
   ]
 }
 
-Rules:
-- For mixed dishes split to 2-5 main edible components.
-- Ignore plate/table/background.
-- amount must be positive number.
-- confidence from 0.0 to 1.0.`;
+Правила:
+- Для смешанных блюд выделяй 2-5 основных съедобных компонентов.
+- Игнорируй тарелку, стол и фон.
+- amount должен быть положительным числом.
+- confidence от 0.0 до 1.0.`;
       const responseText = await generateAI(prompt, "application/json", optimizedImage);
 
       const recognizedRaw = parseAiJsonPayload(responseText || "[]");
@@ -2705,19 +2715,19 @@ Rules:
 
       let recognizedItemsSource = recognizedList;
       if (recognizedItemsSource.length === 0) {
-        const singleFoodFallbackPrompt = `Identify the main edible item in this photo.
-Return ONLY JSON object:
+        const singleFoodFallbackPrompt = `Определи основной съедобный продукт на фото.
+      Верни ТОЛЬКО JSON-объект:
 {
   "name": "банан",
   "amount": 120,
   "aliases": ["banana"],
   "confidence": 0.0
 }
-Rules:
-- Return exactly one food item.
-- Ignore background and non-food objects.
-- amount is estimated grams (positive number).
-- If uncertain, still provide best guess.`;
+      Правила:
+      - Верни ровно один продукт.
+      - Игнорируй фон и несъедобные объекты.
+      - amount: оценка в граммах (положительное число).
+      - Если есть сомнения, все равно верни лучшую оценку.`;
         const singleFoodText = await generateAI(singleFoodFallbackPrompt, "application/json", optimizedImage);
         const singleFoodRaw = parseAiJsonPayload(singleFoodText || '{}');
         if (singleFoodRaw && typeof singleFoodRaw === 'object' && !Array.isArray(singleFoodRaw)) {

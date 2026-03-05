@@ -48,6 +48,9 @@ const BARCODE_PREFERRED_LANG = (process.env.BARCODE_PREFERRED_LANG || "ru").toLo
 const BARCODE_LOOKUP_TIMEOUT_MS = Number(process.env.BARCODE_LOOKUP_TIMEOUT_MS || 3500);
 const BARCODE_CACHE_TTL_MS = Number(process.env.BARCODE_CACHE_TTL_MS || 1000 * 60 * 60 * 6);
 const PRODUCT_SEARCH_CACHE_TTL_MS = Number(process.env.PRODUCT_SEARCH_CACHE_TTL_MS || 1000 * 60 * 10);
+const RU_LOCALIZATION_CACHE_TTL_MS = Number(process.env.RU_LOCALIZATION_CACHE_TTL_MS || 1000 * 60 * 60 * 24 * 14);
+const ruLocalizationCache = new Map<string, { expiresAt: number; value: string }>();
+const CYRILLIC_RE = /[А-Яа-яЁё]/;
 
 function getOrCreateInMemoryDiary(userId: string) {
   if (!inMemoryDiary.has(userId)) {
@@ -161,6 +164,63 @@ function cacheProductSearch(query: string, results: any[]) {
 function numberOrZero(value: any) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function hasCyrillic(value: any) {
+  return CYRILLIC_RE.test(String(value || ""));
+}
+
+function getCachedRuLocalization(key: string) {
+  const cached = ruLocalizationCache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    ruLocalizationCache.delete(key);
+    return null;
+  }
+  return cached.value;
+}
+
+function cacheRuLocalization(key: string, value: string) {
+  ruLocalizationCache.set(key, { expiresAt: Date.now() + RU_LOCALIZATION_CACHE_TTL_MS, value });
+}
+
+async function localizeTextToRussian(value: any, type: "name" | "brand") {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (hasCyrillic(raw)) return raw;
+
+  const cacheKey = `${type}:${raw.toLowerCase()}`;
+  const cached = getCachedRuLocalization(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const text = await generateAI(`Переведи на русский язык ${type === "name" ? "название продукта/блюда" : "название бренда"}: "${raw}".
+Сохрани смысл и пищевой контекст.
+Верни только JSON вида: {"text":"..."}`);
+    const parsed = JSON.parse(text || "{}");
+    const localized = String(parsed?.text || "").trim();
+    if (localized) {
+      cacheRuLocalization(cacheKey, localized);
+      return localized;
+    }
+  } catch {
+    // keep original if localization failed
+  }
+
+  return raw;
+}
+
+async function localizeProductForRussianAudience<T extends Record<string, any>>(product: T): Promise<T> {
+  if (!product || typeof product !== "object") return product;
+
+  const localizedName = await localizeTextToRussian(product.name, "name");
+  const localizedBrand = product.brand ? await localizeTextToRussian(product.brand, "brand") : product.brand;
+
+  return {
+    ...product,
+    name: localizedName || product.name,
+    brand: localizedBrand || product.brand,
+  } as T;
 }
 
 function normalizeUnitName(unit: any) {
@@ -765,14 +825,14 @@ async function startServer() {
     let categories: string[] = [];
 
     try {
-      const normResponseText = await generateAI(`Analyze this food search query: "${query}". 
-        The user might be using Russian, English, or a mix.
-        Return JSON with:
-        - normalized: canonical Russian name (e.g. "яблоко" for "яблочки")
-        - english: accurate English translation for USDA database search
-        - search_terms: array of 3-5 keywords for broad database searching (include both RU and EN versions)
-        - tags: array of categories (e.g. ["fruit", "snack", "raw"])
-        - isDrink: boolean`);
+      const normResponseText = await generateAI(`Проанализируй поисковый запрос по еде: "${query}".
+    Пользователь русскоязычный. Верни JSON со структурой:
+    - normalized: каноничное название на русском (например, "яблоко")
+    - english: краткий англоязычный термин для поиска в USDA
+    - search_terms: массив из 3-5 ключевых слов для поиска (включи русские и английские варианты)
+    - tags: массив категорий (например ["fruit", "snack", "raw"])
+    - isDrink: boolean
+    Верни только JSON.`);
       const normData = JSON.parse(normResponseText || '{}');
       normalizedQuery = normData.normalized || query;
       englishQuery = normData.english || query;
@@ -895,12 +955,11 @@ async function startServer() {
     // If we have very few results or low confidence, we ask AI to estimate the product
     if (finalResults.length === 0 || (finalResults.length > 0 && finalResults[0].matchScore < 0.6)) {
       try {
-        const estimateResponseText = await generateAI(`The user is searching for a food item: "${query}". 
-          I couldn't find a perfect match in my database. 
-          Please estimate the nutritional values for 100g of this item.
-          Return JSON:
+        const estimateResponseText = await generateAI(`Пользователь ищет продукт: "${query}".
+          Точного совпадения в базе нет.
+          Оцени пищевую ценность для 100 г и верни только JSON:
           {
-            "name": "Estimated Name",
+            "name": "Название на русском",
             "calories": number,
             "protein": number,
             "fat": number,
@@ -911,12 +970,12 @@ async function startServer() {
             "fattyAcids": { "Omega3": number, "Omega6": number, "Omega9": number, "TransFats": number, "Cholesterol": number },
             "carbohydrateTypes": { "Glucose": number, "Fructose": number, "Galactose": number, "Sucrose": number, "Lactose": number, "Maltose": number, "Starch": number, "Fiber": number },
             "aminoAcids": { "Alanine": number, "Arginine": number, "Asparagine": number, "AsparticAcid": number, "Valine": number, "Histidine": number, "Glycine": number, "Glutamine": number, "GlutamicAcid": number, "Isoleucine": number, "Leucine": number, "Lysine": number, "Methionine": number, "Proline": number, "Serine": number, "Tyrosine": number, "Threonine": number, "Tryptophan": number, "Phenylalanine": number, "Cysteine": number },
-            "explanation": "Briefly why these values"
+            "explanation": "Коротко почему такие значения"
           }
-          IMPORTANT:
-          - aminoAcids values are in milligrams (mg) per 100g
-          - fattyAcids values are in grams (g) per 100g, except Cholesterol in mg
-          - carbohydrateTypes values are in grams (g) per 100g`);
+          Важно:
+          - aminoAcids: миллиграммы (mg) на 100 г
+          - fattyAcids: граммы (g) на 100 г, кроме Cholesterol (mg)
+          - carbohydrateTypes: граммы (g) на 100 г`);
         const estData = JSON.parse(estimateResponseText || '{}');
         if (estData.name) {
           finalResults.unshift({
@@ -949,12 +1008,14 @@ async function startServer() {
 
     if (finalResults.length > 1 && finalResults[0].matchScore < 0.95) {
       try {
-        const reRankResponseText = await generateAI(`User is searching for: "${query}" (Normalized: "${normalizedQuery}").
-          I found these candidates:
+        const reRankResponseText = await generateAI(`Пользователь ищет: "${query}" (нормализовано: "${normalizedQuery}").
+          Найдены кандидаты:
           ${finalResults.map((c, i) => `${i}: ${c.name} (${c.brand}) - Score: ${c.matchScore}`).join('\n')}
           
-          Which of these are the best matches? Return JSON with an array of indices in order of relevance. 
-          Exclude completely irrelevant items. If an AI estimation is present and looks accurate, prioritize it.`);
+          Выбери лучшие совпадения.
+          Верни только JSON с массивом индексов по убыванию релевантности.
+          Полностью нерелевантные позиции исключи.
+          Если есть AI-оценка и она выглядит корректно, можно поставить ее выше.`);
         const reRankData = JSON.parse(reRankResponseText || '{}');
         let indices = [];
         if (Array.isArray(reRankData)) indices = reRankData;
@@ -968,7 +1029,7 @@ async function startServer() {
       }
     }
 
-      const responseResults = finalResults.slice(0, 10);
+      const responseResults = await Promise.all(finalResults.slice(0, 10).map((item) => localizeProductForRussianAudience(item)));
       cacheProductSearch(query, responseResults);
       res.json(responseResults);
     } catch (e: any) {
@@ -1331,6 +1392,7 @@ async function startServer() {
 
     // If it's a USDA product, we need to ensure it exists in our local DB first
     if ((String(productId).startsWith('usda-') || String(productId).startsWith('ai-est-')) && usdaData) {
+      usdaData = await localizeProductForRussianAudience(usdaData);
       let product = await prisma.product.findFirst({
         where: { name: usdaData.name, brand: usdaData.brand }
       });
@@ -1405,11 +1467,10 @@ async function startServer() {
     if (!transcript) return res.status(400).json({ error: "No transcript provided" });
 
     try {
-      const responseText = await generateAI(`The user said: "${transcript}". 
-        Extract food items and their estimated amounts (in grams or ml). 
-        If amount is not specified, estimate a typical portion.
-        Return JSON array of objects: [{ "name": "food name", "amount": number }].
-        Focus on accuracy and common portion sizes.`);
+      const responseText = await generateAI(`Пользователь сказал: "${transcript}".
+        Извлеки продукты/блюда и оценочное количество (в граммах или мл).
+        Если количество не указано, оцени типичную порцию.
+        Верни только JSON-массив объектов: [{ "name": "название на русском", "amount": number }].`);
 
       const itemsRaw = JSON.parse(responseText || "[]");
       const items = Array.isArray(itemsRaw) ? itemsRaw : [];
@@ -1435,40 +1496,49 @@ async function startServer() {
           : [];
 
         if (localProducts.length > 0) {
-          return { ...item, product: { ...localProducts[0], source: 'local' } };
+          const localizedLocalProduct = await localizeProductForRussianAudience({ ...localProducts[0], source: 'local' });
+          return { ...item, product: localizedLocalProduct };
         }
 
         // Try USDA
         const usdaKey = process.env.USDA_FDC_API_KEY;
         if (usdaKey) {
           try {
-            const usdaRes = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${usdaKey}&query=${encodeURIComponent(item.name)}&pageSize=1`);
+            let usdaQuery = item.name;
+            try {
+              const usdaQueryText = await generateAI(`Преобразуй русское/смешанное название продукта в короткий английский запрос для USDA: "${item.name}".
+Верни только JSON вида: {"english":"..."}`);
+              const usdaQueryData = JSON.parse(usdaQueryText || '{}');
+              usdaQuery = String(usdaQueryData?.english || item.name).trim() || item.name;
+            } catch {
+              usdaQuery = item.name;
+            }
+
+            const usdaRes = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${usdaKey}&query=${encodeURIComponent(usdaQuery)}&pageSize=1`);
             if (usdaRes.ok) {
               const usdaData: any = await usdaRes.json();
               if (usdaData.foods && usdaData.foods.length > 0) {
                 const f = usdaData.foods[0];
                 const getNutrient = (id: number) => f.foodNutrients?.find((n: any) => n.nutrientId === id || n.nutrientNumber === String(id))?.value || 0;
                 const extended = extractUsdaExtendedNutrients(f);
-                return {
-                  ...item,
-                  product: {
-                    id: `usda-${f.fdcId}`,
-                    name: f.description,
-                    brand: f.brandOwner || 'USDA',
-                    calories: getNutrient(1008) || getNutrient(208),
-                    protein: getNutrient(1003) || getNutrient(203),
-                    fat: getNutrient(1004) || getNutrient(204),
-                    carbs: getNutrient(1005) || getNutrient(205),
-                    fiber: getNutrient(1079) || getNutrient(291),
-                    vitamins: extended.vitamins,
-                    minerals: extended.minerals,
-                    aminoAcids: extended.aminoAcids,
-                    fattyAcids: extended.fattyAcids,
-                    carbohydrateTypes: extended.carbohydrateTypes,
-                    source: 'usda',
-                    isUsda: true
-                  }
-                };
+                const localizedUsdaProduct = await localizeProductForRussianAudience({
+                  id: `usda-${f.fdcId}`,
+                  name: f.description,
+                  brand: f.brandOwner || 'USDA',
+                  calories: getNutrient(1008) || getNutrient(208),
+                  protein: getNutrient(1003) || getNutrient(203),
+                  fat: getNutrient(1004) || getNutrient(204),
+                  carbs: getNutrient(1005) || getNutrient(205),
+                  fiber: getNutrient(1079) || getNutrient(291),
+                  vitamins: extended.vitamins,
+                  minerals: extended.minerals,
+                  aminoAcids: extended.aminoAcids,
+                  fattyAcids: extended.fattyAcids,
+                  carbohydrateTypes: extended.carbohydrateTypes,
+                  source: 'usda',
+                  isUsda: true
+                });
+                return { ...item, product: localizedUsdaProduct };
               }
             }
           } catch (e) {}
@@ -1476,8 +1546,8 @@ async function startServer() {
 
         // If still no product, use AI to estimate
         try {
-          const estText = await generateAI(`Estimate nutritional values for 100g of "${item.name}".
-            Return JSON:
+          const estText = await generateAI(`Оцени пищевую ценность для 100 г продукта "${item.name}".
+            Верни только JSON:
             {
               "calories": number,
               "protein": number,
@@ -1489,34 +1559,32 @@ async function startServer() {
               "fattyAcids": { "Omega3": number, "Omega6": number, "Omega9": number, "TransFats": number, "Cholesterol": number },
               "carbohydrateTypes": { "Glucose": number, "Fructose": number, "Galactose": number, "Sucrose": number, "Lactose": number, "Maltose": number, "Starch": number, "Fiber": number },
               "aminoAcids": { "Alanine": number, "Arginine": number, "Asparagine": number, "AsparticAcid": number, "Valine": number, "Histidine": number, "Glycine": number, "Glutamine": number, "GlutamicAcid": number, "Isoleucine": number, "Leucine": number, "Lysine": number, "Methionine": number, "Proline": number, "Serine": number, "Tyrosine": number, "Threonine": number, "Tryptophan": number, "Phenylalanine": number, "Cysteine": number },
-              "explanation": "string"
+              "explanation": "краткое пояснение"
             }
-            IMPORTANT:
-            - aminoAcids are in mg per 100g
-            - fattyAcids are in g per 100g, except Cholesterol in mg
-            - carbohydrateTypes are in g per 100g`);
+            Важно:
+            - aminoAcids: mg на 100 г
+            - fattyAcids: g на 100 г, кроме Cholesterol (mg)
+            - carbohydrateTypes: g на 100 г`);
           const est = JSON.parse(estText || '{}');
-          return {
-            ...item,
-            product: {
-              id: `ai-est-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-              name: `✨ ${item.name} (AI Оценка)`,
-              brand: 'AI Nutria Engine',
-              calories: est.calories || 0,
-              protein: est.protein || 0,
-              fat: est.fat || 0,
-              carbs: est.carbs || 0,
-              fiber: est.fiber || 0,
-              vitamins: est.vitamins || {},
-              minerals: est.minerals || {},
-              aminoAcids: est.aminoAcids || {},
-              fattyAcids: est.fattyAcids || {},
-              carbohydrateTypes: est.carbohydrateTypes || {},
-              isAiEstimated: true,
-              explanation: est.explanation,
-              source: 'ai'
-            }
-          };
+          const localizedAiProduct = await localizeProductForRussianAudience({
+            id: `ai-est-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+            name: `✨ ${item.name} (AI Оценка)`,
+            brand: 'AI Nutria Engine',
+            calories: est.calories || 0,
+            protein: est.protein || 0,
+            fat: est.fat || 0,
+            carbs: est.carbs || 0,
+            fiber: est.fiber || 0,
+            vitamins: est.vitamins || {},
+            minerals: est.minerals || {},
+            aminoAcids: est.aminoAcids || {},
+            fattyAcids: est.fattyAcids || {},
+            carbohydrateTypes: est.carbohydrateTypes || {},
+            isAiEstimated: true,
+            explanation: est.explanation,
+            source: 'ai'
+          });
+          return { ...item, product: localizedAiProduct };
         } catch (e) {
           console.error("AI estimation in voice parse failed:", e);
         }

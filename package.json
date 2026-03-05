@@ -17,6 +17,7 @@
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:backfill:micronutrients": "tsx prisma/backfill-micronutrients.ts",
+    "db:localize:ru": "tsx prisma/localize-ru.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
