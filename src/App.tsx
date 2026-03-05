@@ -1236,7 +1236,6 @@ const SummaryScreen = ({
   onSetCustomHours,
   onStart,
   onStop,
-  onApplyProgram,
   onSaveProfileGoals,
 }: {
   goals: NutrientGoalSet;
@@ -1251,16 +1250,12 @@ const SummaryScreen = ({
   onSetCustomHours: (hours: number) => void;
   onStart: () => void;
   onStop: () => void;
-  onApplyProgram: (payload: { calories: number; protein: number; fat: number; carbs: number; fiber: number }) => Promise<void>;
   onSaveProfileGoals: (profile: UserProfileSettings, goals: NutrientGoalSet) => Promise<void>;
 }) => {
   const fastingHours = fastingMode === 'CUSTOM' ? customFastingHours : FASTING_PRESETS[fastingMode].fastingHours;
   const eatingHours = Math.max(0, 24 - fastingHours);
   const remainingMs = isFastingActive && fastingEndAt ? Math.max(0, fastingEndAt - nowTs) : 0;
   const [selectedProgram, setSelectedProgram] = useState<NutritionProgram | null>(null);
-  const [programWeightKg, setProgramWeightKg] = useState(70);
-  const [programCalories, setProgramCalories] = useState(2100);
-  const [isApplyingProgram, setIsApplyingProgram] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsProfile, setSettingsProfile] = useState<UserProfileSettings>(profile);
   const [settingsGoals, setSettingsGoals] = useState<NutrientGoalSet>(goals);
@@ -1268,6 +1263,12 @@ const SummaryScreen = ({
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [selectedHistoryDate, setSelectedHistoryDate] = useState('');
   const [isFastingCollapsed, setIsFastingCollapsed] = useState(() => localStorage.getItem('collapse_summary_fasting') === 'true');
+  const [isRecommendationsCollapsed, setIsRecommendationsCollapsed] = useState(() => localStorage.getItem('collapse_summary_recommendations') === 'true');
+  const [isProgramsCollapsed, setIsProgramsCollapsed] = useState(() => {
+    const raw = localStorage.getItem('collapse_summary_programs');
+    return raw === null ? true : raw === 'true';
+  });
+  const [isSettingsCollapsed, setIsSettingsCollapsed] = useState(() => localStorage.getItem('collapse_summary_settings') === 'true');
 
   const dayLabel = (dateKey: string) => {
     const date = new Date(`${dateKey}T12:00:00`);
@@ -1314,9 +1315,15 @@ const SummaryScreen = ({
     return historyWithMetrics.find((item) => item.point.date === selectedHistoryDate) || historyWithMetrics[historyWithMetrics.length - 1];
   }, [historyWithMetrics, selectedHistoryDate]);
 
-  useEffect(() => {
-    setProgramCalories(Math.max(1200, Math.round(goals.calories || 2100)));
-  }, [goals.calories]);
+  const selectedProgramTargets = useMemo(() => {
+    if (!selectedProgram) return null;
+    return deriveProgramGoals(
+      selectedProgram,
+      Math.max(1200, Math.round(goals.calories || 2100)),
+      Math.max(35, Math.round(profile.weightKg || 70)),
+      goals.fiber || 30
+    );
+  }, [selectedProgram, goals, profile.weightKg]);
 
   useEffect(() => {
     setSettingsProfile(profile);
@@ -1334,22 +1341,6 @@ const SummaryScreen = ({
 
   const openProgram = (program: NutritionProgram) => {
     setSelectedProgram(program);
-  };
-
-  const applyProgram = async () => {
-    if (!selectedProgram) return;
-    setIsApplyingProgram(true);
-    try {
-      const payload = deriveProgramGoals(selectedProgram, programCalories, programWeightKg, goals.fiber || 30);
-      await onApplyProgram(payload);
-      alert(`Программа "${selectedProgram.name}" применена к дневнику.`);
-      setSelectedProgram(null);
-    } catch (e) {
-      console.error(e);
-      alert('Не удалось применить программу. Попробуйте снова.');
-    } finally {
-      setIsApplyingProgram(false);
-    }
   };
 
   const activityLabelMap: Record<UserProfileSettings['activity'], string> = {
@@ -1472,81 +1463,148 @@ const SummaryScreen = ({
         )}
       </div>
 
-      <div className="space-y-3">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-          <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Макроэлементы</p>
-          <p className="text-sm text-zinc-300">Цели на день: {Math.round(goals.protein)}Б / {Math.round(goals.fat)}Ж / {Math.round(goals.carbs)}У</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-          <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Витамины</p>
-          <p className="text-sm text-zinc-300">Контроль ключевых дефицитов: A, D, B12, C, магний и железо.</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-          <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Гликемическая нагрузка</p>
-          <p className="text-sm text-zinc-300">AI оценивает качество углеводов и стабильность сахара крови.</p>
-        </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-          <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Анализ AI</p>
-          <p className="text-sm text-zinc-300">Персональные рекомендации по меню, дефицитам и распределению БЖУ.</p>
-        </div>
-      </div>
+      <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+        <button
+          onClick={() => {
+            const next = !isRecommendationsCollapsed;
+            setIsRecommendationsCollapsed(next);
+            localStorage.setItem('collapse_summary_recommendations', String(next));
+          }}
+          className="w-full px-4 py-3 flex items-center justify-between active:bg-zinc-800/50 transition-colors"
+        >
+          <h3 className="text-lg font-bold">Рекомендации</h3>
+          {isRecommendationsCollapsed ? <ChevronDown size={20} className="text-zinc-500" /> : <ChevronUp size={20} className="text-zinc-500" />}
+        </button>
 
-      <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-bold">Программы питания</h3>
-          <span className="text-[10px] uppercase tracking-widest text-zinc-500">Сводки</span>
-        </div>
-        <div className="space-y-2">
-          {NUTRITION_PROGRAMS.map((program) => (
-            <button
-              key={program.id}
-              onClick={() => openProgram(program)}
-              className="w-full text-left bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 transition-colors"
+        <AnimatePresence initial={false}>
+          {!isRecommendationsCollapsed && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
             >
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-zinc-100">{program.icon} {program.name}</p>
-                  <p className="text-xs text-zinc-400 mt-0.5">{program.tagline}</p>
+              <div className="space-y-3 px-4 pb-4 border-t border-zinc-800/60 pt-4">
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+                  <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Макроэлементы</p>
+                  <p className="text-sm text-zinc-300">Цели на день: {Math.round(goals.protein)}Б / {Math.round(goals.fat)}Ж / {Math.round(goals.carbs)}У</p>
                 </div>
-                <span className="text-[10px] uppercase tracking-widest text-emerald-400">Открыть</span>
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+                  <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Витамины</p>
+                  <p className="text-sm text-zinc-300">Контроль ключевых дефицитов: A, D, B12, C, магний и железо.</p>
+                </div>
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+                  <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Гликемическая нагрузка</p>
+                  <p className="text-sm text-zinc-300">AI оценивает качество углеводов и стабильность сахара крови.</p>
+                </div>
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+                  <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Анализ AI</p>
+                  <p className="text-sm text-zinc-300">Персональные рекомендации по меню, дефицитам и распределению БЖУ.</p>
+                </div>
               </div>
-            </button>
-          ))}
-        </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-bold">Настройки</h3>
-          <SlidersHorizontal size={16} className="text-zinc-500" />
-        </div>
+      <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+        <button
+          onClick={() => {
+            const next = !isProgramsCollapsed;
+            setIsProgramsCollapsed(next);
+            localStorage.setItem('collapse_summary_programs', String(next));
+          }}
+          className="w-full px-4 py-3 flex items-center justify-between active:bg-zinc-800/50 transition-colors"
+        >
+          <h3 className="text-lg font-bold">Программы питания</h3>
+          {isProgramsCollapsed ? <ChevronDown size={20} className="text-zinc-500" /> : <ChevronUp size={20} className="text-zinc-500" />}
+        </button>
 
-        <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
-          <p className="text-base font-semibold text-zinc-100 mb-3">Профиль и цели</p>
-          <div className="space-y-1 text-sm text-zinc-300">
-            <p>Пол: {profile.sex === 'male' ? 'мужской' : 'женский'}</p>
-            <p>Вес: {Math.round(profile.weightKg)} кг</p>
-            <p>Рост: {Math.round(profile.heightCm)} см</p>
-            <p>Возраст: {Math.round(profile.age)}</p>
-            <p>Активность: {activityLabelMap[profile.activity]}</p>
-            <p>Цель: {goalLabelMap[profile.goal]}</p>
+        <AnimatePresence initial={false}>
+          {!isProgramsCollapsed && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+            >
+              <div className="space-y-2 px-4 pb-4 border-t border-zinc-800/60 pt-4">
+                {NUTRITION_PROGRAMS.map((program) => (
+                  <button
+                    key={program.id}
+                    onClick={() => openProgram(program)}
+                    className="w-full text-left bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 transition-colors"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-zinc-100">{program.icon} {program.name}</p>
+                        <p className="text-xs text-zinc-400 mt-0.5">{program.tagline}</p>
+                      </div>
+                      <span className="text-[10px] uppercase tracking-widest text-emerald-400">Открыть</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+        <button
+          onClick={() => {
+            const next = !isSettingsCollapsed;
+            setIsSettingsCollapsed(next);
+            localStorage.setItem('collapse_summary_settings', String(next));
+          }}
+          className="w-full px-4 py-3 flex items-center justify-between active:bg-zinc-800/50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-bold">Настройки</h3>
+            <SlidersHorizontal size={16} className="text-zinc-500" />
           </div>
+          {isSettingsCollapsed ? <ChevronDown size={20} className="text-zinc-500" /> : <ChevronUp size={20} className="text-zinc-500" />}
+        </button>
 
-          <div className="mt-4 p-3 bg-zinc-900/60 border border-zinc-700 rounded-lg">
-            <p className="text-sm font-semibold text-zinc-200 mb-1">Текущие нормы</p>
-            <p className="text-sm text-zinc-300">Калории: {Math.round(goals.calories).toLocaleString('ru-RU')} ккал</p>
-            <p className="text-sm text-zinc-300">Белки: {Math.round(goals.protein)} г</p>
-            <p className="text-sm text-zinc-300">Жиры: {Math.round(goals.fat)} г</p>
-            <p className="text-sm text-zinc-300">Углеводы: {Math.round(goals.carbs)} г</p>
-          </div>
+        <AnimatePresence initial={false}>
+          {!isSettingsCollapsed && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+            >
+              <div className="p-4 border-t border-zinc-800/60">
+                <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+                  <p className="text-base font-semibold text-zinc-100 mb-3">Профиль и цели</p>
+                  <div className="space-y-1 text-sm text-zinc-300">
+                    <p>Пол: {profile.sex === 'male' ? 'мужской' : 'женский'}</p>
+                    <p>Вес: {Math.round(profile.weightKg)} кг</p>
+                    <p>Рост: {Math.round(profile.heightCm)} см</p>
+                    <p>Возраст: {Math.round(profile.age)}</p>
+                    <p>Активность: {activityLabelMap[profile.activity]}</p>
+                    <p>Цель: {goalLabelMap[profile.goal]}</p>
+                  </div>
 
-          <button
-            onClick={openSettings}
-            className="mt-4 px-4 py-2 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-sm font-medium transition-colors"
-          >
-            Изменить (MVP)
-          </button>
-        </div>
+                  <div className="mt-4 p-3 bg-zinc-900/60 border border-zinc-700 rounded-lg">
+                    <p className="text-sm font-semibold text-zinc-200 mb-1">Текущие нормы</p>
+                    <p className="text-sm text-zinc-300">Калории: {Math.round(goals.calories).toLocaleString('ru-RU')} ккал</p>
+                    <p className="text-sm text-zinc-300">Белки: {Math.round(goals.protein)} г</p>
+                    <p className="text-sm text-zinc-300">Жиры: {Math.round(goals.fat)} г</p>
+                    <p className="text-sm text-zinc-300">Углеводы: {Math.round(goals.carbs)} г</p>
+                  </div>
+
+                  <button
+                    onClick={openSettings}
+                    className="mt-4 px-4 py-2 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-sm font-medium transition-colors"
+                  >
+                    Изменить (MVP)
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
@@ -1881,6 +1939,13 @@ const SummaryScreen = ({
             </div>
 
             <div className="grid grid-cols-1 gap-3">
+              {selectedProgramTargets && (
+                <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">
+                  <p className="text-[10px] uppercase tracking-widest text-emerald-300 mb-1">Связка с вашим профилем</p>
+                  <p className="text-sm text-zinc-100">Вес: {Math.round(profile.weightKg)} кг</p>
+                  <p className="text-sm text-zinc-100">Персональные нормы: {selectedProgramTargets.calories} ккал • {selectedProgramTargets.protein}Б / {selectedProgramTargets.fat}Ж / {selectedProgramTargets.carbs}У</p>
+                </div>
+              )}
               <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-3">
                 <p className="text-[10px] uppercase tracking-widest text-zinc-500 mb-1">Соотношение БЖУ</p>
                 <p className="text-sm text-zinc-200">{selectedProgram.bjuRatio}</p>
@@ -1910,43 +1975,11 @@ const SummaryScreen = ({
               </div>
             </div>
 
-            <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
-              <p className="text-sm font-semibold text-zinc-200 mb-3">Параметры применения</p>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-xs text-zinc-400">
-                  Вес (кг)
-                  <input
-                    type="number"
-                    min={35}
-                    max={250}
-                    value={programWeightKg}
-                    onChange={(e) => setProgramWeightKg(Number(e.target.value))}
-                    className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
-                  />
-                </label>
-                <label className="text-xs text-zinc-400">
-                  Калории/день
-                  <input
-                    type="number"
-                    min={1200}
-                    max={6000}
-                    value={programCalories}
-                    onChange={(e) => setProgramCalories(Number(e.target.value))}
-                    className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
-                  />
-                </label>
-              </div>
-            </div>
-
             <button
-              onClick={applyProgram}
-              disabled={isApplyingProgram}
-              className={cn(
-                'w-full py-3 rounded-xl font-semibold',
-                isApplyingProgram ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed' : 'bg-emerald-500 text-white'
-              )}
+              onClick={() => setSelectedProgram(null)}
+              className="w-full py-3 rounded-xl font-semibold bg-zinc-700 text-zinc-100"
             >
-              {isApplyingProgram ? 'Применяем...' : 'Применить к дневнику'}
+              Закрыть
             </button>
           </div>
         )}
@@ -2373,33 +2406,6 @@ export default function App() {
     } catch (e) {
       console.error(e);
     }
-  };
-
-  const updateGoals = async (payload: { calories: number; protein: number; fat: number; carbs: number; fiber: number }) => {
-    const res = await fetch('/api/diary/goals', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error || 'Не удалось обновить цели');
-    }
-
-    setGoalOverrides((prev) => {
-      const base = mergeGoals(prev || diaryData.goals || autoGoals);
-      return {
-        ...base,
-        calories: payload.calories,
-        protein: payload.protein,
-        fat: payload.fat,
-        carbs: payload.carbs,
-        fiber: payload.fiber,
-      };
-    });
-
-    await fetchDiary(selectedDiaryDate);
   };
 
   const saveProfileAndGoals = async (nextProfile: UserProfileSettings, nextGoals: NutrientGoalSet) => {
@@ -3064,7 +3070,6 @@ Rules:
               onSetCustomHours={handleSetCustomFastingHours}
               onStart={handleStartFasting}
               onStop={handleStopFasting}
-              onApplyProgram={updateGoals}
               onSaveProfileGoals={saveProfileAndGoals}
             />
           )}
