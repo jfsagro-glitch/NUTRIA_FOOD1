@@ -2060,6 +2060,7 @@ export default function App() {
 
   const [selectedProductForAmount, setSelectedProductForAmount] = useState<Product | null>(null);
   const [foodAmount, setFoodAmount] = useState('100');
+  const [amountEntryContext, setAmountEntryContext] = useState<{ source: 'search' | 'photo' | 'voice'; voiceIndex?: number } | null>(null);
   const recognitionRef = useRef<any>(null);
   const barcodeScannerRef = useRef<Html5QrcodeType | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
@@ -3227,6 +3228,8 @@ Rules:
                 key={product.id}
                 onClick={() => {
                   setSelectedProductForAmount(product);
+                  setFoodAmount('100');
+                  setAmountEntryContext({ source: 'search' });
                 }}
                 className="w-full bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center active:bg-zinc-800 transition-colors"
               >
@@ -3264,7 +3267,10 @@ Rules:
       {/* Ввод количества */}
       <BottomSheet 
         isOpen={!!selectedProductForAmount} 
-        onClose={() => setSelectedProductForAmount(null)} 
+        onClose={() => {
+          setSelectedProductForAmount(null);
+          setAmountEntryContext(null);
+        }} 
         title="Сколько вы съели?"
       >
         {selectedProductForAmount && (
@@ -3288,22 +3294,64 @@ Rules:
               <span className="text-xl font-bold text-zinc-500">грамм</span>
             </div>
 
+            <div className="flex justify-center gap-2">
+              {[50, 100, 150, 200, 300].map((preset) => (
+                <button
+                  key={preset}
+                  onClick={() => setFoodAmount(String(preset))}
+                  className="px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-300 text-xs"
+                >
+                  {preset}г
+                </button>
+              ))}
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <button 
-                onClick={() => setSelectedProductForAmount(null)}
+                onClick={() => {
+                  setSelectedProductForAmount(null);
+                  setAmountEntryContext(null);
+                }}
                 className="py-4 bg-zinc-800 text-zinc-300 font-bold rounded-2xl active:scale-95 transition-transform"
               >
                 Отмена
               </button>
               <button 
-                onClick={() => {
-                  if (selectedProductForAmount && foodAmount) {
-                    addFood(selectedProductForAmount.id, Number(foodAmount), (selectedProductForAmount.isUsda || selectedProductForAmount.isAiEstimated) ? selectedProductForAmount : undefined);
-                    setSelectedProductForAmount(null);
+                onClick={async () => {
+                  if (!selectedProductForAmount) return;
+
+                  const parsedAmount = Number(foodAmount);
+                  const safeAmount = Number.isFinite(parsedAmount) ? Math.max(1, parsedAmount) : 100;
+
+                  await addFood(
+                    selectedProductForAmount.id,
+                    safeAmount,
+                    (selectedProductForAmount.isUsda || selectedProductForAmount.isAiEstimated) ? selectedProductForAmount : undefined
+                  );
+
+                  if (amountEntryContext?.source === 'search') {
                     setIsSearchSheetOpen(false);
                     setSearchQuery('');
                     setSearchResults([]);
                   }
+
+                  if (amountEntryContext?.source === 'photo') {
+                    setIsPhotoSheetOpen(false);
+                  }
+
+                  if (amountEntryContext?.source === 'voice' && Number.isInteger(amountEntryContext.voiceIndex)) {
+                    const idx = amountEntryContext.voiceIndex as number;
+                    setParsedVoiceItems((prev) => {
+                      const next = prev.filter((_, itemIndex) => itemIndex !== idx);
+                      if (next.length === 0) {
+                        setIsVoiceSheetOpen(false);
+                      }
+                      return next;
+                    });
+                  }
+
+                  setSelectedProductForAmount(null);
+                  setAmountEntryContext(null);
                 }}
                 className="py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform"
               >
@@ -3337,7 +3385,11 @@ Rules:
                 </div>
                 {item.product ? (
                   <button 
-                    onClick={() => { addFood(item.product.id, item.amount, (item.product.isUsda || item.product.isAiEstimated) ? item.product : undefined); setIsPhotoSheetOpen(false); }}
+                    onClick={() => {
+                      setSelectedProductForAmount(item.product);
+                      setFoodAmount(String(Math.max(1, Math.round(item.amount || 100))));
+                      setAmountEntryContext({ source: 'photo' });
+                    }}
                     className="px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg"
                   >
                     Добавить
@@ -3454,10 +3506,10 @@ Rules:
                   </div>
                   {item.product ? (
                     <button 
-                      onClick={async () => {
-                        await addFood(item.product.id, item.amount, (item.product.isUsda || item.product.isAiEstimated) ? item.product : undefined);
-                        setParsedVoiceItems(prev => prev.filter((_, idx) => idx !== i));
-                        if (parsedVoiceItems.length === 1) setIsVoiceSheetOpen(false);
+                      onClick={() => {
+                        setSelectedProductForAmount(item.product);
+                        setFoodAmount(String(Math.max(1, Math.round(item.amount || 100))));
+                        setAmountEntryContext({ source: 'voice', voiceIndex: i });
                       }}
                       className="px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform"
                     >
