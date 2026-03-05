@@ -1337,6 +1337,92 @@ const SummaryScreen = ({
     );
   }, [selectedProgram, goals, profile.weightKg]);
 
+  const weeklyRecommendations = useMemo(() => {
+    const points = historyWithMetrics.slice(-7).map(({ point, metrics }) => ({ point, metrics }));
+    const daysCount = points.length;
+
+    const sum = points.reduce(
+      (acc, item) => {
+        acc.calories += item.point.totals.calories;
+        acc.protein += item.point.totals.protein;
+        acc.fat += item.point.totals.fat;
+        acc.carbs += item.point.totals.carbs;
+        acc.fiber += item.point.totals.fiber;
+        acc.water += item.point.waterIntake;
+        acc.score += item.metrics.score;
+        if (item.point.mealsCount > 0) acc.activeDays += 1;
+        if (item.point.totals.protein < goals.protein * 0.8) acc.proteinLowDays += 1;
+        if (item.point.totals.carbs > goals.carbs * 1.1) acc.highCarbDays += 1;
+        if (item.point.totals.fiber < (goals.fiber || 30) * 0.75) acc.lowFiberDays += 1;
+        if (item.point.waterIntake < 1800) acc.lowWaterDays += 1;
+        return acc;
+      },
+      {
+        calories: 0,
+        protein: 0,
+        fat: 0,
+        carbs: 0,
+        fiber: 0,
+        water: 0,
+        score: 0,
+        activeDays: 0,
+        proteinLowDays: 0,
+        highCarbDays: 0,
+        lowFiberDays: 0,
+        lowWaterDays: 0,
+      }
+    );
+
+    const safeDiv = (value: number) => (daysCount > 0 ? value / daysCount : 0);
+    const avgCalories = safeDiv(sum.calories);
+    const avgProtein = safeDiv(sum.protein);
+    const avgCarbs = safeDiv(sum.carbs);
+    const avgFiber = safeDiv(sum.fiber);
+    const avgWater = safeDiv(sum.water);
+    const avgScore = safeDiv(sum.score);
+
+    const macrosText =
+      daysCount === 0
+        ? 'Недостаточно данных за неделю. Добавляйте приемы пищи ежедневно для точных выводов.'
+        : sum.proteinLowDays >= 3
+          ? `За 7 дней белок ниже цели в ${sum.proteinLowDays} дн. Среднее: ${Math.round(avgProtein)} г при цели ${Math.round(goals.protein)} г. Добавьте 1-2 белковых приема в день.`
+          : Math.abs(avgCalories - goals.calories) / Math.max(1, goals.calories) > 0.15
+            ? `Средние калории: ${Math.round(avgCalories)} ккал при цели ${Math.round(goals.calories)}. Стабилизируйте порции и распределение приемов пищи.`
+            : `Баланс макроэлементов за неделю близок к цели: в среднем ${Math.round(avgProtein)}Б / ${Math.round(safeDiv(sum.fat))}Ж / ${Math.round(avgCarbs)}У.`;
+
+    const vitaminsText =
+      daysCount === 0
+        ? 'Нет недельных данных для оценки пищевой плотности.'
+        : sum.lowFiberDays >= 3
+          ? `Клетчатка ниже нормы в ${sum.lowFiberDays} дн. Это повышает риск дефицитов по C, A, фолатам и магнию. Добавьте овощи, бобовые, ягоды и зелень.`
+          : `Пищевая плотность рациона на неделе стабильна. Поддерживайте разнообразие: овощи разных цветов, цельные продукты, источники магния и железа.`;
+
+    const glycemicText =
+      daysCount === 0
+        ? 'Пока нет данных для оценки углеводной нагрузки.'
+        : sum.highCarbDays >= 3 && sum.lowFiberDays >= 3
+          ? `Отмечены высокие углеводы в ${sum.highCarbDays} дн и низкая клетчатка в ${sum.lowFiberDays} дн. Снизьте долю быстрых сахаров и добавьте цельные источники углеводов.`
+          : `Углеводный профиль недели ${avgCarbs <= goals.carbs * 1.05 ? 'контролируемый' : 'повышенный'}. Ориентир: больше цельных круп и овощей, меньше сладких перекусов.`;
+
+    const aiText =
+      daysCount === 0
+        ? 'Сформируйте минимум 3-4 дня заполненного дневника, и AI даст персональные рекомендации по трендам.'
+        : `Анализ 7 дней: средний рейтинг ${Math.round(avgScore)}%, вода ${Math.round(avgWater)} мл/день, активных дней ${sum.activeDays}/${daysCount}. Следующий фокус: ${sum.lowWaterDays >= 3 ? 'гидратация' : sum.lowFiberDays >= 3 ? 'клетчатка и микронутриенты' : 'удержание текущего режима'}.`;
+
+    return {
+      periodLabel:
+        daysCount > 0
+          ? `${new Date(`${points[0].point.date}T12:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} - ${new Date(`${points[daysCount - 1].point.date}T12:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`
+          : 'нет данных',
+      cards: [
+        { title: 'Макроэлементы', text: macrosText },
+        { title: 'Витамины и минералы', text: vitaminsText },
+        { title: 'Гликемическая нагрузка', text: glycemicText },
+        { title: 'Анализ AI', text: aiText },
+      ],
+    };
+  }, [historyWithMetrics, goals]);
+
   useEffect(() => {
     setSettingsProfile(profile);
   }, [profile]);
@@ -1497,22 +1583,15 @@ const SummaryScreen = ({
               transition={{ duration: 0.25, ease: 'easeInOut' }}
             >
               <div className="space-y-3 px-4 pb-4 border-t border-zinc-800/60 pt-4">
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-                  <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Макроэлементы</p>
-                  <p className="text-sm text-zinc-300">Цели на день: {Math.round(goals.protein)}Б / {Math.round(goals.fat)}Ж / {Math.round(goals.carbs)}У</p>
+                <div className="px-1 pb-1">
+                  <p className="text-[10px] uppercase tracking-widest text-zinc-500">Период анализа: {weeklyRecommendations.periodLabel}</p>
                 </div>
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-                  <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Витамины</p>
-                  <p className="text-sm text-zinc-300">Контроль ключевых дефицитов: A, D, B12, C, магний и железо.</p>
-                </div>
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-                  <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Гликемическая нагрузка</p>
-                  <p className="text-sm text-zinc-300">AI оценивает качество углеводов и стабильность сахара крови.</p>
-                </div>
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-                  <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">Анализ AI</p>
-                  <p className="text-sm text-zinc-300">Персональные рекомендации по меню, дефицитам и распределению БЖУ.</p>
-                </div>
+                {weeklyRecommendations.cards.map((card) => (
+                  <div key={card.title} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+                    <p className="text-xs uppercase tracking-widest text-zinc-500 mb-2">{card.title}</p>
+                    <p className="text-sm text-zinc-300">{card.text}</p>
+                  </div>
+                ))}
               </div>
             </motion.div>
           )}
