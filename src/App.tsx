@@ -279,10 +279,21 @@ const BottomNav = ({ activeTab, onTabChange }: { activeTab: string, onTabChange:
 const FAB = ({ onClick }: { onClick: () => void }) => {
   return (
     <motion.button
+      animate={{
+        scale: [1, 1.04, 1, 1.03, 1],
+        boxShadow: [
+          '0 8px 24px rgba(16,185,129,0.35)',
+          '0 10px 28px rgba(16,185,129,0.5)',
+          '0 8px 24px rgba(16,185,129,0.35)',
+          '0 10px 28px rgba(16,185,129,0.48)',
+          '0 8px 24px rgba(16,185,129,0.35)'
+        ]
+      }}
+      transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
       whileTap={{ scale: 0.9 }}
       whileHover={{ scale: 1.05 }}
       onClick={onClick}
-      className="fixed bottom-6 left-1/2 -translate-x-1/2 w-14 h-14 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-full flex items-center justify-center shadow-[0_8px_24px_rgba(16,185,129,0.4)] border border-emerald-300/20 z-50"
+      className="fixed bottom-6 left-1/2 -translate-x-1/2 w-14 h-14 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-full flex items-center justify-center border border-emerald-300/20 z-50"
     >
       <Plus size={32} className="text-white" />
     </motion.button>
