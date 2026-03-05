@@ -244,27 +244,43 @@ function parseMicronutrients(rawMicronutrients: any) {
 
 function shouldRefreshMicronutrients(existingRaw: any, incoming: any) {
   const existing = parseMicronutrients(existingRaw);
-  const incomingAmino = incoming?.aminoAcids || {};
-  const incomingCarbs = incoming?.carbohydrateTypes || {};
+  const nutrientKeysByGroup: Record<string, string[]> = {
+    vitamins: [
+      "BetaCarotene", "B1", "B2", "B5", "B6", "B9", "B12", "C", "A", "D", "E", "K", "B3", "Biotin", "Choline",
+    ],
+    minerals: [
+      "Potassium", "Calcium", "Silicon", "Magnesium", "Sodium", "Sulfur", "Phosphorus", "Chlorine", "Vanadium", "Iron", "Iodine", "Cobalt", "Manganese", "Copper", "Molybdenum", "Selenium", "Chromium", "Zinc", "Salt",
+    ],
+    aminoAcids: [
+      "Alanine", "Arginine", "Asparagine", "AsparticAcid", "Valine", "Histidine", "Glycine", "Glutamine", "GlutamicAcid", "Isoleucine", "Leucine", "Lysine", "Methionine", "Proline", "Serine", "Tyrosine", "Threonine", "Tryptophan", "Phenylalanine", "Cysteine",
+    ],
+    fattyAcids: ["Omega3", "Omega6", "Omega9", "TransFats", "Cholesterol"],
+    carbohydrateTypes: ["Glucose", "Fructose", "Galactose", "Sucrose", "Lactose", "Maltose", "Starch", "Fiber"],
+  };
 
-  if (!hasAnyPositiveValue(incomingAmino) && !hasAnyPositiveValue(incomingCarbs)) {
-    return false;
-  }
+  // If incoming payload has no useful micronutrients, skip refresh.
+  const hasIncomingSignal = Object.entries(nutrientKeysByGroup).some(([group, keys]) => {
+    const incomingGroup = incoming?.[group] || {};
+    return keys.some((key) => numberOrZero(incomingGroup[key]) > 0);
+  });
 
-  const existingAmino = existing?.aminoAcids || {};
-  const existingCarbs = existing?.carbohydrateTypes || {};
+  if (!hasIncomingSignal) return false;
 
-  if (!hasAnyPositiveValue(existingAmino) && hasAnyPositiveValue(incomingAmino)) {
-    return true;
-  }
+  // Trigger refresh when existing product misses any configured nutrient key
+  // that is present with a positive value in incoming USDA/AI payload.
+  for (const [group, keys] of Object.entries(nutrientKeysByGroup)) {
+    const existingGroup = existing?.[group] || {};
+    const incomingGroup = incoming?.[group] || {};
 
-  if (!hasAnyPositiveValue(existingCarbs) && hasAnyPositiveValue(incomingCarbs)) {
-    return true;
-  }
+    for (const key of keys) {
+      if (numberOrZero(existingGroup[key]) <= 0 && numberOrZero(incomingGroup[key]) > 0) {
+        return true;
+      }
+    }
 
-  // Fructose is a common missing field in older mappings.
-  if (numberOrZero(existingCarbs?.Fructose) <= 0 && numberOrZero(incomingCarbs?.Fructose) > 0) {
-    return true;
+    if (!hasAnyPositiveValue(existingGroup) && hasAnyPositiveValue(incomingGroup)) {
+      return true;
+    }
   }
 
   return false;
@@ -343,7 +359,7 @@ function extractUsdaExtendedNutrients(food: any) {
   vitamins.BetaCarotene = pickUsdaNutrient(food, {
     ids: [1107],
     nutrientNumbers: ["321", "334"],
-    nameIncludes: ["beta-carotene", "carotene, beta"],
+    nameIncludes: ["beta-carotene", "beta carotene", "carotene, beta"],
     targetUnit: "mcg"
   });
   vitamins.B1 = pickUsdaNutrient(food, { ids: [1165], nutrientNumbers: ["404"], nameIncludes: ["thiamin", "vitamin b-1"], targetUnit: "mg" });
@@ -358,26 +374,26 @@ function extractUsdaExtendedNutrients(food: any) {
   vitamins.E = pickUsdaNutrient(food, { ids: [1109], nutrientNumbers: ["323"], nameIncludes: ["vitamin e", "tocopherol"], targetUnit: "mg" });
   vitamins.K = pickUsdaNutrient(food, { ids: [1185], nutrientNumbers: ["430"], nameIncludes: ["vitamin k"], targetUnit: "mcg" });
   vitamins.B3 = pickUsdaNutrient(food, { ids: [1167], nutrientNumbers: ["406"], nameIncludes: ["niacin", "vitamin b-3"], targetUnit: "mg" });
-  vitamins.Biotin = pickUsdaNutrient(food, { ids: [1176], nutrientNumbers: ["416"], nameIncludes: ["biotin", "vitamin b-7"], targetUnit: "mcg" });
+  vitamins.Biotin = pickUsdaNutrient(food, { ids: [1176], nutrientNumbers: ["416"], nameIncludes: ["biotin", "vitamin b-7", "vitamin h"], targetUnit: "mcg" });
   vitamins.Choline = pickUsdaNutrient(food, { ids: [1180], nutrientNumbers: ["421", "326"], nameIncludes: ["choline"], targetUnit: "mg" });
 
   minerals.Potassium = pickUsdaNutrient(food, { ids: [1092], nutrientNumbers: ["306"], nameIncludes: ["potassium"], targetUnit: "mg" });
   minerals.Calcium = pickUsdaNutrient(food, { ids: [1087], nutrientNumbers: ["301"], nameIncludes: ["calcium"], targetUnit: "mg" });
-  minerals.Silicon = pickUsdaNutrient(food, { nameIncludes: ["silicon"], targetUnit: "mg" });
+  minerals.Silicon = pickUsdaNutrient(food, { nameIncludes: ["silicon", "silica", "silicon, si"], targetUnit: "mg" });
   minerals.Magnesium = pickUsdaNutrient(food, { ids: [1090], nutrientNumbers: ["304"], nameIncludes: ["magnesium"], targetUnit: "mg" });
   minerals.Sodium = pickUsdaNutrient(food, { ids: [1093], nutrientNumbers: ["307"], nameIncludes: ["sodium"], targetUnit: "mg" });
-  minerals.Sulfur = pickUsdaNutrient(food, { nameIncludes: ["sulfur", "sulphur"], targetUnit: "mg" });
+  minerals.Sulfur = pickUsdaNutrient(food, { nameIncludes: ["sulfur", "sulphur", "sulfur, s"], targetUnit: "mg" });
   minerals.Phosphorus = pickUsdaNutrient(food, { ids: [1091], nutrientNumbers: ["305"], nameIncludes: ["phosphorus"], targetUnit: "mg" });
-  minerals.Chlorine = pickUsdaNutrient(food, { nameIncludes: ["chloride", "chlorine"], targetUnit: "mg" });
-  minerals.Vanadium = pickUsdaNutrient(food, { nameIncludes: ["vanadium"], targetUnit: "mcg" });
+  minerals.Chlorine = pickUsdaNutrient(food, { ids: [1088], nutrientNumbers: ["308"], nameIncludes: ["chloride", "chlorine"], targetUnit: "mg" });
+  minerals.Vanadium = pickUsdaNutrient(food, { nameIncludes: ["vanadium", "vanadium, v"], targetUnit: "mcg" });
   minerals.Iron = pickUsdaNutrient(food, { ids: [1089], nutrientNumbers: ["303"], nameIncludes: ["iron"], targetUnit: "mg" });
-  minerals.Iodine = pickUsdaNutrient(food, { ids: [1100], nutrientNumbers: ["314"], nameIncludes: ["iodine"], targetUnit: "mcg" });
-  minerals.Cobalt = pickUsdaNutrient(food, { nameIncludes: ["cobalt"], targetUnit: "mcg" });
+  minerals.Iodine = pickUsdaNutrient(food, { ids: [1100], nutrientNumbers: ["314"], nameIncludes: ["iodine", "iodide"], targetUnit: "mcg" });
+  minerals.Cobalt = pickUsdaNutrient(food, { nameIncludes: ["cobalt", "cobalt, co"], targetUnit: "mcg" });
   minerals.Manganese = pickUsdaNutrient(food, { ids: [1101], nutrientNumbers: ["315"], nameIncludes: ["manganese"], targetUnit: "mg" });
   minerals.Copper = pickUsdaNutrient(food, { ids: [1098], nutrientNumbers: ["312"], nameIncludes: ["copper"], targetUnit: "mg" });
-  minerals.Molybdenum = pickUsdaNutrient(food, { ids: [1102], nutrientNumbers: ["316"], nameIncludes: ["molybdenum"], targetUnit: "mcg" });
+  minerals.Molybdenum = pickUsdaNutrient(food, { ids: [1102], nutrientNumbers: ["316"], nameIncludes: ["molybdenum", "molybdenum, mo"], targetUnit: "mcg" });
   minerals.Selenium = pickUsdaNutrient(food, { ids: [1103], nutrientNumbers: ["317"], nameIncludes: ["selenium"], targetUnit: "mcg" });
-  minerals.Chromium = pickUsdaNutrient(food, { ids: [1096], nameIncludes: ["chromium"], targetUnit: "mcg" });
+  minerals.Chromium = pickUsdaNutrient(food, { ids: [1096], nutrientNumbers: ["313"], nameIncludes: ["chromium", "chromium, cr"], targetUnit: "mcg" });
   minerals.Zinc = pickUsdaNutrient(food, { ids: [1095], nutrientNumbers: ["309"], nameIncludes: ["zinc"], targetUnit: "mg" });
 
   const sodiumMg = numberOrZero(minerals.Sodium);
