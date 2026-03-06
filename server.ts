@@ -227,6 +227,138 @@ function normalizeUnitName(unit: any) {
   return String(unit || "").trim().toLowerCase();
 }
 
+const MICRONUTRIENT_TEMPLATE = {
+  vitamins: {
+    BetaCarotene: 0,
+    B1: 0,
+    B2: 0,
+    B5: 0,
+    B6: 0,
+    B9: 0,
+    B12: 0,
+    C: 0,
+    A: 0,
+    D: 0,
+    E: 0,
+    K: 0,
+    B3: 0,
+    Biotin: 0,
+    Choline: 0,
+  },
+  minerals: {
+    Potassium: 0,
+    Calcium: 0,
+    Silicon: 0,
+    Magnesium: 0,
+    Sodium: 0,
+    Sulfur: 0,
+    Phosphorus: 0,
+    Chlorine: 0,
+    Vanadium: 0,
+    Iron: 0,
+    Iodine: 0,
+    Cobalt: 0,
+    Manganese: 0,
+    Copper: 0,
+    Molybdenum: 0,
+    Selenium: 0,
+    Chromium: 0,
+    Zinc: 0,
+    Salt: 0,
+  },
+  fattyAcids: {
+    Omega3: 0,
+    Omega6: 0,
+    Omega9: 0,
+    TransFats: 0,
+    Cholesterol: 0,
+  },
+  carbohydrateTypes: {
+    Glucose: 0,
+    Fructose: 0,
+    Galactose: 0,
+    Sucrose: 0,
+    Lactose: 0,
+    Maltose: 0,
+    Starch: 0,
+    Fiber: 0,
+  },
+  aminoAcids: {
+    Alanine: 0,
+    Arginine: 0,
+    Asparagine: 0,
+    AsparticAcid: 0,
+    Valine: 0,
+    Histidine: 0,
+    Glycine: 0,
+    Glutamine: 0,
+    GlutamicAcid: 0,
+    Isoleucine: 0,
+    Leucine: 0,
+    Lysine: 0,
+    Methionine: 0,
+    Proline: 0,
+    Serine: 0,
+    Tyrosine: 0,
+    Threonine: 0,
+    Tryptophan: 0,
+    Phenylalanine: 0,
+    Cysteine: 0,
+  },
+};
+
+function normalizeLegacyMicronutrientKeys(input: any) {
+  const normalized = {
+    ...input,
+    vitamins: { ...(input?.vitamins || {}) },
+    minerals: { ...(input?.minerals || {}) },
+    fattyAcids: { ...(input?.fattyAcids || {}) },
+    carbohydrateTypes: { ...(input?.carbohydrateTypes || {}) },
+    aminoAcids: { ...(input?.aminoAcids || {}) },
+  };
+
+  if (normalized.vitamins?.B7 != null && normalized.vitamins?.Biotin == null) {
+    normalized.vitamins.Biotin = normalized.vitamins.B7;
+  }
+
+  if (normalized.aminoAcids?.Cystine != null && normalized.aminoAcids?.Cysteine == null) {
+    normalized.aminoAcids.Cysteine = normalized.aminoAcids.Cystine;
+  }
+
+  if (normalized.carbohydrateTypes?.Fibre != null && normalized.carbohydrateTypes?.Fiber == null) {
+    normalized.carbohydrateTypes.Fiber = normalized.carbohydrateTypes.Fibre;
+  }
+
+  return normalized;
+}
+
+function buildCompleteMicronutrients(raw: any, productFiber?: number | null) {
+  const legacy = normalizeLegacyMicronutrientKeys(raw || {});
+  const merged = {
+    vitamins: { ...MICRONUTRIENT_TEMPLATE.vitamins, ...(legacy.vitamins || {}) },
+    minerals: { ...MICRONUTRIENT_TEMPLATE.minerals, ...(legacy.minerals || {}) },
+    fattyAcids: { ...MICRONUTRIENT_TEMPLATE.fattyAcids, ...(legacy.fattyAcids || {}) },
+    carbohydrateTypes: { ...MICRONUTRIENT_TEMPLATE.carbohydrateTypes, ...(legacy.carbohydrateTypes || {}) },
+    aminoAcids: { ...MICRONUTRIENT_TEMPLATE.aminoAcids, ...(legacy.aminoAcids || {}) },
+  };
+
+  for (const [groupKey, group] of Object.entries(merged) as Array<[keyof typeof merged, Record<string, any>]>) {
+    for (const [key, value] of Object.entries(group)) {
+      merged[groupKey][key] = numberOrZero(value);
+    }
+  }
+
+  if (!merged.minerals.Salt && merged.minerals.Sodium > 0) {
+    merged.minerals.Salt = merged.minerals.Sodium * 2.5;
+  }
+
+  if (!merged.carbohydrateTypes.Fiber && numberOrZero(productFiber) > 0) {
+    merged.carbohydrateTypes.Fiber = numberOrZero(productFiber);
+  }
+
+  return merged;
+}
+
 function hasAnyPositiveValue(map: Record<string, any> | undefined) {
   if (!map || typeof map !== "object") return false;
   return Object.values(map).some((value) => numberOrZero(value) > 0);
@@ -243,7 +375,8 @@ function parseMicronutrients(rawMicronutrients: any) {
 }
 
 function shouldRefreshMicronutrients(existingRaw: any, incoming: any) {
-  const existing = parseMicronutrients(existingRaw);
+  const existing = buildCompleteMicronutrients(parseMicronutrients(existingRaw));
+  const incomingNormalized = buildCompleteMicronutrients(incoming);
   const nutrientKeysByGroup: Record<string, string[]> = {
     vitamins: [
       "BetaCarotene", "B1", "B2", "B5", "B6", "B9", "B12", "C", "A", "D", "E", "K", "B3", "Biotin", "Choline",
@@ -260,7 +393,7 @@ function shouldRefreshMicronutrients(existingRaw: any, incoming: any) {
 
   // If incoming payload has no useful micronutrients, skip refresh.
   const hasIncomingSignal = Object.entries(nutrientKeysByGroup).some(([group, keys]) => {
-    const incomingGroup = incoming?.[group] || {};
+    const incomingGroup = incomingNormalized?.[group] || {};
     return keys.some((key) => numberOrZero(incomingGroup[key]) > 0);
   });
 
@@ -270,7 +403,7 @@ function shouldRefreshMicronutrients(existingRaw: any, incoming: any) {
   // that is present with a positive value in incoming USDA/AI payload.
   for (const [group, keys] of Object.entries(nutrientKeysByGroup)) {
     const existingGroup = existing?.[group] || {};
-    const incomingGroup = incoming?.[group] || {};
+    const incomingGroup = incomingNormalized?.[group] || {};
 
     for (const key of keys) {
       if (numberOrZero(existingGroup[key]) <= 0 && numberOrZero(incomingGroup[key]) > 0) {
@@ -883,10 +1016,7 @@ async function startServer() {
         : [];
     
     const parsedLocal = localProducts.map(p => {
-      let micro: any = {};
-      try {
-        micro = JSON.parse(p.micronutrients || '{}');
-      } catch (e) {}
+      const micro = buildCompleteMicronutrients(parseMicronutrients(p.micronutrients), p.fiber);
       return { ...p, ...micro, source: 'local' };
     });
 
@@ -903,6 +1033,13 @@ async function startServer() {
             const getNutrient = (id: number) =>
               f.foodNutrients?.find((n: any) => n.nutrientId === id || n.nutrientNumber === String(id))?.value || 0;
             const extended = extractUsdaExtendedNutrients(f);
+            const completedMicro = buildCompleteMicronutrients({
+              vitamins: extended.vitamins,
+              minerals: extended.minerals,
+              aminoAcids: extended.aminoAcids,
+              fattyAcids: extended.fattyAcids,
+              carbohydrateTypes: extended.carbohydrateTypes,
+            }, getNutrient(1079) || getNutrient(291));
 
             return {
               id: `usda-${f.fdcId}`,
@@ -913,11 +1050,11 @@ async function startServer() {
               fat: getNutrient(1004) || getNutrient(204),
               carbs: getNutrient(1005) || getNutrient(205),
               fiber: getNutrient(1079) || getNutrient(291),
-              vitamins: extended.vitamins,
-              minerals: extended.minerals,
-              aminoAcids: extended.aminoAcids,
-              fattyAcids: extended.fattyAcids,
-              carbohydrateTypes: extended.carbohydrateTypes,
+              vitamins: completedMicro.vitamins,
+              minerals: completedMicro.minerals,
+              aminoAcids: completedMicro.aminoAcids,
+              fattyAcids: completedMicro.fattyAcids,
+              carbohydrateTypes: completedMicro.carbohydrateTypes,
               isUsda: true,
               fdcId: f.fdcId,
               source: 'usda'
@@ -1097,10 +1234,7 @@ async function startServer() {
       const parsedMeals = meals.filter(m => m.type !== 'WATER').map(m => ({
         ...m,
         items: m.items.map(i => {
-          let micro: any = {};
-          try {
-            micro = JSON.parse(i.product.micronutrients || '{}');
-          } catch (e) {}
+          const micro = buildCompleteMicronutrients(parseMicronutrients(i.product.micronutrients), i.product.fiber);
           return {
             ...i,
             product: { ...i.product, ...micro }
@@ -1409,6 +1543,7 @@ async function startServer() {
     // If it's a USDA product, we need to ensure it exists in our local DB first
     if ((String(productId).startsWith('usda-') || String(productId).startsWith('ai-est-')) && usdaData) {
       usdaData = await localizeProductForRussianAudience(usdaData);
+      const completeMicro = buildCompleteMicronutrients(usdaData, usdaData.fiber);
       let product = await prisma.product.findFirst({
         where: { name: usdaData.name, brand: usdaData.brand }
       });
@@ -1423,13 +1558,7 @@ async function startServer() {
             fat: usdaData.fat,
             carbs: usdaData.carbs,
             fiber: usdaData.fiber,
-            micronutrients: JSON.stringify({
-              vitamins: usdaData.vitamins || {},
-              minerals: usdaData.minerals || {},
-              aminoAcids: usdaData.aminoAcids || {},
-              fattyAcids: usdaData.fattyAcids || {},
-              carbohydrateTypes: usdaData.carbohydrateTypes || {}
-            })
+            micronutrients: JSON.stringify(completeMicro)
           }
         });
       } else if (!product.micronutrients || product.micronutrients === '{}' || shouldRefreshMicronutrients(product.micronutrients, usdaData)) {
@@ -1437,13 +1566,7 @@ async function startServer() {
         product = await prisma.product.update({
           where: { id: product.id },
           data: {
-            micronutrients: JSON.stringify({
-              vitamins: usdaData.vitamins || {},
-              minerals: usdaData.minerals || {},
-              aminoAcids: usdaData.aminoAcids || {},
-              fattyAcids: usdaData.fattyAcids || {},
-              carbohydrateTypes: usdaData.carbohydrateTypes || {}
-            })
+            micronutrients: JSON.stringify(completeMicro)
           }
         });
       }
