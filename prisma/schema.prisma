@@ -19,6 +19,7 @@ model User {
   updatedAt     DateTime       @updatedAt
   meals         Meal[]
   nutrientGoals NutrientGoal?
+  recognitionCorrections RecognitionCorrection[]
 }
 
 model Product {
@@ -35,8 +36,28 @@ model Product {
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   mealItems    MealItem[]
+  recognitionCorrections RecognitionCorrection[]
 
   @@unique([name, brand])
+}
+
+model RecognitionCorrection {
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id])
+  sourceName         String
+  normalizedSource   String
+  aliasesJson        String?
+  visibleTextJson    String?
+  correctedProductId String
+  correctedProduct   Product  @relation(fields: [correctedProductId], references: [id])
+  usageCount         Int      @default(1)
+  lastUsedAt         DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([userId, normalizedSource])
+  @@unique([userId, normalizedSource, correctedProductId])
 }
 
 model Meal {

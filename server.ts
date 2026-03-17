@@ -8,6 +8,7 @@ import multer from "multer";
 import { GoogleGenAI, Type } from "@google/genai";
 import Levenshtein from "fast-levenshtein";
 import OpenAI from "openai";
+import { ProxyAgent } from "undici";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,14 +19,28 @@ const upload = multer({ storage: multer.memoryStorage() });
 const ai = process.env.GEMINI_API_KEY
   ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
   : null;
+const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL?.trim();
+const OPENAI_PROXY_URL = process.env.OPENAI_PROXY_URL?.trim()
+  || process.env.HTTPS_PROXY?.trim()
+  || process.env.HTTP_PROXY?.trim();
+const openaiProxyAgent = OPENAI_PROXY_URL ? new ProxyAgent(OPENAI_PROXY_URL) : null;
+const openaiFetch = (url: RequestInfo | URL, init?: RequestInit) => {
+  if (!openaiProxyAgent) return fetch(url, init);
+  return fetch(url, { ...(init || {}), dispatcher: openaiProxyAgent as any } as any);
+};
 const deepseek = process.env.DEEPSEEK_API_KEY ? new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY,
   baseURL: "https://api.deepseek.com"
 }) : null;
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY,
+  baseURL: OPENAI_BASE_URL || undefined,
+  organization: process.env.OPENAI_ORG || undefined,
+  project: process.env.OPENAI_PROJECT || undefined,
+  fetch: openaiFetch,
 }) : null;
 const OPENAI_VISION_MODEL = process.env.OPENAI_VISION_MODEL || "gpt-4o-mini";
+const recognitionCorrectionDelegate = (prisma as any).recognitionCorrection;
 
 function isDatabaseConfigured() {
   return typeof process.env.DATABASE_URL === "string" && process.env.DATABASE_URL.trim().length > 0;
@@ -39,7 +54,18 @@ type InMemoryDiaryState = {
   goals: typeof DEMO_GOALS;
   waterByDate: Record<string, number>;
 };
+type InMemoryRecognitionCorrection = {
+  sourceName: string;
+  normalizedSource: string;
+  aliases: string[];
+  visibleText: string[];
+  correctedProduct: any;
+  usageCount: number;
+  lastUsedAt: number;
+};
+type PhotoRecognitionMode = "ingredients" | "whole_dish";
 const inMemoryDiary = new Map<string, InMemoryDiaryState>();
+const inMemoryRecognitionCorrections = new Map<string, InMemoryRecognitionCorrection[]>();
 const barcodeLookupCache = new Map<string, { expiresAt: number; product: any }>();
 const productSearchCache = new Map<string, { expiresAt: number; results: any[] }>();
 
@@ -57,6 +83,13 @@ function getOrCreateInMemoryDiary(userId: string) {
     inMemoryDiary.set(userId, { meals: [], goals: { ...DEMO_GOALS }, waterByDate: {} });
   }
   return inMemoryDiary.get(userId)!;
+}
+
+function getOrCreateInMemoryRecognitionCorrections(userId: string) {
+  if (!inMemoryRecognitionCorrections.has(userId)) {
+    inMemoryRecognitionCorrections.set(userId, []);
+  }
+  return inMemoryRecognitionCorrections.get(userId)!;
 }
 
 function toDateKey(date: Date) {
@@ -117,6 +150,906 @@ function extractBarcodeCandidates(input: string) {
   if (digitsOnly.length >= 8) candidates.add(digitsOnly);
 
   return Array.from(candidates).map((v) => v.trim()).filter(Boolean);
+}
+
+function parseAiJsonPayload(text: string) {
+  const cleaned = String(text || "").trim();
+  if (!cleaned) return [] as any[];
+
+  const withoutFences = cleaned
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
+
+  try {
+    return JSON.parse(withoutFences);
+  } catch {
+    const objectStart = withoutFences.indexOf("{");
+    const objectEnd = withoutFences.lastIndexOf("}");
+    const arrayStart = withoutFences.indexOf("[");
+    const arrayEnd = withoutFences.lastIndexOf("]");
+
+    if (arrayStart !== -1 && arrayEnd > arrayStart) {
+      try {
+        return JSON.parse(withoutFences.slice(arrayStart, arrayEnd + 1));
+      } catch {
+        // continue
+      }
+    }
+
+    if (objectStart !== -1 && objectEnd > objectStart) {
+      try {
+        return JSON.parse(withoutFences.slice(objectStart, objectEnd + 1));
+      } catch {
+        // continue
+      }
+    }
+
+    return [] as any[];
+  }
+}
+
+function clampNumber(value: any, min: number, max: number, fallback: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
+function normalizeComparableText(value: any) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[.,;:!?'"`~()\[\]{}<>/\\|_+-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function textTokenSet(value: any) {
+  return new Set(
+    normalizeComparableText(value)
+      .split(" ")
+      .map((token) => token.trim())
+      .filter((token) => token.length > 1)
+  );
+}
+
+function computeTextSimilarity(left: any, right: any) {
+  const a = normalizeComparableText(left);
+  const b = normalizeComparableText(right);
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+
+  const maxLen = Math.max(a.length, b.length);
+  const charSimilarity = maxLen > 0 ? 1 - (Levenshtein.get(a, b) / maxLen) : 0;
+
+  const leftTokens = textTokenSet(a);
+  const rightTokens = textTokenSet(b);
+  const overlap = Array.from(leftTokens).filter((token) => rightTokens.has(token)).length;
+  const tokenSimilarity = overlap / Math.max(leftTokens.size, rightTokens.size, 1);
+  const containsBoost = a.includes(b) || b.includes(a) ? 0.15 : 0;
+
+  return Math.max(0, Math.min(1, charSimilarity * 0.55 + tokenSimilarity * 0.45 + containsBoost));
+}
+
+function uniqueStrings(values: any[], minLength: number = 1) {
+  const result: string[] = [];
+  const seen = new Set<string>();
+
+  for (const value of values) {
+    const normalized = String(value || "").trim();
+    const key = normalized.toLowerCase();
+    if (!normalized || normalized.length < minLength || seen.has(key)) continue;
+    seen.add(key);
+    result.push(normalized);
+  }
+
+  return result;
+}
+
+function parseJsonStringArray(value: any) {
+  if (!value) return [] as string[];
+  if (Array.isArray(value)) return uniqueStrings(value, 1);
+  try {
+    const parsed = JSON.parse(String(value));
+    return Array.isArray(parsed) ? uniqueStrings(parsed, 1) : [];
+  } catch {
+    return [] as string[];
+  }
+}
+
+function isGeneratedProductId(productId: string) {
+  const raw = String(productId || "");
+  return raw.startsWith("usda-") || raw.startsWith("ai-est-") || raw.startsWith("ai-dish-");
+}
+
+async function ensureProductExistsLocally(productId: string, productData?: any) {
+  const normalizedProductId = String(productId || "").trim();
+  if (!normalizedProductId && !productData) return null;
+
+  if (!isDatabaseConfigured()) {
+    return productData || null;
+  }
+
+  if (!isGeneratedProductId(normalizedProductId)) {
+    const existing = await prisma.product.findUnique({ where: { id: normalizedProductId } }).catch(() => null);
+    return existing || productData || null;
+  }
+
+  if (!productData) return null;
+
+  const localizedData = await localizeProductForRussianAudience(productData);
+  const completeMicro = buildCompleteMicronutrients(localizedData, localizedData.fiber);
+
+  let product = await prisma.product.findFirst({
+    where: { name: localizedData.name, brand: localizedData.brand }
+  });
+
+  if (!product) {
+    product = await prisma.product.create({
+      data: {
+        name: localizedData.name,
+        brand: localizedData.brand,
+        calories: numberOrZero(localizedData.calories),
+        protein: numberOrZero(localizedData.protein),
+        fat: numberOrZero(localizedData.fat),
+        carbs: numberOrZero(localizedData.carbs),
+        fiber: numberOrZero(localizedData.fiber),
+        micronutrients: JSON.stringify(completeMicro)
+      }
+    });
+  } else if (!product.micronutrients || product.micronutrients === '{}' || shouldRefreshMicronutrients(product.micronutrients, localizedData)) {
+    product = await prisma.product.update({
+      where: { id: product.id },
+      data: {
+        micronutrients: JSON.stringify(completeMicro)
+      }
+    });
+  }
+
+  return product;
+}
+
+function buildDishEstimateProduct(dishEstimate: any) {
+  if (!dishEstimate || typeof dishEstimate !== "object") return null;
+
+  const amount = clampNumber(dishEstimate.amount ?? dishEstimate.totalWeight ?? dishEstimate.portionGrams, 1, 5000, 350);
+  const factor = amount / 100;
+  const calories = numberOrZero(dishEstimate.totalCalories ?? dishEstimate.calories);
+  const protein = numberOrZero(dishEstimate.totalProtein ?? dishEstimate.protein);
+  const fat = numberOrZero(dishEstimate.totalFat ?? dishEstimate.fat);
+  const carbs = numberOrZero(dishEstimate.totalCarbs ?? dishEstimate.carbs);
+  const fiber = numberOrZero(dishEstimate.totalFiber ?? dishEstimate.fiber);
+
+  if (!amount || (!calories && !protein && !fat && !carbs)) return null;
+
+  return {
+    name: String(dishEstimate.name || "Блюдо по фото").trim() || "Блюдо по фото",
+    brand: "AI Dish Estimate",
+    calories: factor > 0 ? calories / factor : 0,
+    protein: factor > 0 ? protein / factor : 0,
+    fat: factor > 0 ? fat / factor : 0,
+    carbs: factor > 0 ? carbs / factor : 0,
+    fiber: factor > 0 ? fiber / factor : 0,
+    vitamins: dishEstimate.vitamins || {},
+    minerals: dishEstimate.minerals || {},
+    aminoAcids: dishEstimate.aminoAcids || {},
+    fattyAcids: dishEstimate.fattyAcids || {},
+    carbohydrateTypes: dishEstimate.carbohydrateTypes || {},
+    isAiEstimated: true,
+    explanation: String(dishEstimate.explanation || "").trim(),
+  };
+}
+
+async function getRecognitionCorrections(userId: string) {
+  const memory = getOrCreateInMemoryRecognitionCorrections(userId);
+  let dbCorrections: any[] = [];
+
+  if (isDatabaseConfigured()) {
+    try {
+      dbCorrections = await recognitionCorrectionDelegate.findMany({
+        where: { userId },
+        include: { correctedProduct: true },
+        orderBy: [{ usageCount: "desc" }, { updatedAt: "desc" }],
+        take: 100,
+      });
+    } catch (e) {
+      console.warn("Recognition correction table unavailable, using memory fallback:", e);
+    }
+  }
+
+  const mappedDbCorrections = dbCorrections.map((entry) => ({
+    sourceName: entry.sourceName,
+    normalizedSource: entry.normalizedSource,
+    aliases: parseJsonStringArray(entry.aliasesJson),
+    visibleText: parseJsonStringArray(entry.visibleTextJson),
+    correctedProduct: entry.correctedProduct,
+    usageCount: numberOrZero(entry.usageCount),
+    lastUsedAt: new Date(entry.lastUsedAt).getTime(),
+  }));
+
+  return [...mappedDbCorrections, ...memory];
+}
+
+async function saveRecognitionCorrection(params: {
+  userId: string;
+  sourceName: string;
+  aliases?: string[];
+  visibleText?: string[];
+  correctedProductId: string;
+  correctedProduct?: any;
+}) {
+  const userId = String(params.userId || "").trim();
+  const sourceName = String(params.sourceName || "").trim();
+  if (!userId || !sourceName) throw new Error("Correction payload is incomplete");
+
+  const aliases = uniqueStrings(params.aliases || [], 1);
+  const visibleText = uniqueStrings(params.visibleText || [], 1);
+  const normalizedSource = normalizeComparableText(sourceName);
+  const resolvedProduct = await ensureProductExistsLocally(params.correctedProductId, params.correctedProduct);
+
+  if (!resolvedProduct) {
+    throw new Error("Corrected product could not be resolved");
+  }
+
+  const memoryCorrections = getOrCreateInMemoryRecognitionCorrections(userId);
+  const memoryIndex = memoryCorrections.findIndex((entry) =>
+    entry.normalizedSource === normalizedSource && entry.correctedProduct?.id === resolvedProduct.id
+  );
+
+  if (memoryIndex >= 0) {
+    memoryCorrections[memoryIndex] = {
+      ...memoryCorrections[memoryIndex],
+      aliases: uniqueStrings([...(memoryCorrections[memoryIndex].aliases || []), ...aliases], 1),
+      visibleText: uniqueStrings([...(memoryCorrections[memoryIndex].visibleText || []), ...visibleText], 1),
+      correctedProduct: resolvedProduct,
+      usageCount: numberOrZero(memoryCorrections[memoryIndex].usageCount) + 1,
+      lastUsedAt: Date.now(),
+    };
+  } else {
+    memoryCorrections.unshift({
+      sourceName,
+      normalizedSource,
+      aliases,
+      visibleText,
+      correctedProduct: resolvedProduct,
+      usageCount: 1,
+      lastUsedAt: Date.now(),
+    });
+  }
+
+  if (isDatabaseConfigured()) {
+    try {
+      await recognitionCorrectionDelegate.upsert({
+        where: {
+          userId_normalizedSource_correctedProductId: {
+            userId,
+            normalizedSource,
+            correctedProductId: resolvedProduct.id,
+          },
+        },
+        update: {
+          sourceName,
+          aliasesJson: JSON.stringify(uniqueStrings([...(memoryCorrections[memoryIndex]?.aliases || []), ...aliases], 1)),
+          visibleTextJson: JSON.stringify(uniqueStrings([...(memoryCorrections[memoryIndex]?.visibleText || []), ...visibleText], 1)),
+          usageCount: { increment: 1 },
+          lastUsedAt: new Date(),
+        },
+        create: {
+          userId,
+          sourceName,
+          normalizedSource,
+          aliasesJson: JSON.stringify(aliases),
+          visibleTextJson: JSON.stringify(visibleText),
+          correctedProductId: resolvedProduct.id,
+        },
+      });
+    } catch (e) {
+      console.warn("Failed to persist recognition correction in database:", e);
+    }
+  }
+
+  return resolvedProduct;
+}
+
+async function findRecognitionCorrectionMatch(userId: string | null | undefined, item: PhotoRecognitionItem) {
+  const normalizedName = normalizeComparableText(item.name);
+  if (!userId || !normalizedName) return null;
+
+  const corrections = await getRecognitionCorrections(userId);
+  let bestCorrection: any = null;
+
+  for (const correction of corrections) {
+    const candidateTexts = uniqueStrings([
+      correction.sourceName,
+      ...(correction.aliases || []),
+      ...(correction.visibleText || []),
+    ], 1);
+    const itemTexts = uniqueStrings([
+      item.name,
+      ...(item.aliases || []),
+      ...(item.searchHints || []),
+      ...(item.visibleText || []),
+    ], 1);
+
+    let bestSimilarity = 0;
+    for (const itemText of itemTexts) {
+      for (const candidateText of candidateTexts) {
+        bestSimilarity = Math.max(bestSimilarity, computeTextSimilarity(itemText, candidateText));
+      }
+    }
+
+    const exactBoost = correction.normalizedSource === normalizedName ? 0.2 : 0;
+    const score = Math.max(0, Math.min(1, bestSimilarity + exactBoost + Math.min(0.12, numberOrZero(correction.usageCount) * 0.02)));
+
+    if (!bestCorrection || score > numberOrZero(bestCorrection.score)) {
+      bestCorrection = { ...correction, score };
+    }
+  }
+
+  if (bestCorrection && numberOrZero(bestCorrection.score) >= 0.78 && bestCorrection.correctedProduct) {
+    return bestCorrection;
+  }
+
+  return null;
+}
+
+type ProductSearchOptions = {
+  limit?: number;
+  cache?: boolean;
+  localize?: boolean;
+  allowAiEstimate?: boolean;
+};
+
+type PhotoRecognitionItem = {
+  name: string;
+  amount: number;
+  aliases: string[];
+  searchHints: string[];
+  visibleText: string[];
+  barcodeCandidates: string[];
+  confidence?: number;
+  isPackaged?: boolean;
+};
+
+function normalizePhotoRecognitionItem(item: any): PhotoRecognitionItem | null {
+  const name = String(item?.name || item?.food || item?.product || item?.dish || "").trim();
+  if (!name) return null;
+
+  const amount = clampNumber(item?.amount ?? item?.grams ?? item?.weight ?? 100, 1, 5000, 100);
+  const aliases = uniqueStrings(Array.isArray(item?.aliases) ? item.aliases : [], 2);
+  const searchHints = uniqueStrings(Array.isArray(item?.searchHints) ? item.searchHints : [], 2);
+  const visibleText = uniqueStrings(Array.isArray(item?.visibleText) ? item.visibleText : [], 2);
+  const rawBarcodes = Array.isArray(item?.barcodeCandidates)
+    ? item.barcodeCandidates
+    : (String(item?.barcode || "").trim() ? [String(item.barcode).trim()] : []);
+  const barcodeCandidates = uniqueStrings(rawBarcodes.flatMap((value: string) => extractBarcodeCandidates(value)), 8);
+  const confidence = Number.isFinite(Number(item?.confidence))
+    ? clampNumber(item.confidence, 0, 1, 0.5)
+    : undefined;
+
+  return {
+    name,
+    amount,
+    aliases,
+    searchHints,
+    visibleText,
+    barcodeCandidates,
+    confidence,
+    isPackaged: Boolean(item?.isPackaged),
+  };
+}
+
+function dedupePhotoRecognitionItems(items: PhotoRecognitionItem[]) {
+  const deduplicatedMap = new Map<string, PhotoRecognitionItem>();
+
+  for (const item of items) {
+    const key = normalizeComparableText(item.name);
+    const existing = deduplicatedMap.get(key);
+
+    if (!existing) {
+      deduplicatedMap.set(key, { ...item });
+      continue;
+    }
+
+    existing.amount += item.amount;
+    existing.aliases = uniqueStrings([...(existing.aliases || []), ...(item.aliases || [])], 2);
+    existing.searchHints = uniqueStrings([...(existing.searchHints || []), ...(item.searchHints || [])], 2);
+    existing.visibleText = uniqueStrings([...(existing.visibleText || []), ...(item.visibleText || [])], 2);
+    existing.barcodeCandidates = uniqueStrings([...(existing.barcodeCandidates || []), ...(item.barcodeCandidates || [])], 8);
+    existing.confidence = Math.max(numberOrZero(existing.confidence), numberOrZero(item.confidence)) || undefined;
+    existing.isPackaged = Boolean(existing.isPackaged || item.isPackaged);
+  }
+
+  return Array.from(deduplicatedMap.values());
+}
+
+function buildPhotoRecognitionQueries(item: PhotoRecognitionItem) {
+  const phrases = uniqueStrings([
+    item.name,
+    ...item.aliases,
+    ...item.searchHints,
+    ...item.visibleText,
+  ], 2);
+
+  const expanded = uniqueStrings(
+    phrases.flatMap((phrase) => {
+      const cleaned = phrase
+        .replace(/\([^)]*\)/g, " ")
+        .replace(/[.,;:!?'"`~]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      const tokens = cleaned.split(" ").filter((token) => token.length > 2);
+      return [phrase, cleaned, ...tokens];
+    }),
+    2
+  );
+
+  return expanded.slice(0, 12);
+}
+
+async function searchProductsEngine(query: string, options: ProductSearchOptions = {}) {
+  const normalizedInput = String(query || "").trim();
+  if (!normalizedInput) return [] as any[];
+
+  const limit = Math.max(1, Math.min(20, Number(options.limit) || 10));
+  const useCache = options.cache !== false;
+  const localize = options.localize !== false;
+  const allowAiEstimate = options.allowAiEstimate !== false;
+
+  if (useCache) {
+    const cachedSearch = getCachedProductSearch(normalizedInput);
+    if (cachedSearch) {
+      return cachedSearch.slice(0, limit);
+    }
+  }
+
+  const dbReady = isDatabaseConfigured();
+  let normalizedQuery = normalizedInput;
+  let englishQuery = normalizedInput;
+  let searchTerms: string[] = [normalizedInput];
+
+  try {
+    const normResponseText = await generateAI(`Проанализируй поисковый запрос по еде: "${normalizedInput}".
+Пользователь русскоязычный. Верни JSON со структурой:
+- normalized: каноничное название на русском
+- english: краткий англоязычный термин для поиска в USDA
+- search_terms: массив из 3-5 ключевых слов для поиска (русские и английские варианты)
+- tags: массив категорий
+- isDrink: boolean
+Верни только JSON.`);
+    const normData = parseAiJsonPayload(normResponseText || "{}");
+    normalizedQuery = String(normData?.normalized || normalizedInput).trim() || normalizedInput;
+    englishQuery = String(normData?.english || normalizedInput).trim() || normalizedInput;
+    searchTerms = uniqueStrings([
+      normalizedInput,
+      normalizedQuery,
+      englishQuery,
+      ...(Array.isArray(normData?.search_terms) ? normData.search_terms : []),
+    ], 2);
+  } catch (e) {
+    console.error("Normalization error:", e);
+  }
+
+  const queryTokens = uniqueStrings([
+    ...normalizedInput.split(/\s+/),
+    ...normalizedQuery.split(/\s+/),
+    ...englishQuery.split(/\s+/),
+  ], 2);
+
+  const localProducts = dbReady
+    ? await prisma.product.findMany({
+        where: {
+          OR: [
+            { name: { contains: normalizedQuery } },
+            { name: { contains: normalizedInput } },
+            { name: { contains: englishQuery } },
+            ...searchTerms.map((term) => ({ name: { contains: term } })),
+            ...queryTokens.map((term) => ({ name: { contains: term } })),
+            { brand: { contains: normalizedInput } },
+          ],
+        },
+        take: 30,
+      })
+    : [];
+
+  const parsedLocal = localProducts.map((product) => {
+    const micro = buildCompleteMicronutrients(parseMicronutrients(product.micronutrients), product.fiber);
+    return { ...product, ...micro, source: "local" };
+  });
+
+  let usdaProducts: any[] = [];
+  const usdaKey = process.env.USDA_FDC_API_KEY;
+  if (usdaKey && englishQuery.length > 1) {
+    try {
+      const response = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${usdaKey}&query=${encodeURIComponent(englishQuery)}&pageSize=15`);
+      if (response.ok) {
+        const data: any = await response.json();
+        usdaProducts = (data.foods || []).map((food: any) => {
+          const getNutrient = (id: number) =>
+            food.foodNutrients?.find((n: any) => n.nutrientId === id || n.nutrientNumber === String(id))?.value || 0;
+          const extended = extractUsdaExtendedNutrients(food);
+          const completedMicro = buildCompleteMicronutrients({
+            vitamins: extended.vitamins,
+            minerals: extended.minerals,
+            aminoAcids: extended.aminoAcids,
+            fattyAcids: extended.fattyAcids,
+            carbohydrateTypes: extended.carbohydrateTypes,
+          }, getNutrient(1079) || getNutrient(291));
+
+          return {
+            id: `usda-${food.fdcId}`,
+            name: food.description,
+            brand: food.brandOwner || "USDA",
+            calories: getNutrient(1008) || getNutrient(208),
+            protein: getNutrient(1003) || getNutrient(203),
+            fat: getNutrient(1004) || getNutrient(204),
+            carbs: getNutrient(1005) || getNutrient(205),
+            fiber: getNutrient(1079) || getNutrient(291),
+            vitamins: completedMicro.vitamins,
+            minerals: completedMicro.minerals,
+            aminoAcids: completedMicro.aminoAcids,
+            fattyAcids: completedMicro.fattyAcids,
+            carbohydrateTypes: completedMicro.carbohydrateTypes,
+            isUsda: true,
+            fdcId: food.fdcId,
+            source: "usda",
+          };
+        });
+      }
+    } catch (e) {
+      console.error("USDA Search Error:", e);
+    }
+  }
+
+  const allCandidates = [...parsedLocal, ...usdaProducts];
+  const scoredCandidates = allCandidates.map((candidate) => {
+    const similarity = Math.max(
+      computeTextSimilarity(normalizedInput, candidate.name),
+      computeTextSimilarity(normalizedQuery, candidate.name),
+      computeTextSimilarity(englishQuery, candidate.name)
+    );
+    const sourceBoost = candidate.source === "local" ? 0.1 : 0;
+    const finalScore = Math.max(0, Math.min(1, similarity + sourceBoost));
+    return { ...candidate, matchScore: finalScore };
+  });
+
+  scoredCandidates.sort((left, right) => numberOrZero(right.matchScore) - numberOrZero(left.matchScore));
+
+  let finalResults = scoredCandidates.slice(0, 15);
+
+  if (allowAiEstimate && (finalResults.length === 0 || numberOrZero(finalResults[0]?.matchScore) < 0.6)) {
+    try {
+      const estimateResponseText = await generateAI(`Пользователь ищет продукт: "${normalizedInput}".
+Точного совпадения в базе нет.
+Оцени пищевую ценность для 100 г и верни только JSON:
+{
+  "name": "Название на русском",
+  "calories": number,
+  "protein": number,
+  "fat": number,
+  "carbs": number,
+  "fiber": number,
+  "vitamins": { "C": number },
+  "minerals": { "Iron": number },
+  "fattyAcids": { "Omega3": number, "Omega6": number, "Omega9": number, "TransFats": number, "Cholesterol": number },
+  "carbohydrateTypes": { "Glucose": number, "Fructose": number, "Galactose": number, "Sucrose": number, "Lactose": number, "Maltose": number, "Starch": number, "Fiber": number },
+  "aminoAcids": { "Alanine": number, "Arginine": number, "Asparagine": number, "AsparticAcid": number, "Valine": number, "Histidine": number, "Glycine": number, "Glutamine": number, "GlutamicAcid": number, "Isoleucine": number, "Leucine": number, "Lysine": number, "Methionine": number, "Proline": number, "Serine": number, "Tyrosine": number, "Threonine": number, "Tryptophan": number, "Phenylalanine": number, "Cysteine": number },
+  "explanation": "Коротко почему такие значения"
+}`);
+      const estimateData = parseAiJsonPayload(estimateResponseText || "{}");
+      if (estimateData?.name) {
+        finalResults.unshift({
+          id: `ai-est-${Date.now()}`,
+          name: `✨ ${estimateData.name} (AI Оценка)`,
+          brand: "AI Nutria Engine",
+          calories: numberOrZero(estimateData.calories),
+          protein: numberOrZero(estimateData.protein),
+          fat: numberOrZero(estimateData.fat),
+          carbs: numberOrZero(estimateData.carbs),
+          fiber: numberOrZero(estimateData.fiber),
+          vitamins: estimateData.vitamins || {},
+          minerals: estimateData.minerals || {},
+          aminoAcids: estimateData.aminoAcids || {},
+          fattyAcids: estimateData.fattyAcids || {},
+          carbohydrateTypes: estimateData.carbohydrateTypes || {},
+          isAiEstimated: true,
+          explanation: estimateData.explanation,
+          matchScore: 0.95,
+          source: "ai",
+        });
+      }
+    } catch (e) {
+      console.error("AI Estimation error:", e);
+    }
+  }
+
+  finalResults.sort((left, right) => numberOrZero(right.matchScore) - numberOrZero(left.matchScore));
+
+  if (finalResults.length > 1 && numberOrZero(finalResults[0]?.matchScore) < 0.95) {
+    try {
+      const reRankResponseText = await generateAI(`Пользователь ищет: "${normalizedInput}" (нормализовано: "${normalizedQuery}").
+Найдены кандидаты:
+${finalResults.map((candidate, index) => `${index}: ${candidate.name} (${candidate.brand}) - Score: ${candidate.matchScore}`).join("\n")}
+
+Выбери лучшие совпадения.
+Верни только JSON с массивом индексов по убыванию релевантности.
+Полностью нерелевантные позиции исключи.
+Если есть AI-оценка и она выглядит корректно, можно поставить ее выше.`);
+      const reRankData = parseAiJsonPayload(reRankResponseText || "{}");
+      const indices = Array.isArray(reRankData)
+        ? reRankData
+        : (Array.isArray(reRankData?.indices) ? reRankData.indices : []);
+
+      if (indices.length > 0) {
+        finalResults = indices.map((index: number) => finalResults[index]).filter(Boolean);
+      }
+    } catch (e) {
+      console.error("Re-ranking error:", e);
+    }
+  }
+
+  const responseResults = localize
+    ? await Promise.all(finalResults.slice(0, limit).map((item) => localizeProductForRussianAudience(item)))
+    : finalResults.slice(0, limit);
+
+  if (useCache) {
+    cacheProductSearch(normalizedInput, responseResults);
+  }
+
+  return responseResults;
+}
+
+async function findBestPhotoRecognitionMatch(item: PhotoRecognitionItem, userId?: string | null) {
+  const correctionMatch = await findRecognitionCorrectionMatch(userId, item);
+  if (correctionMatch?.correctedProduct) {
+    return {
+      ...item,
+      matchedBy: "correction",
+      matchScore: correctionMatch.score,
+      product: correctionMatch.correctedProduct,
+      correctedByUser: true,
+    };
+  }
+
+  const barcodeCandidates = uniqueStrings(item.barcodeCandidates.flatMap((value) => extractBarcodeCandidates(value)), 8);
+  for (const barcodeCandidate of barcodeCandidates) {
+    const cached = getCachedBarcodeProduct([barcodeCandidate]);
+    if (cached) {
+      return { ...item, matchedBy: `barcode:${barcodeCandidate}`, matchScore: 0.99, product: cached };
+    }
+
+    if (isDatabaseConfigured()) {
+      const dbProduct = await prisma.product.findFirst({ where: { barcode: barcodeCandidate } });
+      if (dbProduct) {
+        cacheBarcodeProduct([barcodeCandidate], dbProduct);
+        return { ...item, matchedBy: `barcode:${barcodeCandidate}`, matchScore: 0.99, product: dbProduct };
+      }
+    }
+
+    const offProduct = await fetchOpenFoodFactsProduct(barcodeCandidate);
+    if (offProduct) {
+      const persisted = await upsertProductFromBarcodeLookup(offProduct);
+      const responseProduct = persisted || offProduct;
+      cacheBarcodeProduct([barcodeCandidate], responseProduct);
+      return { ...item, matchedBy: `barcode:${barcodeCandidate}`, matchScore: 0.99, product: responseProduct };
+    }
+  }
+
+  const queries = buildPhotoRecognitionQueries(item);
+  let bestMatch: any = null;
+
+  for (const query of queries) {
+    const candidates = await searchProductsEngine(query, {
+      limit: 5,
+      cache: true,
+      localize: true,
+      allowAiEstimate: numberOrZero(item.confidence) >= 0.55,
+    });
+
+    for (const candidate of candidates) {
+      const similarity = Math.max(
+        computeTextSimilarity(item.name, candidate.name),
+        ...item.aliases.map((alias) => computeTextSimilarity(alias, candidate.name)),
+        ...item.searchHints.map((hint) => computeTextSimilarity(hint, candidate.name))
+      );
+      const packagedBoost = item.isPackaged && candidate.barcode ? 0.08 : 0;
+      const queryBoost = computeTextSimilarity(query, candidate.name) * 0.15;
+      const aiPenalty = candidate.isAiEstimated ? 0.08 : 0;
+      const finalScore = Math.max(
+        0,
+        Math.min(
+          1,
+          numberOrZero(candidate.matchScore) * 0.55 + similarity * 0.35 + packagedBoost + queryBoost - aiPenalty
+        )
+      );
+
+      if (!bestMatch || finalScore > numberOrZero(bestMatch.matchScore)) {
+        bestMatch = {
+          ...item,
+          matchedBy: query,
+          matchScore: finalScore,
+          product: candidate,
+        };
+      }
+    }
+  }
+
+  if (bestMatch && numberOrZero(bestMatch.matchScore) >= 0.5) {
+    return bestMatch;
+  }
+
+  return { ...item, matchedBy: null, matchScore: numberOrZero(bestMatch?.matchScore), product: null };
+}
+
+async function recognizeProductsFromPhoto(image: { data: string; mimeType: string }, options?: { userId?: string | null; mode?: PhotoRecognitionMode }) {
+  const mode: PhotoRecognitionMode = options?.mode === "whole_dish" ? "whole_dish" : "ingredients";
+  const barcodeProbePrompt = `Проанализируй фото и извлеки только строки, похожие на штрихкоды с упаковки.
+Верни только JSON-объект:
+{
+  "barcodeCandidates": ["4601234567890"]
+}
+Правила:
+- Включай только строки из 8-14 цифр.
+- Без пробелов и дефисов.
+- Если штрихкод не виден, верни пустой массив.`;
+
+  const barcodeProbeText = await generateAI(barcodeProbePrompt, "application/json", image);
+  const barcodeProbeRaw = parseAiJsonPayload(barcodeProbeText || "{}");
+  const photoBarcodeCandidates = uniqueStrings(
+    (Array.isArray(barcodeProbeRaw?.barcodeCandidates) ? barcodeProbeRaw.barcodeCandidates : [])
+      .flatMap((value: any) => extractBarcodeCandidates(String(value || ""))),
+    8
+  );
+
+  for (const barcodeCandidate of photoBarcodeCandidates) {
+    const directMatch = await findBestPhotoRecognitionMatch({
+      name: "Продукт по упаковке",
+      amount: 100,
+      aliases: [],
+      searchHints: [],
+      visibleText: [],
+      barcodeCandidates: [barcodeCandidate],
+      confidence: 0.98,
+      isPackaged: true,
+    }, options?.userId);
+    if (directMatch?.product) {
+      return {
+        items: [
+          {
+            ...directMatch,
+            name: directMatch.product.name,
+            amount: 100,
+            recognitionConfidence: 0.98,
+          },
+        ],
+        dishEstimate: mode === "whole_dish"
+          ? {
+              name: directMatch.product.name,
+              amount: 100,
+              totalCalories: numberOrZero(directMatch.product.calories),
+              totalProtein: numberOrZero(directMatch.product.protein),
+              totalFat: numberOrZero(directMatch.product.fat),
+              totalCarbs: numberOrZero(directMatch.product.carbs),
+              totalFiber: numberOrZero(directMatch.product.fiber),
+              explanation: "Оценка построена по распознанному упакованному продукту.",
+              confidence: 0.98,
+              product: directMatch.product,
+            }
+          : null,
+      };
+    }
+  }
+
+  const recognitionPrompt = `Проанализируй фото еды или продукта и верни только корректный JSON.
+
+Режим распознавания: ${mode === "whole_dish" ? "whole dish" : "ingredients"}.
+
+Формат ответа:
+{
+  "sceneType": "packaged_food | plated_dish | ingredients | unclear",
+  "dishEstimate": {
+    "name": "название блюда целиком",
+    "amount": 350,
+    "totalCalories": 620,
+    "totalProtein": 28,
+    "totalFat": 24,
+    "totalCarbs": 68,
+    "totalFiber": 9,
+    "explanation": "кратко почему такая оценка",
+    "confidence": 0.0
+  },
+  "items": [
+    {
+      "name": "основное русское название",
+      "amount": 120,
+      "aliases": ["алиас ru", "alias en"],
+      "searchHints": ["уточнение для поиска", "бренд или тип"],
+      "visibleText": ["текст с упаковки, если читается"],
+      "barcodeCandidates": ["4601234567890"],
+      "confidence": 0.0,
+      "isPackaged": false
+    }
+  ]
+}
+
+Правила:
+- Если это упакованный продукт, приоритет у названия с упаковки и читаемого текста.
+- Если режим whole dish, обязательно заполни dishEstimate для всей порции на фото.
+- Если это готовое блюдо, выделяй 1-5 основных съедобных компонентов.
+- Не включай тарелку, стол, фон, приборы.
+- amount указывай в граммах съедобной части.
+- aliases и searchHints используй для русских и английских вариантов поиска.
+- confidence от 0.0 до 1.0.
+- Если уверенность низкая, всё равно верни лучшую гипотезу.`;
+
+  const recognitionText = await generateAI(recognitionPrompt, "application/json", image);
+  const recognitionRaw = parseAiJsonPayload(recognitionText || "{}");
+  let recognizedItemsSource = Array.isArray(recognitionRaw)
+    ? recognitionRaw
+    : (Array.isArray(recognitionRaw?.items) ? recognitionRaw.items : []);
+  const dishEstimateRaw = recognitionRaw && typeof recognitionRaw === "object" && !Array.isArray(recognitionRaw)
+    ? recognitionRaw.dishEstimate
+    : null;
+
+  if (recognizedItemsSource.length === 0) {
+    const singleFoodFallbackPrompt = `Определи основной съедобный продукт или блюдо на фото.
+Верни только JSON-объект:
+{
+  "name": "банан",
+  "amount": 120,
+  "aliases": ["banana"],
+  "searchHints": ["fruit raw"],
+  "visibleText": [],
+  "barcodeCandidates": [],
+  "confidence": 0.0,
+  "isPackaged": false
+}`;
+    const singleFoodText = await generateAI(singleFoodFallbackPrompt, "application/json", image);
+    const singleFoodRaw = parseAiJsonPayload(singleFoodText || "{}");
+    if (singleFoodRaw && typeof singleFoodRaw === "object" && !Array.isArray(singleFoodRaw)) {
+      recognizedItemsSource = [singleFoodRaw];
+    }
+  }
+
+  const normalizedItems = dedupePhotoRecognitionItems(
+    recognizedItemsSource
+      .map((item: any) => normalizePhotoRecognitionItem(item))
+      .filter(Boolean) as PhotoRecognitionItem[]
+  );
+
+  const matchedItems = await Promise.all(
+    normalizedItems.map(async (item) => {
+      const match = await findBestPhotoRecognitionMatch(item, options?.userId);
+      return {
+        ...match,
+        recognitionConfidence: typeof item.confidence === "number" ? item.confidence : null,
+      };
+    })
+  );
+
+  const dishEstimateProduct = buildDishEstimateProduct(dishEstimateRaw);
+  const dishEstimate = dishEstimateProduct
+    ? {
+        name: dishEstimateProduct.name,
+        amount: clampNumber(dishEstimateRaw?.amount ?? dishEstimateRaw?.totalWeight ?? 350, 1, 5000, 350),
+        totalCalories: numberOrZero(dishEstimateRaw?.totalCalories ?? dishEstimateRaw?.calories),
+        totalProtein: numberOrZero(dishEstimateRaw?.totalProtein ?? dishEstimateRaw?.protein),
+        totalFat: numberOrZero(dishEstimateRaw?.totalFat ?? dishEstimateRaw?.fat),
+        totalCarbs: numberOrZero(dishEstimateRaw?.totalCarbs ?? dishEstimateRaw?.carbs),
+        totalFiber: numberOrZero(dishEstimateRaw?.totalFiber ?? dishEstimateRaw?.fiber),
+        explanation: String(dishEstimateRaw?.explanation || "").trim(),
+        confidence: Number.isFinite(Number(dishEstimateRaw?.confidence)) ? clampNumber(dishEstimateRaw?.confidence, 0, 1, 0.5) : null,
+        product: {
+          id: `ai-dish-${Date.now()}`,
+          ...dishEstimateProduct,
+        },
+      }
+    : null;
+
+  return {
+    items: matchedItems,
+    dishEstimate,
+  };
 }
 
 function getCachedBarcodeProduct(candidates: string[]) {
@@ -958,236 +1891,72 @@ async function startServer() {
       const { q } = req.query;
       if (!q) return res.json([]);
 
-      const query = String(q).trim();
-      const cachedSearch = getCachedProductSearch(query);
-      if (cachedSearch) {
-        return res.json(cachedSearch);
-      }
-
-      const dbReady = isDatabaseConfigured();
-    
-    // Stage A: Normalization & Translation (using Gemini)
-    // We normalize the query to handle synonyms, units, and translate to English for USDA
-    let normalizedQuery = query;
-    let englishQuery = query;
-    let searchTerms: string[] = [query];
-    let categories: string[] = [];
-
-    try {
-      const normResponseText = await generateAI(`Проанализируй поисковый запрос по еде: "${query}".
-    Пользователь русскоязычный. Верни JSON со структурой:
-    - normalized: каноничное название на русском (например, "яблоко")
-    - english: краткий англоязычный термин для поиска в USDA
-    - search_terms: массив из 3-5 ключевых слов для поиска (включи русские и английские варианты)
-    - tags: массив категорий (например ["fruit", "snack", "raw"])
-    - isDrink: boolean
-    Верни только JSON.`);
-      const normData = JSON.parse(normResponseText || '{}');
-      normalizedQuery = normData.normalized || query;
-      englishQuery = normData.english || query;
-      searchTerms = Array.from(new Set([
-        query, 
-        normalizedQuery, 
-        englishQuery, 
-        ...(normData.search_terms || [])
-      ])).filter(t => t && t.length > 1);
-      categories = normData.tags || [];
-    } catch (e) {
-      console.error("Normalization error:", e);
-    }
-
-    // Stage B: Fast Candidate Selection
-    // 1. Search local DB (using token-based approach for better matching)
-      const tokens = query.split(/\s+/).filter(t => t.length > 1);
-      const localProducts = dbReady
-        ? await prisma.product.findMany({
-            where: {
-              OR: [
-                { name: { contains: normalizedQuery } },
-                { name: { contains: query } },
-                { name: { contains: englishQuery } },
-                ...searchTerms.map(t => ({ name: { contains: t } })),
-                ...tokens.map(t => ({ name: { contains: t } })),
-                { brand: { contains: query } }
-              ]
-            },
-            take: 30
-          })
-        : [];
-    
-    const parsedLocal = localProducts.map(p => {
-      const micro = buildCompleteMicronutrients(parseMicronutrients(p.micronutrients), p.fiber);
-      return { ...p, ...micro, source: 'local' };
-    });
-
-    // 2. Search USDA API
-    let usdaProducts: any[] = [];
-    const usdaKey = process.env.USDA_FDC_API_KEY;
-    if (usdaKey && englishQuery.length > 1) {
-      try {
-        // Search with English query
-        const response = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${usdaKey}&query=${encodeURIComponent(englishQuery)}&pageSize=15`);
-        if (response.ok) {
-          const data: any = await response.json();
-          usdaProducts = (data.foods || []).map((f: any) => {
-            const getNutrient = (id: number) =>
-              f.foodNutrients?.find((n: any) => n.nutrientId === id || n.nutrientNumber === String(id))?.value || 0;
-            const extended = extractUsdaExtendedNutrients(f);
-            const completedMicro = buildCompleteMicronutrients({
-              vitamins: extended.vitamins,
-              minerals: extended.minerals,
-              aminoAcids: extended.aminoAcids,
-              fattyAcids: extended.fattyAcids,
-              carbohydrateTypes: extended.carbohydrateTypes,
-            }, getNutrient(1079) || getNutrient(291));
-
-            return {
-              id: `usda-${f.fdcId}`,
-              name: f.description,
-              brand: f.brandOwner || 'USDA',
-              calories: getNutrient(1008) || getNutrient(208),
-              protein: getNutrient(1003) || getNutrient(203),
-              fat: getNutrient(1004) || getNutrient(204),
-              carbs: getNutrient(1005) || getNutrient(205),
-              fiber: getNutrient(1079) || getNutrient(291),
-              vitamins: completedMicro.vitamins,
-              minerals: completedMicro.minerals,
-              aminoAcids: completedMicro.aminoAcids,
-              fattyAcids: completedMicro.fattyAcids,
-              carbohydrateTypes: completedMicro.carbohydrateTypes,
-              isUsda: true,
-              fdcId: f.fdcId,
-              source: 'usda'
-            };
-          });
-        }
-      } catch (e) {
-        console.error("USDA Search Error:", e);
-      }
-    }
-
-    // Stage C: String Similarity & Ranking
-    const allCandidates = [...parsedLocal, ...usdaProducts];
-    const scoredCandidates = allCandidates.map(c => {
-      const nameLower = c.name.toLowerCase();
-      const queryLower = query.toLowerCase();
-      const normLower = normalizedQuery.toLowerCase();
-      const engLower = englishQuery.toLowerCase();
-      
-      // 1. Levenshtein Distance (Character level)
-      const distQuery = Levenshtein.get(queryLower, nameLower);
-      const distNorm = Levenshtein.get(normLower, nameLower);
-      const distEng = Levenshtein.get(engLower, nameLower);
-      const minDist = Math.min(distQuery, distNorm, distEng);
-      const maxLen = Math.max(queryLower.length, nameLower.length, normLower.length, engLower.length);
-      const charSimilarity = 1 - (minDist / maxLen);
-      
-      // 2. Token Overlap (Word level)
-      const queryTokens = new Set([...queryLower.split(/\s+/), ...normLower.split(/\s+/), ...engLower.split(/\s+/)]);
-      const nameTokens = nameLower.split(/\s+/);
-      const overlap = nameTokens.filter(t => queryTokens.has(t)).length;
-      const tokenSimilarity = overlap / Math.max(queryTokens.size, nameTokens.length);
-
-      // 3. Substring Match Boost
-      const containsBoost = (nameLower.includes(queryLower) || nameLower.includes(normLower) || nameLower.includes(engLower)) ? 0.2 : 0;
-      
-      // 4. Source Boost
-      const sourceBoost = c.source === 'local' ? 0.1 : 0;
-      
-      const finalScore = (charSimilarity * 0.3) + (tokenSimilarity * 0.5) + containsBoost + sourceBoost;
-      
-      return { ...c, matchScore: finalScore };
-    });
-
-    // Sort by match score
-    scoredCandidates.sort((a, b) => b.matchScore - a.matchScore);
-
-    // Stage D: LLM Re-rank (Final Layer) & AI Estimation
-    let finalResults = scoredCandidates.slice(0, 15);
-    
-    // If we have very few results or low confidence, we ask AI to estimate the product
-    if (finalResults.length === 0 || (finalResults.length > 0 && finalResults[0].matchScore < 0.6)) {
-      try {
-        const estimateResponseText = await generateAI(`Пользователь ищет продукт: "${query}".
-          Точного совпадения в базе нет.
-          Оцени пищевую ценность для 100 г и верни только JSON:
-          {
-            "name": "Название на русском",
-            "calories": number,
-            "protein": number,
-            "fat": number,
-            "carbs": number,
-            "fiber": number,
-            "vitamins": { "C": number, ... },
-            "minerals": { "Iron": number, ... },
-            "fattyAcids": { "Omega3": number, "Omega6": number, "Omega9": number, "TransFats": number, "Cholesterol": number },
-            "carbohydrateTypes": { "Glucose": number, "Fructose": number, "Galactose": number, "Sucrose": number, "Lactose": number, "Maltose": number, "Starch": number, "Fiber": number },
-            "aminoAcids": { "Alanine": number, "Arginine": number, "Asparagine": number, "AsparticAcid": number, "Valine": number, "Histidine": number, "Glycine": number, "Glutamine": number, "GlutamicAcid": number, "Isoleucine": number, "Leucine": number, "Lysine": number, "Methionine": number, "Proline": number, "Serine": number, "Tyrosine": number, "Threonine": number, "Tryptophan": number, "Phenylalanine": number, "Cysteine": number },
-            "explanation": "Коротко почему такие значения"
-          }
-          Важно:
-          - aminoAcids: миллиграммы (mg) на 100 г
-          - fattyAcids: граммы (g) на 100 г, кроме Cholesterol (mg)
-          - carbohydrateTypes: граммы (g) на 100 г`);
-        const estData = JSON.parse(estimateResponseText || '{}');
-        if (estData.name) {
-          finalResults.unshift({
-            id: `ai-est-${Date.now()}`,
-            name: `✨ ${estData.name} (AI Оценка)`,
-            brand: 'AI Nutria Engine',
-            calories: estData.calories || 0,
-            protein: estData.protein || 0,
-            fat: estData.fat || 0,
-            carbs: estData.carbs || 0,
-            fiber: estData.fiber || 0,
-            vitamins: estData.vitamins || {},
-            minerals: estData.minerals || {},
-            aminoAcids: estData.aminoAcids || {},
-            fattyAcids: estData.fattyAcids || {},
-            carbohydrateTypes: estData.carbohydrateTypes || {},
-            isAiEstimated: true,
-            explanation: estData.explanation,
-            matchScore: 0.95,
-            source: 'ai'
-          });
-        }
-      } catch (e) {
-        console.error("AI Estimation error:", e);
-      }
-    }
-
-    // Sort again if AI estimation was added
-    finalResults.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
-
-    if (finalResults.length > 1 && finalResults[0].matchScore < 0.95) {
-      try {
-        const reRankResponseText = await generateAI(`Пользователь ищет: "${query}" (нормализовано: "${normalizedQuery}").
-          Найдены кандидаты:
-          ${finalResults.map((c, i) => `${i}: ${c.name} (${c.brand}) - Score: ${c.matchScore}`).join('\n')}
-          
-          Выбери лучшие совпадения.
-          Верни только JSON с массивом индексов по убыванию релевантности.
-          Полностью нерелевантные позиции исключи.
-          Если есть AI-оценка и она выглядит корректно, можно поставить ее выше.`);
-        const reRankData = JSON.parse(reRankResponseText || '{}');
-        let indices = [];
-        if (Array.isArray(reRankData)) indices = reRankData;
-        else if (reRankData.indices && Array.isArray(reRankData.indices)) indices = reRankData.indices;
-        
-        if (indices.length > 0) {
-          finalResults = indices.map((idx: number) => finalResults[idx]).filter(Boolean);
-        }
-      } catch (e) {
-        console.error("Re-ranking error:", e);
-      }
-    }
-
-      const responseResults = await Promise.all(finalResults.slice(0, 10).map((item) => localizeProductForRussianAudience(item)));
-      cacheProductSearch(query, responseResults);
+      const responseResults = await searchProductsEngine(String(q), {
+        limit: 10,
+        cache: true,
+        localize: true,
+        allowAiEstimate: true,
+      });
       res.json(responseResults);
     } catch (e: any) {
       console.error("Products Search Error:", e);
       res.status(500).json({ error: "Products search failed", message: e.message });
+    }
+  });
+
+  app.post("/api/photo/recognize", async (req, res) => {
+    try {
+      const image = req.body?.image;
+      const mode = req.body?.mode === "whole_dish" ? "whole_dish" : "ingredients";
+      if (!image?.data || !image?.mimeType) {
+        return res.status(400).json({ error: "Image payload is required" });
+      }
+
+      const recognized = await recognizeProductsFromPhoto(image, {
+        userId: req.cookies?.token || null,
+        mode,
+      });
+      return res.json({
+        items: recognized.items,
+        dishEstimate: recognized.dishEstimate,
+        mode,
+        message: recognized.items.length === 0 && !recognized.dishEstimate
+          ? "На фото не удалось уверенно распознать продукты."
+          : undefined,
+      });
+    } catch (e: any) {
+      console.error("Photo recognition error:", e);
+      return res.status(500).json({
+        error: "Photo recognition failed",
+        message: e?.message || "Unknown error",
+      });
+    }
+  });
+
+  app.post("/api/photo/corrections", async (req, res) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    try {
+      const sourceName = String(req.body?.sourceName || "").trim();
+      const correctedProductId = String(req.body?.correctedProductId || req.body?.correctedProduct?.id || "").trim();
+      if (!sourceName || !correctedProductId) {
+        return res.status(400).json({ error: "Correction payload is incomplete" });
+      }
+
+      const product = await saveRecognitionCorrection({
+        userId,
+        sourceName,
+        aliases: Array.isArray(req.body?.aliases) ? req.body.aliases : [],
+        visibleText: Array.isArray(req.body?.visibleText) ? req.body.visibleText : [],
+        correctedProductId,
+        correctedProduct: req.body?.correctedProduct,
+      });
+
+      return res.json({ success: true, product });
+    } catch (e: any) {
+      console.error("Photo correction save error:", e);
+      return res.status(500).json({ error: "Failed to save correction", message: e?.message || "Unknown error" });
     }
   });
 
@@ -1540,35 +2309,10 @@ async function startServer() {
       return res.json({ ...mealItem, mode: "memory", date: targetDateKey });
     }
 
-    // If it's a USDA product, we need to ensure it exists in our local DB first
-    if ((String(productId).startsWith('usda-') || String(productId).startsWith('ai-est-')) && usdaData) {
-      usdaData = await localizeProductForRussianAudience(usdaData);
-      const completeMicro = buildCompleteMicronutrients(usdaData, usdaData.fiber);
-      let product = await prisma.product.findFirst({
-        where: { name: usdaData.name, brand: usdaData.brand }
-      });
-
+    if (isGeneratedProductId(String(productId)) && usdaData) {
+      const product = await ensureProductExistsLocally(String(productId), usdaData);
       if (!product) {
-        product = await prisma.product.create({
-          data: {
-            name: usdaData.name,
-            brand: usdaData.brand,
-            calories: usdaData.calories,
-            protein: usdaData.protein,
-            fat: usdaData.fat,
-            carbs: usdaData.carbs,
-            fiber: usdaData.fiber,
-            micronutrients: JSON.stringify(completeMicro)
-          }
-        });
-      } else if (!product.micronutrients || product.micronutrients === '{}' || shouldRefreshMicronutrients(product.micronutrients, usdaData)) {
-        // Refresh existing product when micronutrient payload is incomplete.
-        product = await prisma.product.update({
-          where: { id: product.id },
-          data: {
-            micronutrients: JSON.stringify(completeMicro)
-          }
-        });
+        return res.status(400).json({ error: "Unable to persist generated product" });
       }
       productId = product.id;
     }

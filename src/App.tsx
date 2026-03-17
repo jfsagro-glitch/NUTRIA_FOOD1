@@ -127,6 +127,33 @@ interface Hint {
   cta?: string;
 }
 
+interface RecognizedPhotoItem {
+  name: string;
+  amount: number;
+  aliases?: string[];
+  visibleText?: string[];
+  product?: Product | null;
+  matchedBy?: string | null;
+  matchScore?: number;
+  recognitionConfidence?: number | null;
+  correctedByUser?: boolean;
+}
+
+interface PhotoDishEstimate {
+  name: string;
+  amount: number;
+  totalCalories: number;
+  totalProtein: number;
+  totalFat: number;
+  totalCarbs: number;
+  totalFiber: number;
+  explanation?: string;
+  confidence?: number | null;
+  product: Product;
+}
+
+type PhotoCaptureMode = 'ingredients' | 'whole_dish';
+
 type ThemeMode = 'light' | 'dark';
 
 type FastingMode = 'OFF' | '16:8' | '18:6' | 'CUSTOM';
@@ -2146,8 +2173,10 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRecognizing, setIsRecognizing] = useState(false);
-  const [recognizedItems, setRecognizedItems] = useState<any[]>([]);
+  const [recognizedItems, setRecognizedItems] = useState<RecognizedPhotoItem[]>([]);
+  const [photoDishEstimate, setPhotoDishEstimate] = useState<PhotoDishEstimate | null>(null);
   const [photoRecognitionError, setPhotoRecognitionError] = useState('');
+  const [photoCaptureMode, setPhotoCaptureMode] = useState<PhotoCaptureMode>('ingredients');
   const [barcodeQuery, setBarcodeQuery] = useState('');
   const [barcodeScannerError, setBarcodeScannerError] = useState('');
   const [isBarcodeScanning, setIsBarcodeScanning] = useState(false);
@@ -2161,6 +2190,7 @@ export default function App() {
   const [selectedProductForAmount, setSelectedProductForAmount] = useState<Product | null>(null);
   const [foodAmount, setFoodAmount] = useState('100');
   const [amountEntryContext, setAmountEntryContext] = useState<{ source: 'search' | 'photo' | 'voice'; voiceIndex?: number } | null>(null);
+  const [photoCorrectionTarget, setPhotoCorrectionTarget] = useState<{ index: number; item: RecognizedPhotoItem } | null>(null);
   const recognitionRef = useRef<any>(null);
   const barcodeScannerRef = useRef<Html5QrcodeType | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
@@ -2721,194 +2751,113 @@ export default function App() {
     }
   };
 
+  const openPhotoPicker = (mode: PhotoCaptureMode) => {
+    setPhotoCaptureMode(mode);
+    setPhotoRecognitionError('');
+    setRecognizedItems([]);
+    setPhotoDishEstimate(null);
+    setPhotoCorrectionTarget(null);
+    setIsActionSheetOpen(false);
+    fileInputRef.current?.click();
+  };
+
+  const savePhotoCorrection = async (item: RecognizedPhotoItem, product: Product) => {
+    const res = await fetch('/api/photo/corrections', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sourceName: item.name,
+        aliases: item.aliases || [],
+        visibleText: item.visibleText || [],
+        correctedProductId: product.id,
+        correctedProduct: product,
+      })
+    });
+
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(payload?.message || payload?.error || 'Не удалось сохранить исправление');
+    }
+
+    return (payload?.product || product) as Product;
+  };
+
+  const handleProductSelection = async (product: Product) => {
+    if (!photoCorrectionTarget) {
+      setSelectedProductForAmount(product);
+      setFoodAmount('100');
+      setAmountEntryContext({ source: 'search' });
+      return;
+    }
+
+    try {
+      const correctedProduct = await savePhotoCorrection(photoCorrectionTarget.item, product);
+      setRecognizedItems((prev) => prev.map((entry, index) => (
+        index === photoCorrectionTarget.index
+          ? {
+              ...entry,
+              name: correctedProduct.name,
+              product: correctedProduct,
+              correctedByUser: true,
+              matchedBy: 'correction',
+              matchScore: 1,
+            }
+          : entry
+      )));
+      setIsSearchSheetOpen(false);
+      setIsPhotoSheetOpen(true);
+      setSelectedProductForAmount(correctedProduct);
+      setFoodAmount(String(Math.max(1, Math.round(photoCorrectionTarget.item.amount || 100))));
+      setAmountEntryContext({ source: 'photo' });
+    } catch (e) {
+      console.error('Photo correction save error:', e);
+      alert('Не удалось сохранить исправление распознавания. Попробуйте ещё раз.');
+    } finally {
+      setPhotoCorrectionTarget(null);
+    }
+  };
+
+  const startPhotoCorrection = (item: RecognizedPhotoItem, index: number) => {
+    setPhotoCorrectionTarget({ index, item });
+    setSearchQuery(item.name);
+    setSearchResults([]);
+    setIsSearchSheetOpen(true);
+  };
+
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setPhotoRecognitionError('');
     setRecognizedItems([]);
+    setPhotoDishEstimate(null);
+    setPhotoCorrectionTarget(null);
     setIsRecognizing(true);
     setIsPhotoSheetOpen(true);
     setIsActionSheetOpen(false);
 
     try {
       const optimizedImage = await optimizeImageForRecognition(file);
+      const response = await fetch('/api/photo/recognize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: optimizedImage, mode: photoCaptureMode })
+      });
 
-      const barcodeProbePrompt = `Проанализируй фото и извлеки только строки, похожие на штрихкоды, с упаковки.
-    Верни ТОЛЬКО JSON-объект:
-{
-  "barcodeCandidates": ["4601234567890"]
-}
-    Правила:
-    - Включай только строки из 8-14 цифр.
-    - Без пробелов и дефисов.
-    - Если штрихкод не виден, верни пустой массив.`;
-      const barcodeProbeText = await generateAI(barcodeProbePrompt, "application/json", optimizedImage);
-      const barcodeProbeRaw = parseAiJsonPayload(barcodeProbeText || '{}');
-      const photoBarcodeCandidates = Array.from(new Set<string>(
-        (Array.isArray(barcodeProbeRaw?.barcodeCandidates) ? barcodeProbeRaw.barcodeCandidates : [])
-          .flatMap((value: any) => extractBarcodeCandidates(String(value || '')))
-      )).filter((value: string) => value.length > 0);
-
-      for (const barcodeCandidate of photoBarcodeCandidates) {
-        const barcodeRes = await fetch(`/api/products/barcode/${encodeURIComponent(barcodeCandidate)}`);
-        if (!barcodeRes.ok) continue;
-        const barcodeProduct = await barcodeRes.json().catch(() => null);
-        if (!barcodeProduct) continue;
-
-        setRecognizedItems([
-          {
-            name: barcodeProduct.name,
-            amount: 100,
-            aliases: [],
-            barcodeCandidates: [barcodeCandidate],
-            confidence: 0.95,
-            matchedBy: `barcode:${barcodeCandidate}`,
-            product: barcodeProduct,
-          }
-        ]);
-        return;
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.message || payload?.error || 'Ошибка распознавания фото');
       }
 
-      const prompt = `Проанализируй фото еды и верни ТОЛЬКО корректный JSON.
-
-    Приоритет:
-    1) Если виден штрихкод/QR с кодом товара, извлеки кандидаты числовых кодов.
-    2) Распознай продукты или компоненты блюда и оцени количество в граммах.
-    3) Используй русские названия как основные и добавь алиасы (RU + EN) для поиска.
-
-    Верни JSON-объект строго в формате:
-{
-  "items": [
-    {
-      "name": "основное название",
-      "amount": 120,
-      "aliases": ["алиас ru", "alias en"],
-      "barcodeCandidates": ["4601234567890"],
-      "confidence": 0.0,
-      "isPackaged": false
-    }
-  ]
-}
-
-Правила:
-- Для смешанных блюд выделяй 2-5 основных съедобных компонентов.
-- Игнорируй тарелку, стол и фон.
-- amount должен быть положительным числом.
-- confidence от 0.0 до 1.0.`;
-      const responseText = await generateAI(prompt, "application/json", optimizedImage);
-
-      const recognizedRaw = parseAiJsonPayload(responseText || "[]");
-      const recognizedList = Array.isArray(recognizedRaw)
-        ? recognizedRaw
-        : (Array.isArray(recognizedRaw?.items) ? recognizedRaw.items : []);
-
-      let recognizedItemsSource = recognizedList;
-      if (recognizedItemsSource.length === 0) {
-        const singleFoodFallbackPrompt = `Определи основной съедобный продукт на фото.
-      Верни ТОЛЬКО JSON-объект:
-{
-  "name": "банан",
-  "amount": 120,
-  "aliases": ["banana"],
-  "confidence": 0.0
-}
-      Правила:
-      - Верни ровно один продукт.
-      - Игнорируй фон и несъедобные объекты.
-      - amount: оценка в граммах (положительное число).
-      - Если есть сомнения, все равно верни лучшую оценку.`;
-        const singleFoodText = await generateAI(singleFoodFallbackPrompt, "application/json", optimizedImage);
-        const singleFoodRaw = parseAiJsonPayload(singleFoodText || '{}');
-        if (singleFoodRaw && typeof singleFoodRaw === 'object' && !Array.isArray(singleFoodRaw)) {
-          recognizedItemsSource = [singleFoodRaw];
-        }
-      }
-
-      const normalizedItems = recognizedItemsSource
-        .map((item: any) => {
-          const name = String(item?.name || item?.food || item?.product || '').trim();
-          const amountValue = Number(item?.amount ?? item?.grams ?? item?.weight ?? 100);
-          const amount = Number.isFinite(amountValue) && amountValue > 0 ? amountValue : 100;
-          const aliases = Array.isArray(item?.aliases)
-            ? item.aliases.map((value: any) => String(value).trim()).filter((value: string) => value.length > 0)
-            : [];
-          const barcodeCandidates = Array.isArray(item?.barcodeCandidates)
-            ? item.barcodeCandidates.map((value: any) => String(value).trim()).filter((value: string) => value.length > 0)
-            : (String(item?.barcode || '').trim() ? [String(item.barcode).trim()] : []);
-          const confidenceValue = Number(item?.confidence);
-          const confidence = Number.isFinite(confidenceValue) ? Math.max(0, Math.min(1, confidenceValue)) : undefined;
-          return { name, amount, aliases, barcodeCandidates, confidence };
-        })
-        .filter((item: any) => item.name.length > 0);
-
-      const deduplicatedMap = new Map<string, any>();
-      for (const item of normalizedItems) {
-        const key = item.name.toLowerCase();
-        const existing = deduplicatedMap.get(key);
-        if (!existing) {
-          deduplicatedMap.set(key, { ...item });
-          continue;
-        }
-
-        existing.amount += item.amount;
-        existing.aliases = Array.from(new Set([...(existing.aliases || []), ...(item.aliases || [])]));
-        existing.barcodeCandidates = Array.from(new Set([...(existing.barcodeCandidates || []), ...(item.barcodeCandidates || [])]));
-        if (typeof existing.confidence === 'number' && typeof item.confidence === 'number') {
-          existing.confidence = Math.max(existing.confidence, item.confidence);
-        }
-      }
-
-      const recognized = Array.from(deduplicatedMap.values());
-      
-      // Match with database products (try canonical name + aliases)
-      const matchedItems = await Promise.all(recognized.map(async (item: any) => {
-        const barcodeCandidates = Array.from(new Set<string>(
-          (item.barcodeCandidates || []).flatMap((value: string) => extractBarcodeCandidates(value))
-        )).filter((value: string) => value.length > 0);
-
-        for (const barcodeCandidate of barcodeCandidates) {
-          const barcodeRes = await fetch(`/api/products/barcode/${encodeURIComponent(barcodeCandidate)}`);
-          if (!barcodeRes.ok) continue;
-
-          const barcodeProduct = await barcodeRes.json().catch(() => null);
-          if (barcodeProduct) {
-            return { ...item, matchedBy: `barcode:${barcodeCandidate}`, product: barcodeProduct };
-          }
-        }
-
-        const candidateQueries = Array.from(new Set([item.name, ...(item.aliases || [])])).filter(Boolean);
-        const expandedQueries = Array.from(new Set(
-          candidateQueries.flatMap((query: string) => {
-            const q = String(query).trim();
-            if (!q) return [];
-            const words = q.split(/\s+/).filter((w) => w.length > 2);
-            const stemmed = q
-              .replace(/\([^)]*\)/g, ' ')
-              .replace(/[.,;:!?'"`~]/g, ' ')
-              .replace(/\s+/g, ' ')
-              .trim();
-            return [q, stemmed, ...words];
-          })
-        )).filter(Boolean);
-
-        for (const query of expandedQueries) {
-          const res = await fetch(`/api/products/search?q=${encodeURIComponent(query)}`);
-          if (!res.ok) continue;
-
-          const products = await res.json().catch(() => []);
-          const productList = Array.isArray(products) ? products : [];
-          if (productList.length > 0) {
-            return { ...item, matchedBy: query, product: productList[0] };
-          }
-        }
-
-        return { ...item, product: null };
-      }));
-
+      const matchedItems = Array.isArray(payload?.items) ? payload.items : [];
+      const dishEstimate = payload?.dishEstimate && typeof payload.dishEstimate === 'object'
+        ? payload.dishEstimate as PhotoDishEstimate
+        : null;
       setRecognizedItems(matchedItems);
-      if (matchedItems.length === 0) {
-        setPhotoRecognitionError('На фото не удалось уверенно распознать продукты. Попробуйте сделать фото ближе и при хорошем освещении.');
+      setPhotoDishEstimate(dishEstimate);
+
+      if (matchedItems.length === 0 && !dishEstimate) {
+        setPhotoRecognitionError(payload?.message || 'На фото не удалось уверенно распознать продукты. Попробуйте сделать фото ближе и при хорошем освещении.');
       }
     } catch (e) {
       console.error("Recognition Error:", e);
@@ -3258,7 +3207,7 @@ export default function App() {
             ))}
           </div>
 
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-3 gap-3">
             <button 
               onClick={() => { setIsActionSheetOpen(false); setIsSearchSheetOpen(true); }}
               className="flex flex-col items-center gap-2"
@@ -3269,13 +3218,22 @@ export default function App() {
               <span className="text-[10px] font-medium text-zinc-400">Поиск</span>
             </button>
             <button 
-              onClick={() => { setIsActionSheetOpen(false); fileInputRef.current?.click(); }}
+              onClick={() => openPhotoPicker('ingredients')}
               className="flex flex-col items-center gap-2"
             >
               <div className="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center text-emerald-500 shadow-inner hover:bg-zinc-700 transition-colors">
                 <Camera size={24} />
               </div>
-              <span className="text-[10px] font-medium text-zinc-400">Фото</span>
+              <span className="text-[10px] font-medium text-zinc-400">Фото состав</span>
+            </button>
+            <button 
+              onClick={() => openPhotoPicker('whole_dish')}
+              className="flex flex-col items-center gap-2"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-zinc-800 flex items-center justify-center text-emerald-500 shadow-inner hover:bg-zinc-700 transition-colors">
+                <Utensils size={24} />
+              </div>
+              <span className="text-[10px] font-medium text-zinc-400">Фото блюда</span>
             </button>
             <button 
               onClick={() => { setIsActionSheetOpen(false); setIsBarcodeSheetOpen(true); }}
@@ -3307,7 +3265,7 @@ export default function App() {
       </BottomSheet>
 
       {/* Поиск еды */}
-      <BottomSheet isOpen={isSearchSheetOpen} onClose={() => setIsSearchSheetOpen(false)} title={`Добавить в ${selectedMealType === 'BREAKFAST' ? 'Завтрак' : selectedMealType === 'LUNCH' ? 'Обед' : selectedMealType === 'DINNER' ? 'Ужин' : 'Перекус'}`}>
+      <BottomSheet isOpen={isSearchSheetOpen} onClose={() => { setIsSearchSheetOpen(false); setPhotoCorrectionTarget(null); }} title={photoCorrectionTarget ? 'Исправить распознавание' : `Добавить в ${selectedMealType === 'BREAKFAST' ? 'Завтрак' : selectedMealType === 'LUNCH' ? 'Обед' : selectedMealType === 'DINNER' ? 'Ужин' : 'Перекус'}`}>
         <div className="relative mb-6">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={20} />
           <input 
@@ -3326,11 +3284,7 @@ export default function App() {
             searchResults.map((product) => (
               <button 
                 key={product.id}
-                onClick={() => {
-                  setSelectedProductForAmount(product);
-                  setFoodAmount('100');
-                  setAmountEntryContext({ source: 'search' });
-                }}
+                onClick={() => { void handleProductSelection(product); }}
                 className="w-full bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center active:bg-zinc-800 transition-colors"
               >
                 <div className="text-left">
@@ -3463,7 +3417,7 @@ export default function App() {
       </BottomSheet>
 
       {/* Распознавание фото */}
-      <BottomSheet isOpen={isPhotoSheetOpen} onClose={() => setIsPhotoSheetOpen(false)} title="Распознавание еды">
+      <BottomSheet isOpen={isPhotoSheetOpen} onClose={() => { setIsPhotoSheetOpen(false); setPhotoCorrectionTarget(null); }} title={photoCaptureMode === 'whole_dish' ? 'Фото блюда целиком' : 'Распознавание еды'}>
         {isRecognizing ? (
           <div className="flex flex-col items-center py-12">
             <Loader2 className="animate-spin text-emerald-500 mb-4" size={48} />
@@ -3471,32 +3425,100 @@ export default function App() {
           </div>
         ) : (
           <div className="space-y-4">
+            <p className="text-xs text-zinc-500 text-center uppercase tracking-[0.25em]">
+              {photoCaptureMode === 'whole_dish' ? 'Режим оценки всей порции' : 'Режим распознавания ингредиентов'}
+            </p>
             {photoRecognitionError && (
               <p className="text-sm text-orange-400 text-center">{photoRecognitionError}</p>
             )}
-            {recognizedItems.length === 0 && !photoRecognitionError && (
+            {photoDishEstimate && (
+              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm text-emerald-400 uppercase tracking-[0.25em]">Блюдо целиком</p>
+                    <p className="text-lg font-bold text-zinc-100 mt-1">{photoDishEstimate.name}</p>
+                    <p className="text-[11px] text-zinc-400 mt-1">Порция около {Math.round(photoDishEstimate.amount)} г</p>
+                  </div>
+                  {typeof photoDishEstimate.confidence === 'number' && (
+                    <span className="px-2 py-1 rounded-full bg-zinc-900/60 text-[10px] text-zinc-300 border border-white/5">
+                      {Math.round(photoDishEstimate.confidence * 100)}%
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  <div className="rounded-xl bg-zinc-900/50 p-2">
+                    <p className="text-[10px] text-zinc-500 uppercase">ккал</p>
+                    <p className="text-sm font-bold text-zinc-100">{Math.round(photoDishEstimate.totalCalories)}</p>
+                  </div>
+                  <div className="rounded-xl bg-zinc-900/50 p-2">
+                    <p className="text-[10px] text-zinc-500 uppercase">Б</p>
+                    <p className="text-sm font-bold text-zinc-100">{Math.round(photoDishEstimate.totalProtein)}</p>
+                  </div>
+                  <div className="rounded-xl bg-zinc-900/50 p-2">
+                    <p className="text-[10px] text-zinc-500 uppercase">Ж</p>
+                    <p className="text-sm font-bold text-zinc-100">{Math.round(photoDishEstimate.totalFat)}</p>
+                  </div>
+                  <div className="rounded-xl bg-zinc-900/50 p-2">
+                    <p className="text-[10px] text-zinc-500 uppercase">У</p>
+                    <p className="text-sm font-bold text-zinc-100">{Math.round(photoDishEstimate.totalCarbs)}</p>
+                  </div>
+                </div>
+                {photoDishEstimate.explanation && (
+                  <p className="text-xs text-zinc-400 leading-relaxed">{photoDishEstimate.explanation}</p>
+                )}
+                <button
+                  onClick={() => {
+                    setSelectedProductForAmount(photoDishEstimate.product);
+                    setFoodAmount(String(Math.max(1, Math.round(photoDishEstimate.amount || 100))));
+                    setAmountEntryContext({ source: 'photo' });
+                  }}
+                  className="w-full py-3 bg-emerald-500 text-white text-sm font-bold rounded-xl"
+                >
+                  Добавить всё блюдо
+                </button>
+              </div>
+            )}
+            {recognizedItems.length === 0 && !photoDishEstimate && !photoRecognitionError && (
               <p className="text-sm text-zinc-500 text-center">Загрузите четкое фото еды, и я попробую распознать состав блюда.</p>
             )}
             {recognizedItems.map((item, i) => (
-              <div key={i} className="bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center">
-                <div>
-                  <p className="font-semibold text-zinc-200">{item.name}</p>
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Примерно {item.amount}г</p>
+              <div key={i} className="bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-semibold text-zinc-200">{item.product?.name || item.name}</p>
+                    {item.correctedByUser && (
+                      <span className="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 text-[8px] font-bold rounded uppercase tracking-tighter border border-emerald-500/20">
+                        ИСПРАВЛЕНО
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Примерно {Math.round(item.amount)}г</p>
+                  {item.product && item.product.name !== item.name && (
+                    <p className="text-[10px] text-zinc-600 mt-1">AI увидел: {item.name}</p>
+                  )}
                 </div>
-                {item.product ? (
-                  <button 
-                    onClick={() => {
-                      setSelectedProductForAmount(item.product);
-                      setFoodAmount(String(Math.max(1, Math.round(item.amount || 100))));
-                      setAmountEntryContext({ source: 'photo' });
-                    }}
-                    className="px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg"
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => startPhotoCorrection(item, i)}
+                    className="px-3 py-2 bg-zinc-900 text-zinc-300 text-[11px] font-bold rounded-lg border border-zinc-700"
                   >
-                    Добавить
+                    Исправить
                   </button>
-                ) : (
-                  <span className="text-[10px] text-zinc-600 italic">Не в базе</span>
-                )}
+                  {item.product ? (
+                    <button 
+                      onClick={() => {
+                        setSelectedProductForAmount(item.product || null);
+                        setFoodAmount(String(Math.max(1, Math.round(item.amount || 100))));
+                        setAmountEntryContext({ source: 'photo' });
+                      }}
+                      className="px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg"
+                    >
+                      Добавить
+                    </button>
+                  ) : (
+                    <span className="text-[10px] text-zinc-600 italic">Не в базе</span>
+                  )}
+                </div>
               </div>
             ))}
             <button 
