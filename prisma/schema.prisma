@@ -1,5 +1,5 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Prisma Schema — NÜTRIA v0.2 (MVP CRM)
+// Добавлены CRM-модели поверх существующих food diary моделей
 
 generator client {
   provider = "prisma-client-js"
@@ -10,32 +10,217 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─── Пользователи ────────────────────────────────────────────────────────────
+
 model User {
-  id            String         @id @default(cuid())
-  email         String         @unique
-  passwordHash  String
-  role          String         @default("USER") // USER, ADMIN
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  meals         Meal[]
-  nutrientGoals NutrientGoal?
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  // NUTRITIONIST — нутрициолог (CRM), CLIENT — клиент, ADMIN — администратор
+  role         String   @default("CLIENT")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Связи food diary (существующие)
+  meals                  Meal[]
+  nutrientGoals          NutrientGoal?
   recognitionCorrections RecognitionCorrection[]
+
+  // Связи CRM (новые)
+  nutritionistProfile NutritionistProfile?
+  clientProfile       ClientProfile?
+  clientNotes         ClientNote[]         @relation("NutritionistNotes")
+  recommendations     Recommendation[]     @relation("NutritionistRecs")
+  invitesSent         ClientInvite[]       @relation("InvitedBy")
+  inviteReceived      ClientInvite?        @relation("InvitedClient")
+  analyses            AnalysisFile[]       @relation("NutritionistAnalyses")
+  consultationDates   ConsultationDate[]   @relation("NutritionistConsultations")
+
+  // Связь с Telegram-ботом (новое)
+  telegramAccount     TelegramAccount?
 }
 
+// ─── Профиль нутрициолога ────────────────────────────────────────────────────
+
+model NutritionistProfile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  firstName      String
+  lastName       String
+  specialization String?
+  phone          String?
+  bio            String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// ─── Приглашение клиента ─────────────────────────────────────────────────────
+
+model ClientInvite {
+  id              String    @id @default(cuid())
+  // Нутрициолог, создавший приглашение
+  nutritionistId  String
+  nutritionist    User      @relation("InvitedBy", fields: [nutritionistId], references: [id], onDelete: Cascade)
+  // Клиент (заполняется после онбординга)
+  clientId        String?   @unique
+  client          User?     @relation("InvitedClient", fields: [clientId], references: [id])
+  // Уникальный токен в ссылке: /onboard/:token
+  token           String    @unique @default(cuid())
+  // Секретная фраза для входа клиента
+  secretPhrase    String
+  // Имя клиента (может быть задано нутрициологом заранее)
+  clientName      String?
+  // Теги
+  tagsJson        String?   @default("[]")
+  // Статус
+  status          String    @default("PENDING") // PENDING | ACTIVE | ARCHIVED
+  usedAt          DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([nutritionistId])
+}
+
+// ─── Анкета клиента ──────────────────────────────────────────────────────────
+
+model ClientProfile {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Блок 1 — базовые данные
+  firstName  String?
+  lastName   String?
+  birthYear  Int?
+  sex        String?  // male | female
+  heightCm   Float?
+  weightKg   Float?
+  goal       String?  // lose | maintain | gain | recomposition
+  activity   String?  // low | moderate | high | very_high
+
+  // История веса (JSON array [{date, kg}])
+  weightHistoryJson String? @default("[]")
+
+  // Блок 2 — расширенные данные
+  sleepQuality    String?
+  badHabits       String?
+  dietRestrictions String? // vegetarian, vegan, post, etc.
+  allergiesJson   String?  @default("[]") // ["gluten","lactose","nuts"]
+  chronicDiseases String?
+  surgeries       String?
+  medications     String?
+  complaints      String?
+  gutHealth       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Приватные заметки нутрициолога ─────────────────────────────────────────
+
+model ClientNote {
+  id             String   @id @default(cuid())
+  // Нутрициолог
+  nutritionistId String
+  nutritionist   User     @relation("NutritionistNotes", fields: [nutritionistId], references: [id], onDelete: Cascade)
+  // Клиент
+  clientId       String
+  // Контекст (day/meal/analysis — опционально)
+  context        String?  // e.g. "2026-06-18" or "analysis:abc123"
+  content        String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([nutritionistId, clientId])
+}
+
+// ─── Анализы клиента ─────────────────────────────────────────────────────────
+
+model AnalysisFile {
+  id             String   @id @default(cuid())
+  nutritionistId String
+  nutritionist   User     @relation("NutritionistAnalyses", fields: [nutritionistId], references: [id], onDelete: Cascade)
+  clientId       String
+  fileName       String
+  mimeType       String
+  // Base64 содержимое (для MVP; в продакшене заменить на S3 URL)
+  dataBase64     String
+  note           String?
+  takenAt        DateTime // дата взятия анализа
+  createdAt      DateTime @default(now())
+
+  @@index([nutritionistId, clientId])
+}
+
+// ─── Рекомендации нутрициолога ───────────────────────────────────────────────
+
+model Recommendation {
+  id             String   @id @default(cuid())
+  nutritionistId String
+  nutritionist   User     @relation("NutritionistRecs", fields: [nutritionistId], references: [id], onDelete: Cascade)
+  clientId       String
+  content        String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([nutritionistId, clientId])
+}
+
+// ─── Даты консультаций ───────────────────────────────────────────────────────
+
+model ConsultationDate {
+  id             String   @id @default(cuid())
+  nutritionistId String
+  nutritionist   User     @relation("NutritionistConsultations", fields: [nutritionistId], references: [id], onDelete: Cascade)
+  clientId       String
+  scheduledAt    DateTime
+  note           String?
+  createdAt      DateTime @default(now())
+
+  @@index([nutritionistId])
+}
+
+// ─── Telegram-бот (новое) ────────────────────────────────────────────────────
+
+model TelegramAccount {
+  id        String   @id @default(cuid())
+  // chat.id из Telegram Update — уникальный идентификатор диалога
+  chatId    String   @unique
+  username  String?
+  firstNameTg String?
+
+  // Привязанный аккаунт NÜTRIA (создаётся после завершения онбординга)
+  userId    String?  @unique
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Состояние диалога (машина состояний онбординга/команд)
+  state     String   @default("NEW")
+  // Временные ответы во время онбординга / промежуточные данные команд (JSON)
+  draftJson String?  @default("{}")
+  // Настраиваемые напоминания о заполнении дневника, JSON-массив строк "HH:MM"
+  remindersJson String? @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Существующие модели (без изменений) ─────────────────────────────────────
+
 model Product {
-  id           String     @id @default(cuid())
-  name         String
-  brand        String?
-  barcode      String?    @unique
-  calories     Float      // per 100g
-  protein      Float
-  fat          Float
-  carbs        Float
-  fiber        Float?
-  micronutrients String?  // JSON string for vitamins/minerals
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-  mealItems    MealItem[]
+  id             String     @id @default(cuid())
+  name           String
+  brand          String?
+  barcode        String?    @unique
+  calories       Float
+  protein        Float
+  fat            Float
+  carbs          Float
+  fiber          Float?
+  micronutrients String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  mealItems      MealItem[]
   recognitionCorrections RecognitionCorrection[]
 
   @@unique([name, brand])
@@ -64,7 +249,7 @@ model Meal {
   id        String     @id @default(cuid())
   userId    String
   user      User       @relation(fields: [userId], references: [id])
-  type      String     // BREAKFAST, LUNCH, DINNER, SNACK
+  type      String
   date      DateTime   @default(now())
   items     MealItem[]
   createdAt DateTime   @default(now())
@@ -76,16 +261,16 @@ model MealItem {
   meal      Meal    @relation(fields: [mealId], references: [id])
   productId String
   product   Product @relation(fields: [productId], references: [id])
-  amount    Float   // in grams
+  amount    Float
 }
 
 model NutrientGoal {
-  id        String @id @default(cuid())
-  userId    String @unique
-  user      User   @relation(fields: [userId], references: [id])
-  calories  Float
-  protein   Float
-  fat       Float
-  carbs     Float
-  fiber     Float?
+  id       String @id @default(cuid())
+  userId   String @unique
+  user     User   @relation(fields: [userId], references: [id])
+  calories Float
+  protein  Float
+  fat      Float
+  carbs    Float
+  fiber    Float?
 }
