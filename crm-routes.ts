@@ -1,0 +1,853 @@
+/**
+ * crm-routes.ts — CRM API маршруты для NÜTRIA MVP
+ *
+ * Подключение в server.ts:
+ *   import { registerCrmRoutes } from "./crm-routes.js";
+ *   // ... после инициализации app:
+ *   registerCrmRoutes(app, prisma);
+ */
+
+import type { Express, Request, Response, NextFunction } from "express";
+import type { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import multer from "multer";
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+const JWT_SECRET = process.env.JWT_SECRET || "nutria-jwt-secret-change-in-prod";
+const JWT_EXPIRES = "30d";
+const SALT_ROUNDS = 10;
+
+// ─── JWT helpers ──────────────────────────────────────────────────────────────
+
+function signToken(payload: object) {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+}
+
+function verifyToken(token: string): any {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch {
+    return null;
+  }
+}
+
+// ─── Auth middleware ──────────────────────────────────────────────────────────
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const raw = req.cookies?.jwtToken || req.headers.authorization?.replace("Bearer ", "");
+  if (!raw) return res.status(401).json({ error: "Unauthorized" });
+  const payload = verifyToken(raw);
+  if (!payload) return res.status(401).json({ error: "Invalid token" });
+  (req as any).user = payload;
+  next();
+}
+
+function requireNutritionist(req: Request, res: Response, next: NextFunction) {
+  requireAuth(req, res, () => {
+    if ((req as any).user?.role !== "NUTRITIONIST") {
+      return res.status(403).json({ error: "Forbidden: nutritionist role required" });
+    }
+    next();
+  });
+}
+
+// ─── BMR / TDEE расчёты ──────────────────────────────────────────────────────
+
+const PAL: Record<string, number> = {
+  low: 1.2,
+  moderate: 1.55,
+  high: 1.725,
+  very_high: 1.9,
+};
+
+function calcBMR(sex: string, weightKg: number, heightCm: number, age: number): number {
+  // Формула Миффлина-Сан Жеора
+  if (sex === "female") {
+    return 10 * weightKg + 6.25 * heightCm - 5 * age - 161;
+  }
+  return 10 * weightKg + 6.25 * heightCm - 5 * age + 5;
+}
+
+function calcTDEE(bmr: number, activity: string): number {
+  return Math.round(bmr * (PAL[activity] ?? 1.55));
+}
+
+function calcBMI(weightKg: number, heightCm: number): number {
+  return Number((weightKg / Math.pow(heightCm / 100, 2)).toFixed(1));
+}
+
+function calcTargetKbzhu(
+  tdee: number,
+  goal: string
+): { calories: number; protein: number; fat: number; carbs: number; fiber: number } {
+  let calories = tdee;
+  if (goal === "lose") calories = Math.round(tdee * 0.85);
+  if (goal === "gain") calories = Math.round(tdee * 1.1);
+
+  // Стандартное распределение макронутриентов
+  const protein = Math.round((calories * 0.25) / 4);
+  const fat = Math.round((calories * 0.3) / 9);
+  const carbs = Math.round((calories * 0.45) / 4);
+  const fiber = 25;
+
+  return { calories, protein, fat, carbs, fiber };
+}
+
+// ─── Регистрация маршрутов ────────────────────────────────────────────────────
+
+export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
+
+  // ── AUTH: регистрация нутрициолога ─────────────────────────────────────────
+
+  app.post("/api/crm/auth/register", async (req: Request, res: Response) => {
+    try {
+      const { email, password, firstName, lastName, specialization } = req.body;
+      if (!email || !password || !firstName || !lastName) {
+        return res.status(400).json({ error: "Обязательные поля: email, password, firstName, lastName" });
+      }
+
+      const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+      if (existing) return res.status(409).json({ error: "Email уже зарегистрирован" });
+
+      const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+      const user = await prisma.user.create({
+        data: {
+          email: email.toLowerCase(),
+          passwordHash,
+          role: "NUTRITIONIST",
+          nutritionistProfile: {
+            create: { firstName, lastName, specialization: specialization || null },
+          },
+        },
+        include: { nutritionistProfile: true },
+      });
+
+      const token = signToken({ id: user.id, role: user.role, email: user.email });
+      res.cookie("jwtToken", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
+      return res.json({
+        user: { id: user.id, email: user.email, role: user.role, profile: user.nutritionistProfile },
+        token,
+      });
+    } catch (e: any) {
+      console.error("Register error:", e);
+      return res.status(500).json({ error: "Ошибка сервера", message: e.message });
+    }
+  });
+
+  // ── AUTH: вход нутрициолога ─────────────────────────────────────────────────
+
+  app.post("/api/crm/auth/login", async (req: Request, res: Response) => {
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) return res.status(400).json({ error: "Email и пароль обязательны" });
+
+      const user = await prisma.user.findUnique({
+        where: { email: email.toLowerCase() },
+        include: { nutritionistProfile: true },
+      });
+      if (!user || user.role !== "NUTRITIONIST") {
+        return res.status(401).json({ error: "Неверный email или пароль" });
+      }
+
+      const ok = await bcrypt.compare(password, user.passwordHash);
+      if (!ok) return res.status(401).json({ error: "Неверный email или пароль" });
+
+      const token = signToken({ id: user.id, role: user.role, email: user.email });
+      res.cookie("jwtToken", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
+      return res.json({
+        user: { id: user.id, email: user.email, role: user.role, profile: user.nutritionistProfile },
+        token,
+      });
+    } catch (e: any) {
+      console.error("Login error:", e);
+      return res.status(500).json({ error: "Ошибка сервера", message: e.message });
+    }
+  });
+
+  // ── AUTH: текущий пользователь ─────────────────────────────────────────────
+
+  app.get("/api/crm/auth/me", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user.id;
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { nutritionistProfile: true, clientProfile: true },
+      });
+      if (!user) return res.status(404).json({ error: "Пользователь не найден" });
+      return res.json({ user: { id: user.id, email: user.email, role: user.role, profile: user.nutritionistProfile || user.clientProfile } });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── AUTH: выход ─────────────────────────────────────────────────────────────
+
+  app.post("/api/crm/auth/logout", (_req: Request, res: Response) => {
+    res.clearCookie("jwtToken");
+    res.json({ success: true });
+  });
+
+  // ── КЛИЕНТЫ: список ────────────────────────────────────────────────────────
+
+  app.get("/api/crm/clients", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const invites = await (prisma as any).clientInvite.findMany({
+        where: { nutritionistId },
+        include: {
+          client: {
+            include: { clientProfile: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      const clients = invites.map((inv: any) => ({
+        inviteId: inv.id,
+        token: inv.token,
+        clientName: inv.client?.clientProfile
+          ? `${inv.client.clientProfile.firstName || ""} ${inv.client.clientProfile.lastName || ""}`.trim()
+          : inv.clientName || "Без имени",
+        status: inv.status,
+        tagsJson: inv.tagsJson,
+        createdAt: inv.createdAt,
+        usedAt: inv.usedAt,
+        clientId: inv.clientId,
+        // Краткие данные анкеты
+        profile: inv.client?.clientProfile
+          ? {
+              sex: inv.client.clientProfile.sex,
+              weightKg: inv.client.clientProfile.weightKg,
+              heightCm: inv.client.clientProfile.heightCm,
+              goal: inv.client.clientProfile.goal,
+            }
+          : null,
+      }));
+
+      return res.json({ clients });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── КЛИЕНТЫ: создать приглашение ──────────────────────────────────────────
+
+  app.post("/api/crm/clients", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientName, secretPhrase, tags } = req.body;
+
+      if (!secretPhrase || secretPhrase.trim().length < 3) {
+        return res.status(400).json({ error: "Секретная фраза должна содержать минимум 3 символа" });
+      }
+
+      const invite = await (prisma as any).clientInvite.create({
+        data: {
+          nutritionistId,
+          clientName: clientName?.trim() || null,
+          secretPhrase: secretPhrase.trim(),
+          tagsJson: JSON.stringify(tags || []),
+          status: "PENDING",
+        },
+      });
+
+      const inviteUrl = `${req.protocol}://${req.get("host")}/onboard/${invite.token}`;
+
+      return res.json({ invite, inviteUrl });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── КЛИЕНТ: детальная карточка ─────────────────────────────────────────────
+
+  app.get("/api/crm/clients/:clientId", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientId } = req.params;
+
+      // Проверяем что этот клиент принадлежит нутрициологу
+      const invite = await (prisma as any).clientInvite.findFirst({
+        where: { nutritionistId, clientId },
+      });
+      if (!invite) return res.status(404).json({ error: "Клиент не найден" });
+
+      const user = await prisma.user.findUnique({
+        where: { id: clientId },
+        include: { clientProfile: true },
+      });
+
+      // Вычисляем ИМТ/BMR/TDEE если есть данные
+      let calculations: any = null;
+      const p = user?.clientProfile;
+      if (p?.weightKg && p?.heightCm && p?.birthYear && p?.sex && p?.activity) {
+        const age = new Date().getFullYear() - p.birthYear;
+        const bmr = calcBMR(p.sex, p.weightKg, p.heightCm, age);
+        const tdee = calcTDEE(bmr, p.activity);
+        const bmi = calcBMI(p.weightKg, p.heightCm);
+        const kbzhu = calcTargetKbzhu(tdee, p.goal || "maintain");
+        calculations = { bmi, bmr: Math.round(bmr), tdee, ...kbzhu };
+      }
+
+      return res.json({
+        invite: { id: invite.id, token: invite.token, status: invite.status, clientName: invite.clientName, tagsJson: invite.tagsJson, createdAt: invite.createdAt, usedAt: invite.usedAt },
+        profile: user?.clientProfile || null,
+        calculations,
+      });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── КЛИЕНТ: обновить теги/статус/имя ─────────────────────────────────────
+
+  app.patch("/api/crm/clients/:clientId", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientId } = req.params;
+      const { clientName, status, tags } = req.body;
+
+      const invite = await (prisma as any).clientInvite.findFirst({
+        where: { nutritionistId, clientId },
+      });
+      if (!invite) return res.status(404).json({ error: "Клиент не найден" });
+
+      const updated = await (prisma as any).clientInvite.update({
+        where: { id: invite.id },
+        data: {
+          ...(clientName !== undefined && { clientName }),
+          ...(status !== undefined && { status }),
+          ...(tags !== undefined && { tagsJson: JSON.stringify(tags) }),
+        },
+      });
+
+      return res.json({ invite: updated });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── ДНЕВНИК КЛИЕНТА (просмотр для нутрициолога) ───────────────────────────
+
+  app.get("/api/crm/clients/:clientId/diary", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientId } = req.params;
+      const { date, days = "7" } = req.query;
+
+      // Проверяем принадлежность
+      const invite = await (prisma as any).clientInvite.findFirst({
+        where: { nutritionistId, clientId },
+      });
+      if (!invite) return res.status(404).json({ error: "Клиент не найден" });
+
+      const endDate = date ? new Date(String(date)) : new Date();
+      endDate.setHours(23, 59, 59, 999);
+      const startDate = new Date(endDate);
+      startDate.setDate(startDate.getDate() - (Number(days) - 1));
+      startDate.setHours(0, 0, 0, 0);
+
+      const meals = await prisma.meal.findMany({
+        where: {
+          userId: clientId,
+          date: { gte: startDate, lte: endDate },
+        },
+        include: {
+          items: { include: { product: true } },
+        },
+        orderBy: { date: "desc" },
+      });
+
+      return res.json({ meals });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── ЗАМЕТКИ: список ────────────────────────────────────────────────────────
+
+  app.get("/api/crm/clients/:clientId/notes", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientId } = req.params;
+
+      const notes = await (prisma as any).clientNote.findMany({
+        where: { nutritionistId, clientId },
+        orderBy: { createdAt: "desc" },
+      });
+
+      return res.json({ notes });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── ЗАМЕТКИ: создать ───────────────────────────────────────────────────────
+
+  app.post("/api/crm/clients/:clientId/notes", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientId } = req.params;
+      const { content, context } = req.body;
+
+      if (!content?.trim()) return res.status(400).json({ error: "Текст заметки обязателен" });
+
+      const note = await (prisma as any).clientNote.create({
+        data: {
+          nutritionistId,
+          clientId,
+          content: content.trim(),
+          context: context || null,
+        },
+      });
+
+      return res.json({ note });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── ЗАМЕТКИ: удалить ───────────────────────────────────────────────────────
+
+  app.delete("/api/crm/clients/:clientId/notes/:noteId", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientId, noteId } = req.params;
+
+      const note = await (prisma as any).clientNote.findFirst({
+        where: { id: noteId, nutritionistId, clientId },
+      });
+      if (!note) return res.status(404).json({ error: "Заметка не найдена" });
+
+      await (prisma as any).clientNote.delete({ where: { id: noteId } });
+      return res.json({ success: true });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── АНАЛИЗЫ: список ────────────────────────────────────────────────────────
+
+  app.get("/api/crm/clients/:clientId/analyses", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientId } = req.params;
+
+      const analyses = await (prisma as any).analysisFile.findMany({
+        where: { nutritionistId, clientId },
+        orderBy: { takenAt: "desc" },
+        // Не возвращаем base64 в списке — только метаданные
+        select: { id: true, fileName: true, mimeType: true, note: true, takenAt: true, createdAt: true },
+      });
+
+      return res.json({ analyses });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── АНАЛИЗЫ: загрузить файл ────────────────────────────────────────────────
+
+  app.post(
+    "/api/crm/clients/:clientId/analyses",
+    requireNutritionist,
+    upload.single("file"),
+    async (req: Request, res: Response) => {
+      try {
+        const nutritionistId = (req as any).user.id;
+        const { clientId } = req.params;
+        const { note, takenAt } = req.body;
+
+        if (!req.file) return res.status(400).json({ error: "Файл обязателен" });
+
+        const dataBase64 = req.file.buffer.toString("base64");
+        const analysis = await (prisma as any).analysisFile.create({
+          data: {
+            nutritionistId,
+            clientId,
+            fileName: req.file.originalname,
+            mimeType: req.file.mimetype,
+            dataBase64,
+            note: note || null,
+            takenAt: takenAt ? new Date(takenAt) : new Date(),
+          },
+        });
+
+        return res.json({
+          analysis: {
+            id: analysis.id,
+            fileName: analysis.fileName,
+            mimeType: analysis.mimeType,
+            note: analysis.note,
+            takenAt: analysis.takenAt,
+            createdAt: analysis.createdAt,
+          },
+        });
+      } catch (e: any) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+  );
+
+  // ── АНАЛИЗЫ: скачать файл ─────────────────────────────────────────────────
+
+  app.get("/api/crm/clients/:clientId/analyses/:analysisId/download", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientId, analysisId } = req.params;
+
+      const analysis = await (prisma as any).analysisFile.findFirst({
+        where: { id: analysisId, nutritionistId, clientId },
+      });
+      if (!analysis) return res.status(404).json({ error: "Файл не найден" });
+
+      const buffer = Buffer.from(analysis.dataBase64, "base64");
+      res.setHeader("Content-Type", analysis.mimeType);
+      res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(analysis.fileName)}"`);
+      return res.send(buffer);
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── АНАЛИЗЫ: удалить ──────────────────────────────────────────────────────
+
+  app.delete("/api/crm/clients/:clientId/analyses/:analysisId", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientId, analysisId } = req.params;
+
+      const analysis = await (prisma as any).analysisFile.findFirst({
+        where: { id: analysisId, nutritionistId, clientId },
+      });
+      if (!analysis) return res.status(404).json({ error: "Файл не найден" });
+
+      await (prisma as any).analysisFile.delete({ where: { id: analysisId } });
+      return res.json({ success: true });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── РЕКОМЕНДАЦИИ: список ──────────────────────────────────────────────────
+
+  app.get("/api/crm/clients/:clientId/recommendations", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientId } = req.params;
+
+      const recs = await (prisma as any).recommendation.findMany({
+        where: { nutritionistId, clientId },
+        orderBy: { createdAt: "desc" },
+      });
+
+      return res.json({ recommendations: recs });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── РЕКОМЕНДАЦИИ: создать ─────────────────────────────────────────────────
+
+  app.post("/api/crm/clients/:clientId/recommendations", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientId } = req.params;
+      const { content } = req.body;
+
+      if (!content?.trim()) return res.status(400).json({ error: "Текст рекомендации обязателен" });
+
+      const rec = await (prisma as any).recommendation.create({
+        data: { nutritionistId, clientId, content: content.trim() },
+      });
+
+      return res.json({ recommendation: rec });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── РЕКОМЕНДАЦИИ: удалить ─────────────────────────────────────────────────
+
+  app.delete("/api/crm/clients/:clientId/recommendations/:recId", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientId, recId } = req.params;
+
+      const rec = await (prisma as any).recommendation.findFirst({
+        where: { id: recId, nutritionistId, clientId },
+      });
+      if (!rec) return res.status(404).json({ error: "Рекомендация не найдена" });
+
+      await (prisma as any).recommendation.delete({ where: { id: recId } });
+      return res.json({ success: true });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── КОНСУЛЬТАЦИИ: список ──────────────────────────────────────────────────
+
+  app.get("/api/crm/consultations", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+
+      const consultations = await (prisma as any).consultationDate.findMany({
+        where: { nutritionistId },
+        orderBy: { scheduledAt: "asc" },
+      });
+
+      return res.json({ consultations });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── КОНСУЛЬТАЦИИ: добавить ────────────────────────────────────────────────
+
+  app.post("/api/crm/clients/:clientId/consultations", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientId } = req.params;
+      const { scheduledAt, note } = req.body;
+
+      if (!scheduledAt) return res.status(400).json({ error: "Дата обязательна" });
+
+      const consultation = await (prisma as any).consultationDate.create({
+        data: {
+          nutritionistId,
+          clientId,
+          scheduledAt: new Date(scheduledAt),
+          note: note || null,
+        },
+      });
+
+      return res.json({ consultation });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── ОНБОРДИНГ: проверить токен ─────────────────────────────────────────────
+
+  app.get("/api/onboard/:token", async (req: Request, res: Response) => {
+    try {
+      const invite = await (prisma as any).clientInvite.findUnique({
+        where: { token: req.params.token },
+        include: {
+          nutritionist: { include: { nutritionistProfile: true } },
+        },
+      });
+
+      if (!invite) return res.status(404).json({ error: "Приглашение не найдено или ссылка устарела" });
+      if (invite.status === "ARCHIVED") return res.status(410).json({ error: "Ссылка недействительна" });
+
+      return res.json({
+        valid: true,
+        clientName: invite.clientName,
+        nutritionistName: invite.nutritionist?.nutritionistProfile
+          ? `${invite.nutritionist.nutritionistProfile.firstName} ${invite.nutritionist.nutritionistProfile.lastName}`
+          : "Ваш нутрициолог",
+        status: invite.status,
+        alreadyUsed: invite.status === "ACTIVE",
+      });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── ОНБОРДИНГ: вход существующего клиента ─────────────────────────────────
+
+  app.post("/api/onboard/:token/login", async (req: Request, res: Response) => {
+    try {
+      const { secretPhrase } = req.body;
+
+      const invite = await (prisma as any).clientInvite.findUnique({
+        where: { token: req.params.token },
+        include: { client: { include: { clientProfile: true } } },
+      });
+
+      if (!invite) return res.status(404).json({ error: "Приглашение не найдено" });
+      if (invite.secretPhrase !== secretPhrase?.trim()) {
+        return res.status(401).json({ error: "Неверная секретная фраза" });
+      }
+      if (!invite.clientId || !invite.client) {
+        return res.status(400).json({ error: "Сначала завершите онбординг" });
+      }
+
+      const jwtToken = signToken({ id: invite.client.id, role: invite.client.role, email: invite.client.email });
+      res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
+
+      return res.json({ user: { id: invite.client.id, email: invite.client.email, role: invite.client.role }, token: jwtToken });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── ОНБОРДИНГ: завершить регистрацию клиента ──────────────────────────────
+
+  app.post("/api/onboard/:token", async (req: Request, res: Response) => {
+    try {
+      const { secretPhrase, profile } = req.body;
+      // profile: { firstName, lastName, birthYear, sex, heightCm, weightKg, goal, activity, dietRestrictions, allergies, complaints }
+
+      const invite = await (prisma as any).clientInvite.findUnique({
+        where: { token: req.params.token },
+      });
+
+      if (!invite) return res.status(404).json({ error: "Приглашение не найдено" });
+      if (invite.status === "ARCHIVED") return res.status(410).json({ error: "Ссылка недействительна" });
+      if (invite.secretPhrase !== secretPhrase?.trim()) {
+        return res.status(401).json({ error: "Неверная секретная фраза" });
+      }
+
+      // Если клиент уже создан — просто логиним
+      if (invite.clientId) {
+        const existingUser = await prisma.user.findUnique({ where: { id: invite.clientId } });
+        if (existingUser) {
+          const jwtToken = signToken({ id: existingUser.id, role: existingUser.role, email: existingUser.email });
+          res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
+          return res.json({ user: { id: existingUser.id, email: existingUser.email, role: existingUser.role }, token: jwtToken });
+        }
+      }
+
+      // Создаём клиента
+      const email = `client-${invite.id}@nutria.internal`;
+      const passwordHash = await bcrypt.hash(secretPhrase.trim(), SALT_ROUNDS);
+
+      const clientUser = await prisma.user.create({
+        data: {
+          email,
+          passwordHash,
+          role: "CLIENT",
+          clientProfile: {
+            create: {
+              firstName: profile?.firstName || invite.clientName || null,
+              lastName: profile?.lastName || null,
+              birthYear: profile?.birthYear ? Number(profile.birthYear) : null,
+              sex: profile?.sex || null,
+              heightCm: profile?.heightCm ? Number(profile.heightCm) : null,
+              weightKg: profile?.weightKg ? Number(profile.weightKg) : null,
+              goal: profile?.goal || null,
+              activity: profile?.activity || null,
+              dietRestrictions: profile?.dietRestrictions || null,
+              allergiesJson: JSON.stringify(profile?.allergies || []),
+              complaints: profile?.complaints || null,
+              weightHistoryJson: profile?.weightKg
+                ? JSON.stringify([{ date: new Date().toISOString().split("T")[0], kg: Number(profile.weightKg) }])
+                : "[]",
+            },
+          },
+        },
+      });
+
+      // Привязываем к приглашению
+      await (prisma as any).clientInvite.update({
+        where: { id: invite.id },
+        data: {
+          clientId: clientUser.id,
+          status: "ACTIVE",
+          usedAt: new Date(),
+        },
+      });
+
+      const jwtToken = signToken({ id: clientUser.id, role: clientUser.role, email: clientUser.email });
+      res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
+
+      return res.json({ user: { id: clientUser.id, email: clientUser.email, role: clientUser.role }, token: jwtToken });
+    } catch (e: any) {
+      console.error("Onboard error:", e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── АНКЕТА КЛИЕНТА: обновить ──────────────────────────────────────────────
+
+  app.patch("/api/crm/clients/:clientId/profile", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientId } = req.params;
+
+      // Проверяем принадлежность
+      const invite = await (prisma as any).clientInvite.findFirst({
+        where: { nutritionistId, clientId },
+      });
+      if (!invite) return res.status(404).json({ error: "Клиент не найден" });
+
+      const {
+        firstName, lastName, birthYear, sex, heightCm, weightKg,
+        goal, activity, dietRestrictions, allergies, complaints,
+        sleepQuality, badHabits, chronicDiseases, surgeries, medications, gutHealth,
+      } = req.body;
+
+      // Обновляем историю веса если передан новый вес
+      let weightHistoryUpdate: any = undefined;
+      if (weightKg) {
+        const existing = await (prisma as any).clientProfile.findUnique({ where: { userId: clientId } });
+        if (existing) {
+          const history = JSON.parse(existing.weightHistoryJson || "[]");
+          const today = new Date().toISOString().split("T")[0];
+          const lastEntry = history[history.length - 1];
+          if (!lastEntry || lastEntry.date !== today) {
+            history.push({ date: today, kg: Number(weightKg) });
+          } else {
+            history[history.length - 1].kg = Number(weightKg);
+          }
+          weightHistoryUpdate = JSON.stringify(history);
+        }
+      }
+
+      const profile = await (prisma as any).clientProfile.upsert({
+        where: { userId: clientId },
+        create: {
+          userId: clientId,
+          firstName, lastName,
+          birthYear: birthYear ? Number(birthYear) : null,
+          sex, heightCm: heightCm ? Number(heightCm) : null,
+          weightKg: weightKg ? Number(weightKg) : null,
+          goal, activity, dietRestrictions,
+          allergiesJson: JSON.stringify(allergies || []),
+          complaints, sleepQuality, badHabits, chronicDiseases, surgeries, medications, gutHealth,
+          weightHistoryJson: weightHistoryUpdate || "[]",
+        },
+        update: {
+          ...(firstName !== undefined && { firstName }),
+          ...(lastName !== undefined && { lastName }),
+          ...(birthYear !== undefined && { birthYear: Number(birthYear) }),
+          ...(sex !== undefined && { sex }),
+          ...(heightCm !== undefined && { heightCm: Number(heightCm) }),
+          ...(weightKg !== undefined && { weightKg: Number(weightKg) }),
+          ...(goal !== undefined && { goal }),
+          ...(activity !== undefined && { activity }),
+          ...(dietRestrictions !== undefined && { dietRestrictions }),
+          ...(allergies !== undefined && { allergiesJson: JSON.stringify(allergies) }),
+          ...(complaints !== undefined && { complaints }),
+          ...(sleepQuality !== undefined && { sleepQuality }),
+          ...(badHabits !== undefined && { badHabits }),
+          ...(chronicDiseases !== undefined && { chronicDiseases }),
+          ...(surgeries !== undefined && { surgeries }),
+          ...(medications !== undefined && { medications }),
+          ...(gutHealth !== undefined && { gutHealth }),
+          ...(weightHistoryUpdate && { weightHistoryJson: weightHistoryUpdate }),
+        },
+      });
+
+      // Пересчитываем показатели
+      let calculations: any = null;
+      if (profile.weightKg && profile.heightCm && profile.birthYear && profile.sex && profile.activity) {
+        const age = new Date().getFullYear() - profile.birthYear;
+        const bmr = calcBMR(profile.sex, profile.weightKg, profile.heightCm, age);
+        const tdee = calcTDEE(bmr, profile.activity);
+        const bmi = calcBMI(profile.weightKg, profile.heightCm);
+        const kbzhu = calcTargetKbzhu(tdee, profile.goal || "maintain");
+        calculations = { bmi, bmr: Math.round(bmr), tdee, ...kbzhu };
+      }
+
+      return res.json({ profile, calculations });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+}
