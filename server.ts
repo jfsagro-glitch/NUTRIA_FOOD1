@@ -9,6 +9,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 import Levenshtein from "fast-levenshtein";
 import OpenAI from "openai";
 import { ProxyAgent } from "undici";
+import { registerCrmRoutes } from "./crm-routes.ts";
+import { registerTelegramBot } from "./telegram-bot.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2502,6 +2504,13 @@ async function startServer() {
     
     res.json({ userCount, productCount, mealCount });
   });
+
+
+  // --- CRM маршруты (нутрициолог) ---
+  registerCrmRoutes(app, prisma);
+
+  // --- Telegram-бот для клиента ---
+  registerTelegramBot(app, prisma);
 
   // --- Vite / Static ---
   if (process.env.NODE_ENV !== "production") {
