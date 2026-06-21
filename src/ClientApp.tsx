@@ -23,7 +23,8 @@ import {
   Pencil,
   SlidersHorizontal,
   Sun,
-  Moon
+  Moon,
+  Droplet
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -944,6 +945,28 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
   const mealTypes = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
   const mealLabels: any = { BREAKFAST: 'Завтрак', LUNCH: 'Обед', DINNER: 'Ужин', SNACK: 'Перекус' };
 
+  const [allNutrientsOpen, setAllNutrientsOpen] = useState(false);
+  const [mealExpanded, setMealExpanded] = useState<Record<string, boolean>>({
+    BREAKFAST: true, LUNCH: false, DINNER: false, SNACK: false,
+  });
+  const toggleMeal = (type: string) => setMealExpanded((m) => ({ ...m, [type]: !m[type] }));
+
+  const eaten = Math.round(totals.calories);
+  const calorieGoal = Math.max(1, Math.round(goals.calories));
+  const remaining = Math.max(0, calorieGoal - eaten);
+  const over = Math.max(0, eaten - calorieGoal);
+  const ringPct = Math.min(1, eaten / calorieGoal);
+  const r = 64, circ = 2 * Math.PI * r;
+  const arcLen = circ * 0.75;
+  const fillLen = arcLen * ringPct;
+  let ringLabel = 'Можно ещё';
+  let ringValue = `${remaining} ккал`;
+  if (over > 0) { ringLabel = 'Выше цели на'; ringValue = `${over} ккал`; }
+  else if (remaining === 0 && eaten > 0) { ringLabel = 'Дневная цель'; ringValue = 'достигнута'; }
+
+  const totalGlasses = Math.ceil(waterGoal / 250);
+  const filledGlasses = Math.round(waterIntake / 250);
+
   return (
     <div className="p-4 pb-24">
       <header className="mb-6 pt-4 flex justify-between items-end">
@@ -956,236 +979,213 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
         </div>
       </header>
 
-      {/* Энергетический баланс */}
-      <CollapsibleCard 
-        id="energy"
-        title="Энергия" 
-        icon={Flame}
-        collapsedContent={
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-zinc-400">{Math.round(totals.calories)} / {goals.calories} kcal</span>
-            <div className="w-32 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-              <div className="h-full bg-emerald-500" style={{ width: `${Math.min(100, (totals.calories / goals.calories) * 100)}%` }} />
-            </div>
+      {/* Калории — единое кольцо + БЖУ, как в прототипе */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 mb-4">
+        <div className="relative flex items-center justify-center mb-1">
+          <svg width="170" height="170" viewBox="0 0 170 170">
+            <circle cx="85" cy="85" r={r} fill="none" stroke="currentColor" strokeWidth="11"
+              strokeDasharray={`${arcLen} ${circ - arcLen}`} strokeLinecap="round"
+              transform="rotate(135 85 85)" className="text-zinc-800" />
+            <circle cx="85" cy="85" r={r} fill="none" stroke="currentColor" strokeWidth="11"
+              strokeDasharray={`${fillLen} ${circ - fillLen}`} strokeLinecap="round"
+              transform="rotate(135 85 85)"
+              className={over > 0 ? "text-orange-500 transition-all duration-500" : "text-emerald-500 transition-all duration-500"} />
+          </svg>
+          <div className="absolute flex flex-col items-center text-center">
+            <span className="text-[11px] text-zinc-500">{ringLabel}</span>
+            <span className={cn("text-3xl font-bold leading-tight", over > 0 ? "text-orange-500" : "text-zinc-100")}>{ringValue}</span>
+            <span className="text-[11px] text-zinc-500 mt-0.5">Цель: {calorieGoal} ккал</span>
           </div>
-        }
-      >
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="flex flex-col items-center">
-            <div className="relative w-20 h-20 flex items-center justify-center">
-              <svg className="w-full h-full -rotate-90">
-                <circle cx="40" cy="40" r="36" fill="none" stroke="currentColor" strokeWidth="6" className="text-zinc-800" />
-                <circle cx="40" cy="40" r="36" fill="none" stroke="currentColor" strokeWidth="6" strokeDasharray="226" strokeDashoffset={226 * (1 - Math.min(1, totals.calories / goals.calories))} className="text-emerald-500 transition-all duration-500" />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-lg font-bold">{Math.round(totals.calories)}</span>
-                <span className="text-[8px] uppercase text-zinc-500">Kcal</span>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 pt-2">
+          {[
+            ['Белки', totals.protein, goals.protein, 'bg-emerald-500'],
+            ['Жиры', totals.fat, goals.fat, 'bg-orange-500'],
+            ['Углеводы', totals.carbs, goals.carbs, 'bg-blue-500'],
+          ].map(([label, value, goal, colorClass]: any) => (
+            <div key={label}>
+              <div className="flex justify-between items-baseline mb-1">
+                <span className="text-[11px] text-zinc-500">{label}</span>
+                <span className="text-[11px] text-zinc-400">{Math.round(value)}/{Math.round(goal)} г</span>
+              </div>
+              <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                <div className={cn("h-full rounded-full transition-all duration-500", colorClass)} style={{ width: `${Math.min(100, (value / goal) * 100)}%` }} />
               </div>
             </div>
-            <span className="text-[10px] mt-2 text-zinc-400 uppercase tracking-wider">Принято</span>
-          </div>
-          
-          <div className="flex flex-col items-center">
-            <div className="relative w-20 h-20 flex items-center justify-center">
-              <svg className="w-full h-full -rotate-90">
-                <circle cx="40" cy="40" r="36" fill="none" stroke="currentColor" strokeWidth="6" className="text-zinc-800" />
-                <circle cx="40" cy="40" r="36" fill="none" stroke="currentColor" strokeWidth="6" strokeDasharray="226" strokeDashoffset={226 * (1 - 0.2)} className="text-orange-500" />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-lg font-bold">420</span>
-                <span className="text-[8px] uppercase text-zinc-500">Kcal</span>
-              </div>
-            </div>
-            <span className="text-[10px] mt-2 text-zinc-400 uppercase tracking-wider">Сожжено</span>
-          </div>
-
-          <div className="flex flex-col items-center">
-            <div className="relative w-20 h-20 flex items-center justify-center">
-              <svg className="w-full h-full -rotate-90">
-                <circle cx="40" cy="40" r="36" fill="none" stroke="currentColor" strokeWidth="6" className="text-zinc-800" />
-                <circle cx="40" cy="40" r="36" fill="none" stroke="currentColor" strokeWidth="6" strokeDasharray="226" strokeDashoffset={226 * (1 - Math.max(0, 1 - totals.calories / goals.calories))} className="text-blue-500 transition-all duration-500" />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-lg font-bold">{Math.max(0, Math.round(goals.calories - totals.calories))}</span>
-                <span className="text-[8px] uppercase text-zinc-500">Kcal</span>
-              </div>
-            </div>
-            <span className="text-[10px] mt-2 text-zinc-400 uppercase tracking-wider">Остаток</span>
-          </div>
-        </div>
-        
-        <div className="space-y-3">
-          <NutrientRow label="Белки" value={totals.protein} goal={goals.protein} unit="g" />
-          <NutrientRow label="Жиры" value={totals.fat} goal={goals.fat} unit="g" colorClass="bg-orange-500" />
-          <NutrientRow label="Углеводы" value={totals.carbs} goal={goals.carbs} unit="g" colorClass="bg-blue-500" />
-          <NutrientRow label="Клетчатка" value={totals.fiber} goal={goals.fiber || 30} unit="g" colorClass="bg-emerald-600" />
-        </div>
-      </CollapsibleCard>
-
-      {/* Витамины */}
-      <CollapsibleCard 
-        id="vitamins"
-        title="Витамины" 
-        icon={Zap}
-        collapsedContent={
-          <div className="flex gap-2 overflow-x-auto no-scrollbar">
-            {['A', 'C', 'D', 'B12'].map(v => (
-              <div key={v} className="px-2 py-1 bg-zinc-800 rounded text-[10px] text-zinc-400 whitespace-nowrap">
-                {v}: {Math.round((totals.vitamins[v] || 0) / (goals.vitamins[v] || 1) * 100)}%
-              </div>
-            ))}
-          </div>
-        }
-      >
-        <div className="space-y-1">
-          {VITAMIN_CONFIG.map(({ key, label, unit }) => (
-            <React.Fragment key={key}>
-              <NutrientRow label={label} value={totals.vitamins[key] || 0} goal={goals.vitamins[key] || 1} unit={unit} />
-            </React.Fragment>
           ))}
         </div>
-      </CollapsibleCard>
 
-      {/* Минералы и Электролиты */}
-      <CollapsibleCard 
-        id="minerals"
-        title="Минералы и Электролиты" 
-        icon={Zap}
-        collapsedContent={
-          <div className="flex gap-2 overflow-x-auto no-scrollbar">
-            {['Potassium', 'Sodium', 'Calcium', 'Iron'].map(m => (
-              <div key={m} className="px-2 py-1 bg-zinc-800 rounded text-[10px] text-zinc-400 whitespace-nowrap">
-                {m}: {Math.round((totals.minerals[m] || 0) / (goals.minerals[m] || 1) * 100)}%
+        <button
+          onClick={() => setAllNutrientsOpen((v) => !v)}
+          className="w-full mt-4 h-9 rounded-full bg-zinc-800 text-zinc-300 text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
+        >
+          Все нутриенты
+          {allNutrientsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+      </div>
+
+      {allNutrientsOpen && (
+        <>
+          {/* Витамины */}
+          <CollapsibleCard
+            id="vitamins"
+            title="Витамины"
+            icon={Zap}
+            collapsedContent={
+              <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                {['A', 'C', 'D', 'B12'].map(v => (
+                  <div key={v} className="px-2 py-1 bg-zinc-800 rounded text-[10px] text-zinc-400 whitespace-nowrap">
+                    {v}: {Math.round((totals.vitamins[v] || 0) / (goals.vitamins[v] || 1) * 100)}%
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        }
-      >
-        <div className="space-y-1">
-          {MINERAL_CONFIG.map(({ key, label, unit }) => (
-            <React.Fragment key={key}>
-              <NutrientRow label={label} value={totals.minerals[key] || 0} goal={goals.minerals[key] || 1} unit={unit} />
-            </React.Fragment>
-          ))}
-        </div>
-      </CollapsibleCard>
-
-      {/* Жиры (детализация) */}
-      <CollapsibleCard
-        id="fatty"
-        title="Жиры"
-        icon={Zap}
-        collapsedContent={
-          <div className="flex gap-2 overflow-x-auto no-scrollbar">
-            {['Omega3', 'Omega6', 'Omega9'].map((k) => (
-              <div key={k} className="px-2 py-1 bg-zinc-800 rounded text-[10px] text-zinc-400 whitespace-nowrap">
-                {k}: {Math.round((totals.fattyAcids[k] || 0) / (goals.fattyAcids[k] || 1) * 100)}%
-              </div>
-            ))}
-          </div>
-        }
-      >
-        <div className="space-y-1">
-          {FATTY_ACID_CONFIG.map(({ key, label, unit }) => (
-            <React.Fragment key={key}>
-              <NutrientRow label={label} value={totals.fattyAcids[key] || 0} goal={goals.fattyAcids[key] || 1} unit={unit} />
-            </React.Fragment>
-          ))}
-        </div>
-      </CollapsibleCard>
-
-      {/* Углеводы (детализация) */}
-      <CollapsibleCard
-        id="carbtypes"
-        title="Углеводы"
-        icon={Zap}
-        collapsedContent={
-          <div className="flex gap-2 overflow-x-auto no-scrollbar">
-            {['Glucose', 'Fructose', 'Sucrose', 'Starch'].map((k) => (
-              <div key={k} className="px-2 py-1 bg-zinc-800 rounded text-[10px] text-zinc-400 whitespace-nowrap">
-                {k}: {Math.round((totals.carbohydrateTypes[k] || 0) / (goals.carbohydrateTypes[k] || 1) * 100)}%
-              </div>
-            ))}
-          </div>
-        }
-      >
-        <div className="space-y-1">
-          {CARB_TYPE_CONFIG.map(({ key, label, unit }) => (
-            <React.Fragment key={key}>
-              <NutrientRow label={label} value={totals.carbohydrateTypes[key] || 0} goal={goals.carbohydrateTypes[key] || 1} unit={unit} />
-            </React.Fragment>
-          ))}
-        </div>
-      </CollapsibleCard>
-
-      {/* Аминокислоты */}
-      <CollapsibleCard 
-        id="amino"
-        title="Аминокислотный профиль" 
-        icon={Zap}
-        collapsedContent={
-          <div className="flex items-center gap-2">
-            <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-              <div className="h-full bg-emerald-500" style={{ width: `${Math.min(100, (totals.aminoAcids['Leucine'] || 0) / (goals.aminoAcids['Leucine'] || 1) * 100)}%` }} />
-            </div>
-            <span className="text-[10px] text-zinc-400">Полнота белка</span>
-          </div>
-        }
-      >
-        <div className="space-y-1">
-          <div className="p-3 bg-emerald-500/5 border border-emerald-500/10 rounded-xl mb-4">
-            <p className="text-[10px] text-emerald-500 font-bold uppercase mb-1">Nutria Insight</p>
-            <p className="text-xs text-zinc-400">Ваш профиль незаменимых аминокислот. Лейцин является ключевым триггером синтеза мышечного белка.</p>
-          </div>
-          {AMINO_CONFIG.map(({ key, label }) => (
-            <React.Fragment key={key}>
-              <NutrientRow label={label} value={totals.aminoAcids[key] || 0} goal={goals.aminoAcids[key] || 1} unit="mg" />
-            </React.Fragment>
-          ))}
-        </div>
-      </CollapsibleCard>
-
-      {/* Гидратация */}
-      <CollapsibleCard 
-        id="hydration"
-        title="Гидратация" 
-        icon={Zap}
-        collapsedContent={
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-zinc-400">{(waterIntake / 1000).toFixed(1)} / {(waterGoal / 1000).toFixed(1)} L</span>
-            <div className="flex gap-1">
-              {[1,2,3,4,5].map(i => (
-                <div key={i} className={cn("w-2 h-4 rounded-sm", i <= (waterIntake / waterGoal * 5) ? "bg-blue-500" : "bg-zinc-800")} />
+            }
+          >
+            <div className="space-y-1">
+              {VITAMIN_CONFIG.map(({ key, label, unit }) => (
+                <React.Fragment key={key}>
+                  <NutrientRow label={label} value={totals.vitamins[key] || 0} goal={goals.vitamins[key] || 1} unit={unit} />
+                </React.Fragment>
               ))}
             </div>
+          </CollapsibleCard>
+
+          {/* Минералы и Электролиты */}
+          <CollapsibleCard
+            id="minerals"
+            title="Минералы и Электролиты"
+            icon={Zap}
+            collapsedContent={
+              <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                {['Potassium', 'Sodium', 'Calcium', 'Iron'].map(m => (
+                  <div key={m} className="px-2 py-1 bg-zinc-800 rounded text-[10px] text-zinc-400 whitespace-nowrap">
+                    {m}: {Math.round((totals.minerals[m] || 0) / (goals.minerals[m] || 1) * 100)}%
+                  </div>
+                ))}
+              </div>
+            }
+          >
+            <div className="space-y-1">
+              {MINERAL_CONFIG.map(({ key, label, unit }) => (
+                <React.Fragment key={key}>
+                  <NutrientRow label={label} value={totals.minerals[key] || 0} goal={goals.minerals[key] || 1} unit={unit} />
+                </React.Fragment>
+              ))}
+            </div>
+          </CollapsibleCard>
+
+          {/* Жиры (детализация) */}
+          <CollapsibleCard
+            id="fatty"
+            title="Жиры"
+            icon={Zap}
+            collapsedContent={
+              <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                {['Omega3', 'Omega6', 'Omega9'].map((k) => (
+                  <div key={k} className="px-2 py-1 bg-zinc-800 rounded text-[10px] text-zinc-400 whitespace-nowrap">
+                    {k}: {Math.round((totals.fattyAcids[k] || 0) / (goals.fattyAcids[k] || 1) * 100)}%
+                  </div>
+                ))}
+              </div>
+            }
+          >
+            <div className="space-y-1">
+              {FATTY_ACID_CONFIG.map(({ key, label, unit }) => (
+                <React.Fragment key={key}>
+                  <NutrientRow label={label} value={totals.fattyAcids[key] || 0} goal={goals.fattyAcids[key] || 1} unit={unit} />
+                </React.Fragment>
+              ))}
+            </div>
+          </CollapsibleCard>
+
+          {/* Углеводы (детализация) */}
+          <CollapsibleCard
+            id="carbtypes"
+            title="Углеводы"
+            icon={Zap}
+            collapsedContent={
+              <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                {['Glucose', 'Fructose', 'Sucrose', 'Starch'].map((k) => (
+                  <div key={k} className="px-2 py-1 bg-zinc-800 rounded text-[10px] text-zinc-400 whitespace-nowrap">
+                    {k}: {Math.round((totals.carbohydrateTypes[k] || 0) / (goals.carbohydrateTypes[k] || 1) * 100)}%
+                  </div>
+                ))}
+              </div>
+            }
+          >
+            <div className="space-y-1">
+              {CARB_TYPE_CONFIG.map(({ key, label, unit }) => (
+                <React.Fragment key={key}>
+                  <NutrientRow label={label} value={totals.carbohydrateTypes[key] || 0} goal={goals.carbohydrateTypes[key] || 1} unit={unit} />
+                </React.Fragment>
+              ))}
+            </div>
+          </CollapsibleCard>
+
+          {/* Аминокислоты */}
+          <CollapsibleCard
+            id="amino"
+            title="Аминокислотный профиль"
+            icon={Zap}
+            collapsedContent={
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-500" style={{ width: `${Math.min(100, (totals.aminoAcids['Leucine'] || 0) / (goals.aminoAcids['Leucine'] || 1) * 100)}%` }} />
+                </div>
+                <span className="text-[10px] text-zinc-400">Полнота белка</span>
+              </div>
+            }
+          >
+            <div className="space-y-1">
+              <div className="p-3 bg-emerald-500/5 border border-emerald-500/10 rounded-xl mb-4">
+                <p className="text-[10px] text-emerald-500 font-bold uppercase mb-1">Nutria Insight</p>
+                <p className="text-xs text-zinc-400">Ваш профиль незаменимых аминокислот. Лейцин является ключевым триггером синтеза мышечного белка.</p>
+              </div>
+              {AMINO_CONFIG.map(({ key, label }) => (
+                <React.Fragment key={key}>
+                  <NutrientRow label={label} value={totals.aminoAcids[key] || 0} goal={goals.aminoAcids[key] || 1} unit="mg" />
+                </React.Fragment>
+              ))}
+            </div>
+          </CollapsibleCard>
+        </>
+      )}
+
+      {/* Вода */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 className="font-semibold text-zinc-200">Вода</h3>
+            <p className="text-[11px] text-zinc-500 mt-0.5">
+              {waterIntake} / {waterGoal} мл
+              {waterIntake < waterGoal && <span> · осталось {waterGoal - waterIntake} мл</span>}
+              {waterIntake >= waterGoal && <span className="text-emerald-500"> · цель достигнута</span>}
+            </p>
           </div>
-        }
-      >
-        <div className="flex flex-col items-center py-4">
-          <div className="text-4xl font-bold text-blue-500 mb-2">{(waterIntake / 1000).toFixed(1)} <span className="text-lg text-zinc-500">Л</span></div>
-          <p className="text-xs text-zinc-500 mb-6">Цель: {(waterGoal / 1000).toFixed(1)} Л ({Math.round(waterIntake / waterGoal * 100)}% выполнено)</p>
-          <div className="flex gap-4">
-            <button 
-              onClick={() => onUpdateWater(-250)}
-              className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center text-red-500 border border-zinc-700 active:scale-90 transition-transform"
-            >
-              -250
-            </button>
-            <button 
-              onClick={() => onUpdateWater(250)}
-              className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center text-blue-500 border border-zinc-700 active:scale-90 transition-transform"
-            >
-              +250
-            </button>
-            <button 
-              onClick={() => onUpdateWater(500)}
-              className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center text-blue-500 border border-zinc-700 active:scale-90 transition-transform"
-            >
-              +500
-            </button>
-          </div>
+          <Droplet size={28} className="text-blue-500" />
         </div>
-      </CollapsibleCard>
+        <p className="text-[10px] text-zinc-600 mb-2">Нажимайте на стакан, чтобы отметить выпитое</p>
+        <div className="flex gap-2 flex-wrap">
+          {Array.from({ length: totalGlasses }).map((_, i) => {
+            const filled = i < filledGlasses;
+            return (
+              <button
+                key={i}
+                onClick={() => onUpdateWater(filled ? -250 : 250)}
+                className="active:scale-90 transition-transform"
+              >
+                <svg width="22" height="30" viewBox="0 0 26 38" fill="none">
+                  <path d="M5 6C5 6 3 14 3 22c0 6.627 4.477 12 10 12s10-5.373 10-12c0-8-2-16-2-16H5z"
+                    stroke={filled ? "rgb(59 130 246)" : "rgb(63 63 70)"} strokeWidth="1.6"
+                    fill={filled ? "rgba(59,130,246,0.25)" : "transparent"} />
+                  <path d="M8 3h10" stroke={filled ? "rgb(59 130 246)" : "rgb(63 63 70)"} strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Качество питания / AI Hints */}
       <CollapsibleCard 
@@ -1247,65 +1247,94 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
         </div>
       </CollapsibleCard>
 
-      {/* Дневник */}
+      {/* Дневник — приёмы пищи, как MealBlock в прототипе */}
       <div className="mb-4">
         <h3 className="text-lg font-bold mb-4 px-1">Дневник</h3>
         <div className="space-y-3">
           {mealTypes.map((type) => {
             const meal = meals.find((m: any) => m.type === type);
+            const items = meal?.items || [];
+            const isEmpty = items.length === 0;
+            const expanded = !!mealExpanded[type];
+            const mealTotal = items.reduce((s: number, item: any) => s + (item.product.calories * item.amount) / 100, 0);
+            const totalP = items.reduce((s: number, item: any) => s + (item.product.protein * item.amount) / 100, 0);
+            const totalF = items.reduce((s: number, item: any) => s + (item.product.fat * item.amount) / 100, 0);
+            const totalC = items.reduce((s: number, item: any) => s + (item.product.carbs * item.amount) / 100, 0);
+
             return (
-              <div key={type} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400">
-                      <Utensils size={16} />
+              <div key={type} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+                <div
+                  onClick={() => toggleMeal(type)}
+                  className="flex items-center gap-3 p-4 cursor-pointer active:bg-zinc-800/40 transition-colors"
+                >
+                  <div className="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 flex-shrink-0">
+                    <Utensils size={16} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-zinc-200">{mealLabels[type]}</span>
+                      {!isEmpty && <span className="text-sm font-semibold text-emerald-500 flex-shrink-0">{Math.round(mealTotal)} ккал</span>}
                     </div>
-                    <h4 className="font-semibold text-zinc-200">{mealLabels[type]}</h4>
+                    {isEmpty ? (
+                      <p className="text-xs text-zinc-500 mt-0.5">Нажмите, чтобы добавить</p>
+                    ) : (
+                      <p className="text-xs text-zinc-500 mt-0.5 truncate">{items.map((i: any) => i.product.name).join(' · ')}</p>
+                    )}
                   </div>
-                  <button 
-                    onClick={() => onAddClick(type)}
-                    className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 active:scale-90 transition-transform"
-                  >
-                    <Plus size={18} />
-                  </button>
+                  <ChevronDown size={18} className={cn("text-zinc-500 flex-shrink-0 transition-transform", expanded && "rotate-180")} />
                 </div>
-                
-                {meal && meal.items.length > 0 ? (
-                  <div className="space-y-2 mt-3">
-                    {meal.items.map((item: any) => (
-                      <div key={item.id} className="flex justify-between items-center text-sm border-t border-zinc-800/50 pt-2 group">
-                        <div className="flex-1">
-                          <p className="text-zinc-200 font-medium">{item.product.name}</p>
-                          <p className="text-[10px] text-zinc-500">{item.amount}г • {Math.round((item.product.calories * item.amount) / 100)} kcal</p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="text-zinc-500 text-[10px] uppercase text-right">
-                            {Math.round((item.product.protein * item.amount) / 100)}Б / {Math.round((item.product.fat * item.amount) / 100)}Ж / {Math.round((item.product.carbs * item.amount) / 100)}У
-                          </div>
-                          <button
-                            onClick={() => onEditItem(item)}
-                            className="p-1 text-zinc-600 hover:text-emerald-500 transition-colors opacity-0 group-hover:opacity-100"
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
-                            onClick={() => onDeleteItem(item.id)}
-                            className="p-1 text-zinc-600 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
+
+                {expanded && (
+                  <div className="border-t border-zinc-800/70">
+                    {isEmpty ? (
+                      <div className="p-4 text-center">
+                        <p className="text-xs text-zinc-500 mb-3">В этом приёме пищи пока нет записей</p>
+                        <button
+                          onClick={() => onAddClick(type)}
+                          className="w-full h-10 rounded-xl bg-emerald-500 text-white text-sm font-semibold active:scale-[0.98] transition-transform"
+                        >
+                          + Добавить продукт
+                        </button>
                       </div>
-                    ))}
+                    ) : (
+                      <>
+                        <div className="py-1">
+                          {items.map((item: any, idx: number) => (
+                            <div key={item.id} className={cn("flex items-center gap-2 px-4 py-2.5 group", idx > 0 && "border-t border-zinc-800/50")}>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-zinc-200">{item.product.name}</p>
+                                <p className="text-[11px] text-zinc-500 mt-0.5">{item.amount} г · Б{Math.round((item.product.protein * item.amount) / 100)} · Ж{Math.round((item.product.fat * item.amount) / 100)} · У{Math.round((item.product.carbs * item.amount) / 100)}</p>
+                              </div>
+                              <span className="text-xs text-zinc-400 flex-shrink-0">{Math.round((item.product.calories * item.amount) / 100)} ккал</span>
+                              <button onClick={() => onEditItem(item)} className="p-1.5 text-zinc-600 hover:text-emerald-500 transition-colors flex-shrink-0">
+                                <Pencil size={14} />
+                              </button>
+                              <button onClick={() => onDeleteItem(item.id)} className="p-1.5 text-zinc-600 hover:text-red-500 transition-colors flex-shrink-0">
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex justify-between px-4 py-2.5 border-t border-zinc-800/50">
+                          <span className="text-[11px] font-bold text-zinc-500">Итого</span>
+                          <span className="text-[11px] font-bold text-zinc-300">{Math.round(mealTotal)} ккал · Б{Math.round(totalP)} / Ж{Math.round(totalF)} / У{Math.round(totalC)}</span>
+                        </div>
+                        <div className="flex justify-center px-4 py-3">
+                          <button
+                            onClick={() => onAddClick(type)}
+                            className="h-9 px-4 rounded-full bg-zinc-800 text-zinc-300 text-xs font-bold active:scale-95 transition-transform"
+                          >
+                            + Добавить ещё
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
-                ) : (
-                  <p className="text-[10px] text-zinc-600 uppercase tracking-wider mt-1">Ничего не добавлено</p>
                 )}
               </div>
             );
           })}
         </div>
-
       </div>
     </div>
   );
