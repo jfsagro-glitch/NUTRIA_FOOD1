@@ -20,6 +20,7 @@ import {
   Trash2,
   Mic,
   MicOff,
+  Pencil,
   SlidersHorizontal,
   Sun,
   Moon
@@ -51,6 +52,41 @@ interface Product {
   aminoAcids?: Record<string, number>;
   fattyAcids?: Record<string, number>;
   carbohydrateTypes?: Record<string, number>;
+}
+
+// "Недавние": продукт/блюдо + метаданные последнего использования
+interface RecentFoodItem extends Product {
+  lastWeightGrams?: number | null;
+  useCount?: number;
+}
+
+// "Мои блюда": метаданные рецепта + связанный продукт-снимок для добавления в дневник
+interface MyRecipe {
+  id: string;
+  name: string;
+  totalIngredientWeightGrams: number;
+  cookedWeightGrams: number;
+  product: Product;
+  ingredients?: { productId: string; weightGrams: number }[];
+}
+
+// Черновик строки ингредиента при создании блюда в "Мои"
+interface DishIngredientDraft {
+  productId: string;
+  name: string;
+  weightGrams: string;
+  calories: number;
+  protein: number;
+  fat: number;
+  carbs: number;
+}
+
+// Черновик строки в едином экране «Проверьте результат» — продукт ещё не сохранён в дневник
+interface ReviewDraftItem {
+  tempId: string;
+  product: Product;
+  amount: number;
+  usdaData?: Product;
 }
 
 interface NutrientTotals {
@@ -848,7 +884,7 @@ const NutrientRow = ({ label, value, goal, unit, colorClass = "bg-emerald-500" }
   </div>
 );
 
-const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, onUpdateWater }: { data: any, onAddClick: (type: string) => void, hints: Hint[], onHintClick: (cta: string) => void, onDeleteItem: (id: string) => void, onUpdateWater: (amount: number) => void }) => {
+const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, onEditItem, onUpdateWater }: { data: any, onAddClick: (type: string) => void, hints: Hint[], onHintClick: (cta: string) => void, onDeleteItem: (id: string) => void, onEditItem: (item: any) => void, onUpdateWater: (amount: number) => void }) => {
   const { meals = [], waterIntake = 0 } = data;
   const goals = mergeGoals(data.goals);
   const waterGoal = 2500; // 2.5L in ml
@@ -1246,7 +1282,13 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
                           <div className="text-zinc-500 text-[10px] uppercase text-right">
                             {Math.round((item.product.protein * item.amount) / 100)}Б / {Math.round((item.product.fat * item.amount) / 100)}Ж / {Math.round((item.product.carbs * item.amount) / 100)}У
                           </div>
-                          <button 
+                          <button
+                            onClick={() => onEditItem(item)}
+                            className="p-1 text-zinc-600 hover:text-emerald-500 transition-colors opacity-0 group-hover:opacity-100"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
                             onClick={() => onDeleteItem(item.id)}
                             className="p-1 text-zinc-600 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
                           >
@@ -2156,6 +2198,26 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Product[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+
+  // "Недавние" / "Мои" — вкладки в экране добавления еды
+  const [foodTab, setFoodTab] = useState<'all' | 'recent' | 'mine'>('all');
+  const [recentFoods, setRecentFoods] = useState<RecentFoodItem[]>([]);
+  const [isLoadingRecent, setIsLoadingRecent] = useState(false);
+  const [mineProducts, setMineProducts] = useState<Product[]>([]);
+  const [mineRecipes, setMineRecipes] = useState<MyRecipe[]>([]);
+  const [isLoadingMine, setIsLoadingMine] = useState(false);
+  const [isAddCustomProductOpen, setIsAddCustomProductOpen] = useState(false);
+  const [customProductForm, setCustomProductForm] = useState({ name: '', brand: '', barcode: '', calories: '', protein: '', fat: '', carbs: '' });
+  const [isSavingCustomProduct, setIsSavingCustomProduct] = useState(false);
+  const [isCreateDishOpen, setIsCreateDishOpen] = useState(false);
+  const [dishName, setDishName] = useState('');
+  const [dishCookedWeight, setDishCookedWeight] = useState('');
+  const [dishIngredients, setDishIngredients] = useState<DishIngredientDraft[]>([]);
+  const [dishIngredientQuery, setDishIngredientQuery] = useState('');
+  const [dishIngredientResults, setDishIngredientResults] = useState<Product[]>([]);
+  const [isSavingDish, setIsSavingDish] = useState(false);
+  const [editingMealItem, setEditingMealItem] = useState<{ id: string; amount: number; name: string } | null>(null);
+  const [editAmountValue, setEditAmountValue] = useState('');
   const [selectedDiaryDate] = useState<string>(toDateKey(new Date()));
   const [diaryData, setDiaryData] = useState<DiaryData>({ meals: [], goals: null, waterIntake: 0, date: selectedDiaryDate });
   const [weeklyHistory, setWeeklyHistory] = useState<DiaryHistoryPoint[]>([]);
@@ -2189,8 +2251,16 @@ export default function App() {
 
   const [selectedProductForAmount, setSelectedProductForAmount] = useState<Product | null>(null);
   const [foodAmount, setFoodAmount] = useState('100');
-  const [amountEntryContext, setAmountEntryContext] = useState<{ source: 'search' | 'photo' | 'voice'; voiceIndex?: number } | null>(null);
+  const [amountEntryContext, setAmountEntryContext] = useState<{ source: 'search' | 'photo' | 'voice' | 'barcode'; voiceIndex?: number } | null>(null);
   const [photoCorrectionTarget, setPhotoCorrectionTarget] = useState<{ index: number; item: RecognizedPhotoItem } | null>(null);
+
+  // «Проверьте результат» — единый черновик-список перед сохранением в дневник
+  // (фото/голос/поиск кладут сюда; штрихкод-найден — исключение, сохраняется сразу)
+  const [reviewItems, setReviewItems] = useState<ReviewDraftItem[]>([]);
+  const [isReviewSheetOpen, setIsReviewSheetOpen] = useState(false);
+  const [reviewEditIndex, setReviewEditIndex] = useState<number | null>(null);
+  const [reviewEditAmount, setReviewEditAmount] = useState('');
+  const [isSavingReview, setIsSavingReview] = useState(false);
   const recognitionRef = useRef<any>(null);
   const barcodeScannerRef = useRef<Html5QrcodeType | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
@@ -2729,7 +2799,7 @@ export default function App() {
     };
   }, [searchQuery]);
 
-  const addFood = async (productId: string, amount: number, usdaData?: Product) => {
+  const addFood = async (productId: string, amount: number, usdaData?: Product, skipRefresh = false) => {
     try {
       const res = await fetch('/api/diary/add', {
         method: 'POST',
@@ -2742,7 +2812,232 @@ export default function App() {
           usdaData
         })
       });
+      if (res.ok && !skipRefresh) {
+        fetchDiary(selectedDiaryDate);
+        fetchHints();
+      }
+      return res.ok;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  };
+
+  // --- «Проверьте результат»: единый черновик перед сохранением (см. прототип) ---
+
+  const addToReviewDraft = (product: Product, amount: number, usdaData?: Product) => {
+    setReviewItems((prev) => [
+      ...prev,
+      { tempId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, product, amount, usdaData }
+    ]);
+    setIsReviewSheetOpen(true);
+  };
+
+  const removeReviewItem = (tempId: string) => {
+    setReviewItems((prev) => prev.filter((it) => it.tempId !== tempId));
+    setReviewEditIndex(null);
+  };
+
+  const updateReviewItemAmount = (tempId: string, amount: number) => {
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    setReviewItems((prev) => prev.map((it) => (it.tempId === tempId ? { ...it, amount } : it)));
+    setReviewEditIndex(null);
+  };
+
+  const reviewTotals = reviewItems.reduce(
+    (acc, it) => {
+      const factor = it.amount / 100;
+      return {
+        calories: acc.calories + it.product.calories * factor,
+        protein: acc.protein + it.product.protein * factor,
+        fat: acc.fat + it.product.fat * factor,
+        carbs: acc.carbs + it.product.carbs * factor,
+      };
+    },
+    { calories: 0, protein: 0, fat: 0, carbs: 0 }
+  );
+
+  const saveReviewDraft = async () => {
+    if (reviewItems.length === 0) return;
+    setIsSavingReview(true);
+    try {
+      for (const item of reviewItems) {
+        await addFood(item.product.id, item.amount, item.usdaData, true);
+      }
+      fetchDiary(selectedDiaryDate);
+      fetchHints();
+      setReviewItems([]);
+      setIsReviewSheetOpen(false);
+    } finally {
+      setIsSavingReview(false);
+    }
+  };
+
+  const discardReviewDraft = () => {
+    setReviewItems([]);
+    setReviewEditIndex(null);
+    setIsReviewSheetOpen(false);
+  };
+
+  const fetchRecentFoods = async () => {
+    setIsLoadingRecent(true);
+    try {
+      const res = await fetch('/api/products/recent');
+      if (res.ok) setRecentFoods(await res.json());
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoadingRecent(false);
+    }
+  };
+
+  const fetchMine = async () => {
+    setIsLoadingMine(true);
+    try {
+      const res = await fetch('/api/products/mine');
       if (res.ok) {
+        const data = await res.json();
+        setMineProducts(data.products || []);
+        setMineRecipes(data.recipes || []);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoadingMine(false);
+    }
+  };
+
+  const handleFoodTabChange = (tab: 'all' | 'recent' | 'mine') => {
+    setFoodTab(tab);
+    if (tab === 'recent' && recentFoods.length === 0) fetchRecentFoods();
+    if (tab === 'mine') fetchMine();
+  };
+
+  const submitCustomProduct = async () => {
+    if (!customProductForm.name.trim()) return;
+    setIsSavingCustomProduct(true);
+    try {
+      const res = await fetch('/api/products/custom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: customProductForm.name.trim(),
+          brand: customProductForm.brand.trim() || undefined,
+          barcode: customProductForm.barcode.trim() || undefined,
+          calories: Number(customProductForm.calories) || 0,
+          protein: Number(customProductForm.protein) || 0,
+          fat: Number(customProductForm.fat) || 0,
+          carbs: Number(customProductForm.carbs) || 0,
+        })
+      });
+      if (res.ok) {
+        setIsAddCustomProductOpen(false);
+        setCustomProductForm({ name: '', brand: '', barcode: '', calories: '', protein: '', fat: '', carbs: '' });
+        fetchMine();
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSavingCustomProduct(false);
+    }
+  };
+
+  const searchDishIngredients = async (query: string) => {
+    setDishIngredientQuery(query);
+    if (query.trim().length < 2) {
+      setDishIngredientResults([]);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/products/search?q=${encodeURIComponent(query.trim())}`);
+      if (res.ok) setDishIngredientResults(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const addDishIngredient = (product: Product) => {
+    setDishIngredients((prev) => [
+      ...prev,
+      {
+        productId: product.id,
+        name: product.name,
+        weightGrams: '100',
+        calories: product.calories,
+        protein: product.protein,
+        fat: product.fat,
+        carbs: product.carbs,
+      }
+    ]);
+    setDishIngredientQuery('');
+    setDishIngredientResults([]);
+  };
+
+  const removeDishIngredient = (index: number) => {
+    setDishIngredients((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const dishTotals = dishIngredients.reduce(
+    (acc, ing) => {
+      const factor = (Number(ing.weightGrams) || 0) / 100;
+      return {
+        weight: acc.weight + (Number(ing.weightGrams) || 0),
+        calories: acc.calories + ing.calories * factor,
+        protein: acc.protein + ing.protein * factor,
+        fat: acc.fat + ing.fat * factor,
+        carbs: acc.carbs + ing.carbs * factor,
+      };
+    },
+    { weight: 0, calories: 0, protein: 0, fat: 0, carbs: 0 }
+  );
+
+  const submitDish = async () => {
+    if (!dishName.trim() || dishIngredients.length === 0) return;
+    setIsSavingDish(true);
+    try {
+      const res = await fetch('/api/recipes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: dishName.trim(),
+          cookedWeightGrams: Number(dishCookedWeight) || dishTotals.weight,
+          ingredients: dishIngredients.map((ing) => ({
+            productId: ing.productId,
+            name: ing.name,
+            weightGrams: Number(ing.weightGrams) || 0,
+            calories: ing.calories,
+            protein: ing.protein,
+            fat: ing.fat,
+            carbs: ing.carbs,
+          }))
+        })
+      });
+      if (res.ok) {
+        setIsCreateDishOpen(false);
+        setDishName('');
+        setDishCookedWeight('');
+        setDishIngredients([]);
+        fetchMine();
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSavingDish(false);
+    }
+  };
+
+  const updateMealItemAmount = async () => {
+    if (!editingMealItem) return;
+    const amount = Number(editAmountValue);
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    try {
+      const res = await fetch(`/api/diary/item/${editingMealItem.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount })
+      });
+      if (res.ok) {
+        setEditingMealItem(null);
         fetchDiary(selectedDiaryDate);
         fetchHints();
       }
@@ -2880,16 +3175,11 @@ export default function App() {
         if (!res.ok) continue;
 
         const product = await res.json();
-        const amount = prompt(`Найдено: ${product.name}. Введите количество (г):`, '100');
-        if (amount) {
-          await addFood(
-            product.id,
-            Number(amount),
-            (product.isUsda || product.isAiEstimated) ? product : undefined
-          );
-        }
-
-        setIsBarcodeSheetOpen(false);
+        // Штрихкод найден — единственное исключение из единого экрана «Проверьте результат»:
+        // сразу показываем ввод веса и сохраняем без черновика.
+        setSelectedProductForAmount(product);
+        setFoodAmount('100');
+        setAmountEntryContext({ source: 'barcode' });
         setBarcodeQuery('');
         setBarcodeScannerError('');
         return true;
@@ -3143,6 +3433,10 @@ export default function App() {
               hints={hints}
               onHintClick={handleHintClick}
               onDeleteItem={deleteMealItem}
+              onEditItem={(item: any) => {
+                setEditingMealItem({ id: item.id, amount: item.amount, name: item.product?.name || 'Изменить вес' });
+                setEditAmountValue(String(Math.round(item.amount)));
+              }}
               onUpdateWater={updateWater}
             />
           ) : (
@@ -3265,57 +3559,314 @@ export default function App() {
       </BottomSheet>
 
       {/* Поиск еды */}
-      <BottomSheet isOpen={isSearchSheetOpen} onClose={() => { setIsSearchSheetOpen(false); setPhotoCorrectionTarget(null); }} title={photoCorrectionTarget ? 'Исправить распознавание' : `Добавить в ${selectedMealType === 'BREAKFAST' ? 'Завтрак' : selectedMealType === 'LUNCH' ? 'Обед' : selectedMealType === 'DINNER' ? 'Ужин' : 'Перекус'}`}>
-        <div className="relative mb-6">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={20} />
-          <input 
-            type="text" 
-            placeholder="Поиск продукта или бренда..."
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl py-4 pl-12 pr-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
-            value={searchQuery}
-            onChange={(e) => handleSearch(e.target.value)}
-            autoFocus
-          />
-          {isSearching && <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-emerald-500" size={20} />}
-        </div>
-
-        <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
-          {searchResults.length > 0 ? (
-            searchResults.map((product) => (
-              <button 
-                key={product.id}
-                onClick={() => { void handleProductSelection(product); }}
-                className="w-full bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center active:bg-zinc-800 transition-colors"
+      <BottomSheet isOpen={isSearchSheetOpen} onClose={() => { setIsSearchSheetOpen(false); setPhotoCorrectionTarget(null); setFoodTab('all'); if (reviewItems.length > 0) setIsReviewSheetOpen(true); }} title={photoCorrectionTarget ? 'Исправить распознавание' : `Добавить в ${selectedMealType === 'BREAKFAST' ? 'Завтрак' : selectedMealType === 'LUNCH' ? 'Обед' : selectedMealType === 'DINNER' ? 'Ужин' : 'Перекус'}`}>
+        {!photoCorrectionTarget && (
+          <div className="flex gap-2 mb-4">
+            {([
+              ['all', 'Все'],
+              ['recent', 'Недавние'],
+              ['mine', 'Мои'],
+            ] as const).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => handleFoodTabChange(key)}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                  foodTab === key ? 'bg-emerald-500 text-white' : 'bg-zinc-800 text-zinc-400'
+                }`}
               >
-                <div className="text-left">
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-zinc-200">{product.name}</p>
-                    {product.isUsda && (
-                      <span className="px-1.5 py-0.5 bg-blue-500/10 text-blue-400 text-[8px] font-bold rounded uppercase tracking-tighter border border-blue-500/20">
-                        USDA
-                      </span>
-                    )}
-                    {product.isAiEstimated && (
-                      <span className="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 text-[8px] font-bold rounded uppercase tracking-tighter border border-emerald-500/20">
-                        AI
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{product.brand} • {product.calories} kcal / 100g</p>
-                  {product.explanation && (
-                    <p className="text-[9px] text-zinc-600 italic mt-1 leading-tight max-w-[200px]">{product.explanation}</p>
-                  )}
-                </div>
-                <Plus size={20} className="text-emerald-500" />
+                {label}
               </button>
-            ))
-          ) : searchQuery.length >= 2 && !isSearching ? (
-            <div className="py-12 text-center">
-              <AlertCircle size={48} className="mx-auto text-zinc-700 mb-4" />
-              <p className="text-zinc-500">Продукт не найден. Попробуйте другой запрос.</p>
+            ))}
+          </div>
+        )}
+
+        {(foodTab === 'all' || photoCorrectionTarget) && (
+          <>
+            <div className="relative mb-6">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={20} />
+              <input
+                type="text"
+                placeholder="Поиск продукта или бренда..."
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl py-4 pl-12 pr-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                autoFocus
+              />
+              {isSearching && <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-emerald-500" size={20} />}
             </div>
-          ) : null}
+
+            <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
+              {searchResults.length > 0 ? (
+                searchResults.map((product) => (
+                  <button
+                    key={product.id}
+                    onClick={() => { void handleProductSelection(product); }}
+                    className="w-full bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center active:bg-zinc-800 transition-colors"
+                  >
+                    <div className="text-left">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-zinc-200">{product.name}</p>
+                        {product.isUsda && (
+                          <span className="px-1.5 py-0.5 bg-blue-500/10 text-blue-400 text-[8px] font-bold rounded uppercase tracking-tighter border border-blue-500/20">
+                            USDA
+                          </span>
+                        )}
+                        {product.isAiEstimated && (
+                          <span className="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 text-[8px] font-bold rounded uppercase tracking-tighter border border-emerald-500/20">
+                            AI
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{product.brand} • {product.calories} kcal / 100g</p>
+                      {product.explanation && (
+                        <p className="text-[9px] text-zinc-600 italic mt-1 leading-tight max-w-[200px]">{product.explanation}</p>
+                      )}
+                    </div>
+                    <Plus size={20} className="text-emerald-500" />
+                  </button>
+                ))
+              ) : searchQuery.length >= 2 && !isSearching ? (
+                <div className="py-12 text-center">
+                  <AlertCircle size={48} className="mx-auto text-zinc-700 mb-4" />
+                  <p className="text-zinc-500">Продукт не найден. Попробуйте другой запрос.</p>
+                </div>
+              ) : null}
+            </div>
+          </>
+        )}
+
+        {foodTab === 'recent' && !photoCorrectionTarget && (
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+            {isLoadingRecent ? (
+              <div className="py-12 text-center"><Loader2 className="mx-auto animate-spin text-emerald-500" size={32} /></div>
+            ) : recentFoods.length === 0 ? (
+              <p className="text-center text-zinc-500 py-12 text-sm">Здесь появятся продукты, которые вы добавляли недавно</p>
+            ) : (
+              recentFoods.map((product) => (
+                <button
+                  key={product.id}
+                  onClick={() => {
+                    setSelectedProductForAmount(product);
+                    setFoodAmount(String(Math.max(1, Math.round(product.lastWeightGrams || 100))));
+                    setAmountEntryContext({ source: 'search' });
+                  }}
+                  className="w-full bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center active:bg-zinc-800 transition-colors"
+                >
+                  <div className="text-left">
+                    <p className="font-semibold text-zinc-200">{product.name}</p>
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{product.brand} • {product.calories} kcal / 100g</p>
+                  </div>
+                  <Plus size={20} className="text-emerald-500" />
+                </button>
+              ))
+            )}
+          </div>
+        )}
+
+        {foodTab === 'mine' && !photoCorrectionTarget && (
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+            <div className="flex gap-2 mb-2">
+              <button
+                onClick={() => setIsCreateDishOpen(true)}
+                className="flex-1 py-3 rounded-xl bg-zinc-800 text-zinc-200 text-sm font-semibold active:bg-zinc-700 transition-colors"
+              >
+                + Создать блюдо
+              </button>
+              <button
+                onClick={() => setIsAddCustomProductOpen(true)}
+                className="flex-1 py-3 rounded-xl bg-zinc-800 text-zinc-200 text-sm font-semibold active:bg-zinc-700 transition-colors"
+              >
+                + Свой продукт
+              </button>
+            </div>
+
+            {isLoadingMine ? (
+              <div className="py-12 text-center"><Loader2 className="mx-auto animate-spin text-emerald-500" size={32} /></div>
+            ) : mineProducts.length === 0 && mineRecipes.length === 0 ? (
+              <p className="text-center text-zinc-500 py-8 text-sm">Сохраняйте свои блюда и продукты, чтобы добавлять их быстрее</p>
+            ) : (
+              <>
+                {mineRecipes.map((recipe) => (
+                  <button
+                    key={recipe.id}
+                    onClick={() => {
+                      setSelectedProductForAmount(recipe.product);
+                      setFoodAmount(String(Math.max(1, Math.round(recipe.cookedWeightGrams || 100))));
+                      setAmountEntryContext({ source: 'search' });
+                    }}
+                    className="w-full bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center active:bg-zinc-800 transition-colors"
+                  >
+                    <div className="text-left">
+                      <p className="font-semibold text-zinc-200">{recipe.name}</p>
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Блюдо • {Math.round(recipe.product.calories)} kcal / 100g</p>
+                    </div>
+                    <Plus size={20} className="text-emerald-500" />
+                  </button>
+                ))}
+                {mineProducts.map((product) => (
+                  <button
+                    key={product.id}
+                    onClick={() => { void handleProductSelection(product); }}
+                    className="w-full bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center active:bg-zinc-800 transition-colors"
+                  >
+                    <div className="text-left">
+                      <p className="font-semibold text-zinc-200">{product.name}</p>
+                      <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{product.brand || 'Свой продукт'} • {product.calories} kcal / 100g</p>
+                    </div>
+                    <Plus size={20} className="text-emerald-500" />
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </BottomSheet>
+
+      {/* "Мои" → Добавить свой продукт */}
+      <BottomSheet isOpen={isAddCustomProductOpen} onClose={() => setIsAddCustomProductOpen(false)} title="Добавить свой продукт">
+        <div className="space-y-3">
+          <input
+            type="text" placeholder="Название"
+            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            value={customProductForm.name}
+            onChange={(e) => setCustomProductForm((p) => ({ ...p, name: e.target.value }))}
+          />
+          <input
+            type="text" placeholder="Бренд (необязательно)"
+            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            value={customProductForm.brand}
+            onChange={(e) => setCustomProductForm((p) => ({ ...p, brand: e.target.value }))}
+          />
+          <input
+            type="text" placeholder="Штрихкод (необязательно)"
+            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            value={customProductForm.barcode}
+            onChange={(e) => setCustomProductForm((p) => ({ ...p, barcode: e.target.value }))}
+          />
+          <p className="text-[11px] text-zinc-500 uppercase tracking-wider pt-1">КБЖУ на 100 г</p>
+          <div className="grid grid-cols-2 gap-3">
+            <input type="number" placeholder="Калории" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              value={customProductForm.calories} onChange={(e) => setCustomProductForm((p) => ({ ...p, calories: e.target.value }))} />
+            <input type="number" placeholder="Белки, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              value={customProductForm.protein} onChange={(e) => setCustomProductForm((p) => ({ ...p, protein: e.target.value }))} />
+            <input type="number" placeholder="Жиры, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              value={customProductForm.fat} onChange={(e) => setCustomProductForm((p) => ({ ...p, fat: e.target.value }))} />
+            <input type="number" placeholder="Углеводы, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              value={customProductForm.carbs} onChange={(e) => setCustomProductForm((p) => ({ ...p, carbs: e.target.value }))} />
+          </div>
+          <button
+            onClick={() => { void submitCustomProduct(); }}
+            disabled={!customProductForm.name.trim() || isSavingCustomProduct}
+            className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform disabled:opacity-40"
+          >
+            {isSavingCustomProduct ? 'Сохранение...' : 'Сохранить в Мои'}
+          </button>
         </div>
+      </BottomSheet>
+
+      {/* "Мои" → Создать блюдо из ингредиентов */}
+      <BottomSheet isOpen={isCreateDishOpen} onClose={() => setIsCreateDishOpen(false)} title="Создать блюдо">
+        <div className="space-y-3">
+          <input
+            type="text" placeholder="Название блюда"
+            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            value={dishName}
+            onChange={(e) => setDishName(e.target.value)}
+          />
+
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+            <input
+              type="text" placeholder="Добавить ингредиент из базы..."
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 pl-11 pr-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              value={dishIngredientQuery}
+              onChange={(e) => { void searchDishIngredients(e.target.value); }}
+            />
+          </div>
+          {dishIngredientResults.length > 0 && (
+            <div className="space-y-1 max-h-40 overflow-y-auto">
+              {dishIngredientResults.map((product) => (
+                <button
+                  key={product.id}
+                  onClick={() => addDishIngredient(product)}
+                  className="w-full text-left bg-zinc-800/50 rounded-lg p-2.5 text-sm text-zinc-200 active:bg-zinc-800"
+                >
+                  {product.name} <span className="text-zinc-500 text-xs">{product.brand}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {dishIngredients.length > 0 && (
+            <div className="space-y-2 pt-2">
+              {dishIngredients.map((ing, idx) => (
+                <div key={`${ing.productId}-${idx}`} className="flex items-center gap-2 bg-zinc-800/50 rounded-xl p-3">
+                  <span className="flex-1 text-sm text-zinc-200 truncate">{ing.name}</span>
+                  <input
+                    type="number"
+                    className="w-20 bg-zinc-900 border border-zinc-700 rounded-lg py-1.5 px-2 text-zinc-100 text-sm text-right"
+                    value={ing.weightGrams}
+                    onChange={(e) => setDishIngredients((prev) => prev.map((it, i) => i === idx ? { ...it, weightGrams: e.target.value } : it))}
+                  />
+                  <span className="text-xs text-zinc-500">г</span>
+                  <button onClick={() => removeDishIngredient(idx)} className="text-red-400 active:scale-90 transition-transform">
+                    <X size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div>
+            <label className="text-[11px] text-zinc-500 uppercase tracking-wider">Вес готового блюда, г</label>
+            <input
+              type="number" placeholder={dishTotals.weight ? String(Math.round(dishTotals.weight)) : 'Вес готового блюда'}
+              className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              value={dishCookedWeight}
+              onChange={(e) => setDishCookedWeight(e.target.value)}
+            />
+          </div>
+
+          {dishIngredients.length > 0 && (
+            <div className="bg-zinc-800/50 rounded-xl p-3 grid grid-cols-4 gap-2 text-center">
+              <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.calories)}</p><p className="text-[9px] text-zinc-500 uppercase">ккал</p></div>
+              <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.protein)}</p><p className="text-[9px] text-zinc-500 uppercase">белки</p></div>
+              <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.fat)}</p><p className="text-[9px] text-zinc-500 uppercase">жиры</p></div>
+              <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.carbs)}</p><p className="text-[9px] text-zinc-500 uppercase">углеводы</p></div>
+            </div>
+          )}
+
+          <button
+            onClick={() => { void submitDish(); }}
+            disabled={!dishName.trim() || dishIngredients.length === 0 || isSavingDish}
+            className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform disabled:opacity-40"
+          >
+            {isSavingDish ? 'Сохранение...' : 'Сохранить в Мои'}
+          </button>
+        </div>
+      </BottomSheet>
+
+      {/* Редактирование веса записи дневника */}
+      <BottomSheet isOpen={!!editingMealItem} onClose={() => setEditingMealItem(null)} title={editingMealItem?.name || 'Изменить вес'}>
+        {editingMealItem && (
+          <div className="space-y-4">
+            <div>
+              <label className="text-[11px] text-zinc-500 uppercase tracking-wider">Вес, г</label>
+              <input
+                type="number" autoFocus
+                className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 text-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                value={editAmountValue}
+                onChange={(e) => setEditAmountValue(e.target.value)}
+              />
+            </div>
+            <button
+              onClick={() => { void updateMealItemAmount(); }}
+              className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform"
+            >
+              Готово
+            </button>
+          </div>
+        )}
       </BottomSheet>
 
       {/* Ввод количества */}
@@ -3370,38 +3921,41 @@ export default function App() {
               >
                 Отмена
               </button>
-              <button 
+              <button
                 onClick={async () => {
                   if (!selectedProductForAmount) return;
 
                   const parsedAmount = Number(foodAmount);
                   const safeAmount = Number.isFinite(parsedAmount) ? Math.max(1, parsedAmount) : 100;
+                  const usda = (selectedProductForAmount.isUsda || selectedProductForAmount.isAiEstimated) ? selectedProductForAmount : undefined;
 
-                  await addFood(
-                    selectedProductForAmount.id,
-                    safeAmount,
-                    (selectedProductForAmount.isUsda || selectedProductForAmount.isAiEstimated) ? selectedProductForAmount : undefined
-                  );
+                  if (amountEntryContext?.source === 'barcode') {
+                    // Штрихкод найден — сохраняем сразу, минуя «Проверьте результат»
+                    await addFood(selectedProductForAmount.id, safeAmount, usda);
+                    setIsBarcodeSheetOpen(false);
+                  } else {
+                    addToReviewDraft(selectedProductForAmount, safeAmount, usda);
 
-                  if (amountEntryContext?.source === 'search') {
-                    setIsSearchSheetOpen(false);
-                    setSearchQuery('');
-                    setSearchResults([]);
-                  }
+                    if (amountEntryContext?.source === 'search') {
+                      setIsSearchSheetOpen(false);
+                      setSearchQuery('');
+                      setSearchResults([]);
+                    }
 
-                  if (amountEntryContext?.source === 'photo') {
-                    setIsPhotoSheetOpen(false);
-                  }
+                    if (amountEntryContext?.source === 'photo') {
+                      setIsPhotoSheetOpen(false);
+                    }
 
-                  if (amountEntryContext?.source === 'voice' && Number.isInteger(amountEntryContext.voiceIndex)) {
-                    const idx = amountEntryContext.voiceIndex as number;
-                    setParsedVoiceItems((prev) => {
-                      const next = prev.filter((_, itemIndex) => itemIndex !== idx);
-                      if (next.length === 0) {
-                        setIsVoiceSheetOpen(false);
-                      }
-                      return next;
-                    });
+                    if (amountEntryContext?.source === 'voice' && Number.isInteger(amountEntryContext.voiceIndex)) {
+                      const idx = amountEntryContext.voiceIndex as number;
+                      setParsedVoiceItems((prev) => {
+                        const next = prev.filter((_, itemIndex) => itemIndex !== idx);
+                        if (next.length === 0) {
+                          setIsVoiceSheetOpen(false);
+                        }
+                        return next;
+                      });
+                    }
                   }
 
                   setSelectedProductForAmount(null);
@@ -3409,11 +3963,145 @@ export default function App() {
                 }}
                 className="py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform"
               >
-                Добавить
+                {amountEntryContext?.source === 'barcode' ? 'Сохранить' : 'Добавить'}
               </button>
             </div>
           </div>
         )}
+      </BottomSheet>
+
+      {/* Проверьте результат — единый черновик перед сохранением (фото/голос/поиск) */}
+      <BottomSheet
+        isOpen={isReviewSheetOpen}
+        onClose={discardReviewDraft}
+        title="Проверьте результат"
+      >
+        <div className="space-y-5">
+          {/* Приём пищи — можно поменять прямо здесь */}
+          <div className="flex bg-zinc-900/50 p-1 rounded-xl border border-white/5">
+            {[
+              { id: 'BREAKFAST', label: 'Завтрак' },
+              { id: 'LUNCH', label: 'Обед' },
+              { id: 'DINNER', label: 'Ужин' },
+              { id: 'SNACK', label: 'Перекус' },
+            ].map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setSelectedMealType(m.id)}
+                className={cn(
+                  "flex-1 py-2 text-xs font-medium rounded-lg transition-all",
+                  selectedMealType === m.id
+                    ? "bg-emerald-500 text-white shadow-lg"
+                    : "text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Список продуктов в черновике */}
+          {reviewItems.length === 0 ? (
+            <p className="text-sm text-zinc-500 text-center py-6">Список пуст</p>
+          ) : (
+            <div className="space-y-2">
+              {reviewItems.map((item, idx) => {
+                const factor = item.amount / 100;
+                const isEditing = reviewEditIndex === idx;
+                return (
+                  <div key={item.tempId} className="bg-zinc-800/50 border border-zinc-800 rounded-xl p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <button
+                        onClick={() => {
+                          if (isEditing) {
+                            setReviewEditIndex(null);
+                          } else {
+                            setReviewEditIndex(idx);
+                            setReviewEditAmount(String(item.amount));
+                          }
+                        }}
+                        className="flex-1 min-w-0 text-left"
+                      >
+                        <p className="font-semibold text-zinc-200 truncate">{item.product.name}</p>
+                        <p className="text-[11px] text-zinc-500 mt-0.5">
+                          {Math.round(item.amount)} г · {Math.round(item.product.calories * factor)} ккал
+                        </p>
+                        <p className="text-[11px] text-zinc-500">
+                          Б {Math.round(item.product.protein * factor)} · Ж {Math.round(item.product.fat * factor)} · У {Math.round(item.product.carbs * factor)}
+                        </p>
+                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => {
+                            setReviewEditIndex(isEditing ? null : idx);
+                            setReviewEditAmount(String(item.amount));
+                          }}
+                          className="p-2 bg-zinc-900 text-zinc-400 rounded-lg border border-zinc-700"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => removeReviewItem(item.tempId)}
+                          className="p-2 bg-zinc-900 text-red-400 rounded-lg border border-zinc-700"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {isEditing && (
+                      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-zinc-800">
+                        <input
+                          type="number"
+                          autoFocus
+                          value={reviewEditAmount}
+                          onChange={(e) => setReviewEditAmount(e.target.value)}
+                          className="flex-1 bg-zinc-900 border border-zinc-700 rounded-xl py-2 px-3 text-center text-zinc-100 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                        />
+                        <span className="text-xs text-zinc-500">г</span>
+                        <button
+                          onClick={() => updateReviewItemAmount(item.tempId, Math.max(1, Number(reviewEditAmount) || item.amount))}
+                          className="px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg"
+                        >
+                          Готово
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Добавить ещё продукт */}
+          <button
+            onClick={() => { setIsReviewSheetOpen(false); setIsSearchSheetOpen(true); }}
+            className="w-full py-3 rounded-xl border border-dashed border-zinc-700 text-emerald-500 text-sm font-bold flex items-center justify-center gap-2"
+          >
+            <Plus size={16} />
+            Добавить ещё продукт
+          </button>
+
+          {/* Итог записи */}
+          <div className="bg-zinc-900/50 border border-white/5 rounded-2xl p-4">
+            <div className="flex items-baseline justify-between mb-1">
+              <span className="text-xs font-bold text-zinc-400 uppercase tracking-wide">Итог записи</span>
+              <span className="text-xl font-bold text-emerald-500">{Math.round(reviewTotals.calories)} ккал</span>
+            </div>
+            <p className="text-xs text-zinc-500">
+              Б {Math.round(reviewTotals.protein)} г · Ж {Math.round(reviewTotals.fat)} г · У {Math.round(reviewTotals.carbs)} г
+            </p>
+          </div>
+
+          <button
+            onClick={saveReviewDraft}
+            disabled={reviewItems.length === 0 || isSavingReview}
+            className="w-full py-4 bg-emerald-500 disabled:bg-zinc-800 disabled:text-zinc-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform flex items-center justify-center gap-2"
+          >
+            {isSavingReview ? <Loader2 className="animate-spin" size={18} /> : null}
+            Сохранить
+          </button>
+        </div>
       </BottomSheet>
 
       {/* Распознавание фото */}

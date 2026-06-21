@@ -38,6 +38,11 @@ model User {
 
   // Связь с Telegram-ботом (новое)
   telegramAccount     TelegramAccount?
+
+  // Связи "Мои" / Недавние (новое, v0.3)
+  customProducts      Product[]            @relation("UserProducts")
+  recipes             Recipe[]
+  recentFoods         RecentFood[]
 }
 
 // ─── Профиль нутрициолога ────────────────────────────────────────────────────
@@ -223,7 +228,66 @@ model Product {
   mealItems      MealItem[]
   recognitionCorrections RecognitionCorrection[]
 
+  // ─── "Мои" продукты и блюда (новое, v0.3) ──────────────────────────────────
+  // catalog (общая база) | off (Open Food Facts) | ai (распознано AI) | user (свой продукт) | recipe (блюдо из "Мои")
+  source           String   @default("catalog")
+  createdByUserId  String?
+  createdByUser    User?    @relation("UserProducts", fields: [createdByUserId], references: [id])
+  // Если этот Product — "снимок" пользовательского блюда, ссылка на Recipe
+  recipeId         String?  @unique
+  recipe           Recipe?  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  recentFoods      RecentFood[]
+  recipeIngredients RecipeIngredient[]
+
   @@unique([name, brand])
+}
+
+// ─── "Мои блюда" — пользовательские рецепты из ингредиентов (новое, v0.3) ───
+
+model Recipe {
+  id                         String             @id @default(cuid())
+  userId                     String
+  user                       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                       String
+  totalIngredientWeightGrams Float
+  cookedWeightGrams          Float
+  ingredients                RecipeIngredient[]
+  // 1:1 со "снимком"-продуктом, который реально кладётся в дневник
+  product                    Product?
+  createdAt                  DateTime           @default(now())
+  updatedAt                  DateTime           @updatedAt
+
+  @@index([userId])
+}
+
+model RecipeIngredient {
+  id          String  @id @default(cuid())
+  recipeId    String
+  recipe      Recipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product @relation(fields: [productId], references: [id])
+  weightGrams Float
+  calories    Float
+  protein     Float
+  fat         Float
+  carbs       Float
+}
+
+// ─── "Недавние" продукты/блюда (новое, v0.3) ────────────────────────────────
+
+model RecentFood {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  lastWeightGrams Float?
+  useCount        Int      @default(1)
+  lastUsedAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  @@unique([userId, productId])
+  @@index([userId, lastUsedAt])
 }
 
 model RecognitionCorrection {

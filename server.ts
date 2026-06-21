@@ -70,6 +70,10 @@ const inMemoryDiary = new Map<string, InMemoryDiaryState>();
 const inMemoryRecognitionCorrections = new Map<string, InMemoryRecognitionCorrection[]>();
 const barcodeLookupCache = new Map<string, { expiresAt: number; product: any }>();
 const productSearchCache = new Map<string, { expiresAt: number; results: any[] }>();
+// "Недавние" / "Мои" (продукты и блюда) — память для режима без БД
+const inMemoryRecent = new Map<string, any[]>();
+const inMemoryCustomProducts = new Map<string, any[]>();
+const inMemoryRecipes = new Map<string, any[]>();
 
 const BARCODE_PREFERRED_COUNTRY = (process.env.BARCODE_PREFERRED_COUNTRY || "ru").toLowerCase();
 const BARCODE_PREFERRED_LANG = (process.env.BARCODE_PREFERRED_LANG || "ru").toLowerCase();
@@ -92,6 +96,50 @@ function getOrCreateInMemoryRecognitionCorrections(userId: string) {
     inMemoryRecognitionCorrections.set(userId, []);
   }
   return inMemoryRecognitionCorrections.get(userId)!;
+}
+
+function getOrCreateInMemoryRecent(userId: string) {
+  if (!inMemoryRecent.has(userId)) inMemoryRecent.set(userId, []);
+  return inMemoryRecent.get(userId)!;
+}
+
+function getOrCreateInMemoryCustomProducts(userId: string) {
+  if (!inMemoryCustomProducts.has(userId)) inMemoryCustomProducts.set(userId, []);
+  return inMemoryCustomProducts.get(userId)!;
+}
+
+function getOrCreateInMemoryRecipes(userId: string) {
+  if (!inMemoryRecipes.has(userId)) inMemoryRecipes.set(userId, []);
+  return inMemoryRecipes.get(userId)!;
+}
+
+// Запомнить продукт как "недавний" (используется после успешного /api/diary/add)
+function touchInMemoryRecent(userId: string, product: any, weightGrams: number) {
+  const list = getOrCreateInMemoryRecent(userId);
+  const existing = list.find((r: any) => r.productId === product.id);
+  if (existing) {
+    existing.useCount += 1;
+    existing.lastUsedAt = Date.now();
+    existing.lastWeightGrams = weightGrams;
+    existing.product = product;
+  } else {
+    list.unshift({
+      id: `recent-${product.id}`,
+      productId: product.id,
+      product,
+      useCount: 1,
+      lastUsedAt: Date.now(),
+      lastWeightGrams: weightGrams
+    });
+  }
+}
+
+async function touchRecentFood(userId: string, productId: string, weightGrams: number) {
+  await prisma.recentFood.upsert({
+    where: { userId_productId: { userId, productId } },
+    update: { lastWeightGrams: weightGrams, lastUsedAt: new Date(), useCount: { increment: 1 } },
+    create: { userId, productId, lastWeightGrams: weightGrams }
+  });
 }
 
 function toDateKey(date: Date) {
@@ -642,12 +690,12 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
     ? await prisma.product.findMany({
         where: {
           OR: [
-            { name: { contains: normalizedQuery } },
-            { name: { contains: normalizedInput } },
-            { name: { contains: englishQuery } },
-            ...searchTerms.map((term) => ({ name: { contains: term } })),
-            ...queryTokens.map((term) => ({ name: { contains: term } })),
-            { brand: { contains: normalizedInput } },
+            { name: { contains: normalizedQuery, mode: "insensitive" } },
+            { name: { contains: normalizedInput, mode: "insensitive" } },
+            { name: { contains: englishQuery, mode: "insensitive" } },
+            ...searchTerms.map((term) => ({ name: { contains: term, mode: "insensitive" as const } })),
+            ...queryTokens.map((term) => ({ name: { contains: term, mode: "insensitive" as const } })),
+            { brand: { contains: normalizedInput, mode: "insensitive" } },
           ],
         },
         take: 30,
@@ -1132,7 +1180,7 @@ async function localizeTextToRussian(value: any, type: "name" | "brand") {
     const text = await generateAI(`Переведи на русский язык ${type === "name" ? "название продукта/блюда" : "название бренда"}: "${raw}".
 Сохрани смысл и пищевой контекст.
 Верни только JSON вида: {"text":"..."}`);
-    const parsed = JSON.parse(text || "{}");
+    const parsed = parseAiJsonPayload(text || "{}");
     const localized = String(parsed?.text || "").trim();
     if (localized) {
       cacheRuLocalization(cacheKey, localized);
@@ -1906,6 +1954,270 @@ async function startServer() {
     }
   });
 
+  // "Недавние" — список недавно использованных продуктов/блюд пользователя (без дублей)
+  app.get("/api/products/recent", async (req, res) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    if (!isDatabaseConfigured()) {
+      const list = getOrCreateInMemoryRecent(userId).slice(0, 30);
+      return res.json(list.map((r: any) => ({
+        id: r.product.id,
+        name: r.product.name,
+        brand: r.product.brand,
+        calories: r.product.calories,
+        protein: r.product.protein,
+        fat: r.product.fat,
+        carbs: r.product.carbs,
+        fiber: r.product.fiber,
+        lastWeightGrams: r.lastWeightGrams,
+        useCount: r.useCount
+      })));
+    }
+
+    try {
+      const recent = await prisma.recentFood.findMany({
+        where: { userId },
+        include: { product: true },
+        orderBy: { lastUsedAt: "desc" },
+        take: 30
+      });
+      res.json(recent.map((r: any) => ({
+        id: r.product.id,
+        name: r.product.name,
+        brand: r.product.brand,
+        calories: r.product.calories,
+        protein: r.product.protein,
+        fat: r.product.fat,
+        carbs: r.product.carbs,
+        fiber: r.product.fiber,
+        lastWeightGrams: r.lastWeightGrams,
+        useCount: r.useCount
+      })));
+    } catch (e: any) {
+      console.error("Recent Foods Error:", e);
+      res.status(500).json({ error: "Failed to load recent foods", message: e.message });
+    }
+  });
+
+  // "Мои" — собственные продукты и блюда пользователя
+  app.get("/api/products/mine", async (req, res) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    if (!isDatabaseConfigured()) {
+      return res.json({
+        products: getOrCreateInMemoryCustomProducts(userId),
+        recipes: getOrCreateInMemoryRecipes(userId)
+      });
+    }
+
+    try {
+      const [products, recipes] = await Promise.all([
+        prisma.product.findMany({
+          where: { createdByUserId: userId, source: "user" },
+          orderBy: { createdAt: "desc" }
+        }),
+        prisma.recipe.findMany({
+          where: { userId },
+          include: { product: true, ingredients: true },
+          orderBy: { createdAt: "desc" }
+        })
+      ]);
+      res.json({ products, recipes });
+    } catch (e: any) {
+      console.error("Mine Error:", e);
+      res.status(500).json({ error: "Failed to load 'Мои'", message: e.message });
+    }
+  });
+
+  // "Мои" → добавить свой продукт (КБЖУ хранится на 100 г)
+  app.post("/api/products/custom", async (req, res) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const name = String(req.body?.name || "").trim();
+    const brand = req.body?.brand ? String(req.body.brand).trim() : null;
+    const barcode = req.body?.barcode ? String(req.body.barcode).trim() : null;
+    const calories = numberOrZero(req.body?.calories);
+    const protein = numberOrZero(req.body?.protein);
+    const fat = numberOrZero(req.body?.fat);
+    const carbs = numberOrZero(req.body?.carbs);
+
+    if (!name) return res.status(400).json({ error: "Название обязательно" });
+
+    if (!isDatabaseConfigured()) {
+      const list = getOrCreateInMemoryCustomProducts(userId);
+      const product = {
+        id: `custom-${Date.now()}`,
+        name, brand, barcode, calories, protein, fat, carbs, fiber: null,
+        source: "user", createdAt: new Date().toISOString()
+      };
+      list.unshift(product);
+      return res.json(product);
+    }
+
+    try {
+      const product = await prisma.product.create({
+        data: { name, brand, barcode, calories, protein, fat, carbs, source: "user", createdByUserId: userId }
+      });
+      res.json(product);
+    } catch (e: any) {
+      console.error("Create Custom Product Error:", e);
+      res.status(500).json({ error: "Failed to create product", message: e.message });
+    }
+  });
+
+  app.delete("/api/products/custom/:id", async (req, res) => {
+    const userId = req.cookies.token;
+    const { id } = req.params;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    if (!isDatabaseConfigured()) {
+      const list = getOrCreateInMemoryCustomProducts(userId);
+      const idx = list.findIndex((p: any) => p.id === id);
+      if (idx === -1) return res.status(404).json({ error: "Not found" });
+      list.splice(idx, 1);
+      return res.json({ success: true, mode: "memory" });
+    }
+
+    const product = await prisma.product.findUnique({ where: { id } });
+    if (!product || product.createdByUserId !== userId) {
+      return res.status(403).json({ error: "Forbidden or not found" });
+    }
+    try {
+      await prisma.product.delete({ where: { id } });
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("Delete Custom Product Error:", e);
+      res.status(409).json({ error: "Продукт уже используется в дневнике, удаление невозможно" });
+    }
+  });
+
+  // "Мои блюда" — создать блюдо из ингредиентов (вес ингредиентов + вес готового блюда → КБЖУ на 100 г)
+  app.post("/api/recipes", async (req, res) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const name = String(req.body?.name || "").trim();
+    const ingredientsInput = Array.isArray(req.body?.ingredients) ? req.body.ingredients : [];
+    const cookedWeightGrams = numberOrZero(req.body?.cookedWeightGrams);
+
+    if (!name) return res.status(400).json({ error: "Название блюда обязательно" });
+    if (ingredientsInput.length === 0) return res.status(400).json({ error: "Добавьте хотя бы один ингредиент" });
+
+    if (!isDatabaseConfigured()) {
+      let totalWeight = 0, totalCal = 0, totalProtein = 0, totalFat = 0, totalCarbs = 0;
+      const ingredients = ingredientsInput.map((ing: any) => {
+        const weightGrams = numberOrZero(ing.weightGrams);
+        const factor = weightGrams / 100;
+        const calories = numberOrZero(ing.calories) * factor;
+        const protein = numberOrZero(ing.protein) * factor;
+        const fat = numberOrZero(ing.fat) * factor;
+        const carbs = numberOrZero(ing.carbs) * factor;
+        totalWeight += weightGrams;
+        totalCal += calories; totalProtein += protein; totalFat += fat; totalCarbs += carbs;
+        return { productId: ing.productId, name: ing.name, weightGrams, calories, protein, fat, carbs };
+      });
+      const cooked = cookedWeightGrams > 0 ? cookedWeightGrams : totalWeight;
+      const cookedFactor = cooked > 0 ? 100 / cooked : 0;
+      const product = {
+        id: `recipe-${Date.now()}`,
+        name, brand: null, source: "recipe",
+        calories: totalCal * cookedFactor, protein: totalProtein * cookedFactor,
+        fat: totalFat * cookedFactor, carbs: totalCarbs * cookedFactor, fiber: null
+      };
+      const recipe = {
+        id: `recipe-meta-${Date.now()}`, name, ingredients,
+        totalIngredientWeightGrams: totalWeight, cookedWeightGrams: cooked, product
+      };
+      getOrCreateInMemoryRecipes(userId).unshift(recipe);
+      return res.json(recipe);
+    }
+
+    try {
+      const productIds = ingredientsInput.map((ing: any) => String(ing.productId));
+      const products = await prisma.product.findMany({ where: { id: { in: productIds } } });
+      const productMap = new Map(products.map((p: any) => [p.id, p]));
+
+      let totalWeight = 0, totalCal = 0, totalProtein = 0, totalFat = 0, totalCarbs = 0;
+      const ingredientRows: any[] = [];
+      for (const ing of ingredientsInput) {
+        const product: any = productMap.get(String(ing.productId));
+        if (!product) continue;
+        const weightGrams = numberOrZero(ing.weightGrams);
+        const factor = weightGrams / 100;
+        const calories = product.calories * factor;
+        const protein = product.protein * factor;
+        const fat = product.fat * factor;
+        const carbs = product.carbs * factor;
+        totalWeight += weightGrams;
+        totalCal += calories; totalProtein += protein; totalFat += fat; totalCarbs += carbs;
+        ingredientRows.push({ productId: product.id, weightGrams, calories, protein, fat, carbs });
+      }
+
+      if (ingredientRows.length === 0) {
+        return res.status(400).json({ error: "Не найдены продукты для ингредиентов" });
+      }
+
+      const cooked = cookedWeightGrams > 0 ? cookedWeightGrams : totalWeight;
+      const cookedFactor = cooked > 0 ? 100 / cooked : 0;
+
+      const recipe = await prisma.recipe.create({
+        data: {
+          userId,
+          name,
+          totalIngredientWeightGrams: totalWeight,
+          cookedWeightGrams: cooked,
+          ingredients: { create: ingredientRows },
+          product: {
+            create: {
+              name,
+              source: "recipe",
+              createdByUserId: userId,
+              calories: totalCal * cookedFactor,
+              protein: totalProtein * cookedFactor,
+              fat: totalFat * cookedFactor,
+              carbs: totalCarbs * cookedFactor
+            }
+          }
+        },
+        include: { ingredients: true, product: true }
+      });
+
+      res.json(recipe);
+    } catch (e: any) {
+      console.error("Create Recipe Error:", e);
+      res.status(500).json({ error: "Failed to create recipe", message: e.message });
+    }
+  });
+
+  app.delete("/api/recipes/:id", async (req, res) => {
+    const userId = req.cookies.token;
+    const { id } = req.params;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    if (!isDatabaseConfigured()) {
+      const list = getOrCreateInMemoryRecipes(userId);
+      const idx = list.findIndex((r: any) => r.id === id);
+      if (idx === -1) return res.status(404).json({ error: "Not found" });
+      list.splice(idx, 1);
+      return res.json({ success: true, mode: "memory" });
+    }
+
+    const recipe = await prisma.recipe.findUnique({ where: { id } });
+    if (!recipe || recipe.userId !== userId) {
+      return res.status(403).json({ error: "Forbidden or not found" });
+    }
+    try {
+      await prisma.recipe.delete({ where: { id } }); // cascade удалит связанный Product и RecipeIngredient
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("Delete Recipe Error:", e);
+      res.status(409).json({ error: "Блюдо уже используется в дневнике, удаление невозможно" });
+    }
+  });
+
   app.post("/api/photo/recognize", async (req, res) => {
     try {
       const image = req.body?.image;
@@ -2308,6 +2620,7 @@ async function startServer() {
       };
 
       meal.items.push(mealItem);
+      touchInMemoryRecent(userId, fallbackProduct, Number(amount) || 0);
       return res.json({ ...mealItem, mode: "memory", date: targetDateKey });
     }
 
@@ -2343,7 +2656,47 @@ async function startServer() {
       }
     });
 
+    try {
+      await touchRecentFood(userId, productId, Number(amount));
+    } catch (e) {
+      console.error("touchRecentFood error:", e);
+    }
+
     res.json(mealItem);
+  });
+
+  // Diary: Edit meal item weight (calories/macros recalculate on read from product x amount)
+  app.patch("/api/diary/item/:id", async (req, res) => {
+    const userId = req.cookies.token;
+    const { id } = req.params;
+    const amount = Number(req.body?.amount);
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ error: "Invalid amount" });
+    }
+
+    if (!isDatabaseConfigured()) {
+      const memoryDiary = getOrCreateInMemoryDiary(userId);
+      let updated = false;
+      memoryDiary.meals.forEach((meal: any) => {
+        meal.items.forEach((item: any) => {
+          if (item.id === id) {
+            item.amount = amount;
+            updated = true;
+          }
+        });
+      });
+      if (!updated) return res.status(404).json({ error: "Not found" });
+      return res.json({ success: true, mode: "memory" });
+    }
+
+    const item = await prisma.mealItem.findUnique({ where: { id }, include: { meal: true } });
+    if (!item || item.meal.userId !== userId) {
+      return res.status(403).json({ error: "Forbidden or not found" });
+    }
+
+    const updatedItem = await prisma.mealItem.update({ where: { id }, data: { amount } });
+    res.json(updatedItem);
   });
 
   // Voice: Parse transcript into food items
@@ -2357,7 +2710,7 @@ async function startServer() {
         Если количество не указано, оцени типичную порцию.
         Верни только JSON-массив объектов: [{ "name": "название на русском", "amount": number }].`);
 
-      const itemsRaw = JSON.parse(responseText || "[]");
+      const itemsRaw = parseAiJsonPayload(responseText || "[]");
       const items = Array.isArray(itemsRaw) ? itemsRaw : [];
       
       // Match each item with database products
@@ -2372,8 +2725,8 @@ async function startServer() {
           ? await prisma.product.findMany({
               where: {
                 OR: [
-                  { name: { contains: normalizedQuery } },
-                  { name: { contains: item.name } }
+                  { name: { contains: normalizedQuery, mode: "insensitive" } },
+                  { brand: { contains: normalizedQuery, mode: "insensitive" } }
                 ]
               },
               take: 1
@@ -2393,7 +2746,7 @@ async function startServer() {
             try {
               const usdaQueryText = await generateAI(`Преобразуй русское/смешанное название продукта в короткий английский запрос для USDA: "${item.name}".
 Верни только JSON вида: {"english":"..."}`);
-              const usdaQueryData = JSON.parse(usdaQueryText || '{}');
+              const usdaQueryData = parseAiJsonPayload(usdaQueryText || '{}');
               usdaQuery = String(usdaQueryData?.english || item.name).trim() || item.name;
             } catch {
               usdaQuery = item.name;
@@ -2450,7 +2803,7 @@ async function startServer() {
             - aminoAcids: mg на 100 г
             - fattyAcids: g на 100 г, кроме Cholesterol (mg)
             - carbohydrateTypes: g на 100 г`);
-          const est = JSON.parse(estText || '{}');
+          const est = parseAiJsonPayload(estText || '{}');
           const localizedAiProduct = await localizeProductForRussianAudience({
             id: `ai-est-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
             name: `✨ ${item.name} (AI Оценка)`,

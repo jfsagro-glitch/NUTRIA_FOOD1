@@ -9,7 +9,7 @@
  *      цель, режим отслеживания, целевые показатели, подтверждение.
  *  4.2 Основные команды — добавить приём пищи (текст/голос), посмотреть
  *      аналитику, изменить цель, настраиваемые напоминания.
- *h
+ *
  * Архитектура:
  *  - Webhook, а не long polling — бот живёт в том же Express-процессе
  *    (server.ts), что не требует отдельного always-on воркера и совместимо
@@ -401,7 +401,7 @@ async function handleTargetsValuesInput(
     .split(/\s+/)
     .map((s) => parseFloat(s.replace(",", ".")));
 
-  if (draft.targetsUnit === "kcal" ) {
+  if (draft.targetsUnit === "kcal") {
     const calories = nums[0];
     if (!Number.isFinite(calories) || calories < 800 || calories > 6000) {
       return sendMessage(chatId, "Введи число калорий от 800 до 6000. Например: 2000");
