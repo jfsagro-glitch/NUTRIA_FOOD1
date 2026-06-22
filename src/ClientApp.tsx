@@ -27,7 +27,8 @@ import {
   Calendar,
   ChevronRight,
   ArrowRight,
-  UserRound
+  UserRound,
+  Sparkles
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -2392,6 +2393,7 @@ export default function App() {
   const [dishIngredients, setDishIngredients] = useState<DishIngredientDraft[]>([]);
   const [dishIngredientQuery, setDishIngredientQuery] = useState('');
   const [dishIngredientResults, setDishIngredientResults] = useState<Product[]>([]);
+  const [isAutoFillingDish, setIsAutoFillingDish] = useState(false);
   const [isSavingDish, setIsSavingDish] = useState(false);
   const [editingMealItem, setEditingMealItem] = useState<{ id: string; amount: number; name: string } | null>(null);
   const [editAmountValue, setEditAmountValue] = useState('');
@@ -3158,6 +3160,40 @@ export default function App() {
 
   const removeDishIngredient = (index: number) => {
     setDishIngredients((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // AI разбирает название блюда на состав + граммовку на одну порцию (тот же
+  // движок декомпозиции и матчинга, что и в голосовом дневнике, чтобы не
+  // дублировать промпт/логику матчинга).
+  const aiFillDish = async () => {
+    if (!dishName.trim()) return;
+    setIsAutoFillingDish(true);
+    try {
+      const res = await fetch('/api/voice/parse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: dishName.trim() }),
+      });
+      if (res.ok) {
+        const items: { name: string; amount: number; product: Product | null }[] = await res.json();
+        const matched = items
+          .filter((it) => it.product)
+          .map((it) => ({
+            productId: it.product!.id,
+            name: it.product!.name,
+            weightGrams: String(Math.max(1, Math.round(it.amount))),
+            calories: it.product!.calories,
+            protein: it.product!.protein,
+            fat: it.product!.fat,
+            carbs: it.product!.carbs,
+          }));
+        if (matched.length > 0) setDishIngredients(matched);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsAutoFillingDish(false);
+    }
   };
 
   const dishTotals = dishIngredients.reduce(
@@ -3961,6 +3997,15 @@ export default function App() {
             value={dishName}
             onChange={(e) => setDishName(e.target.value)}
           />
+
+          <button
+            onClick={() => { void aiFillDish(); }}
+            disabled={!dishName.trim() || isAutoFillingDish}
+            className="w-full py-2.5 bg-zinc-800 border border-emerald-500/40 text-emerald-400 text-sm font-medium rounded-xl active:scale-95 transition-transform disabled:opacity-40 flex items-center justify-center gap-2"
+          >
+            <Sparkles size={16} />
+            {isAutoFillingDish ? 'Подбираем состав...' : 'Заполнить автоматически (AI)'}
+          </button>
 
           <div className="relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
