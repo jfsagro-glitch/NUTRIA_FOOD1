@@ -2245,14 +2245,15 @@ async function startServer() {
       });
       const cooked = cookedWeightGrams > 0 ? cookedWeightGrams : totalWeight;
       const cookedFactor = cooked > 0 ? 100 / cooked : 0;
+      const recipeId = `recipe-meta-${Date.now()}`;
       const product = {
         id: `recipe-${Date.now()}`,
-        name, brand: null, source: "recipe",
+        name, brand: null, source: "recipe", recipeId,
         calories: totalCal * cookedFactor, protein: totalProtein * cookedFactor,
         fat: totalFat * cookedFactor, carbs: totalCarbs * cookedFactor, fiber: null
       };
       const recipe = {
-        id: `recipe-meta-${Date.now()}`, name, ingredients,
+        id: recipeId, name, ingredients,
         totalIngredientWeightGrams: totalWeight, cookedWeightGrams: cooked, product
       };
       getOrCreateInMemoryRecipes(userId).unshift(recipe);
@@ -2339,6 +2340,115 @@ async function startServer() {
     } catch (e: any) {
       console.error("Delete Recipe Error:", e);
       res.status(409).json({ error: "Блюдо уже используется в дневнике, удаление невозможно" });
+    }
+  });
+
+  // Правка состава блюда (распознанного голосом/фото или созданного в "Мои") — добавить/убрать
+  // ингредиент, поменять граммовку. Пересчитывает агрегированный снимок-продукт по той же
+  // логике, что и создание блюда (POST /api/recipes).
+  app.patch("/api/recipes/:id", async (req, res) => {
+    const userId = req.cookies.token;
+    const { id } = req.params;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const name = String(req.body?.name || "").trim();
+    const ingredientsInput = Array.isArray(req.body?.ingredients) ? req.body.ingredients : [];
+    const cookedWeightGrams = numberOrZero(req.body?.cookedWeightGrams);
+
+    if (!name) return res.status(400).json({ error: "Название блюда обязательно" });
+    if (ingredientsInput.length === 0) return res.status(400).json({ error: "Добавьте хотя бы один ингредиент" });
+
+    if (!isDatabaseConfigured()) {
+      const list = getOrCreateInMemoryRecipes(userId);
+      const recipe = list.find((r: any) => r.id === id);
+      if (!recipe) return res.status(404).json({ error: "Not found" });
+
+      let totalWeight = 0, totalCal = 0, totalProtein = 0, totalFat = 0, totalCarbs = 0;
+      const ingredients = ingredientsInput.map((ing: any) => {
+        const weightGrams = numberOrZero(ing.weightGrams);
+        const factor = weightGrams / 100;
+        const calories = numberOrZero(ing.calories) * factor;
+        const protein = numberOrZero(ing.protein) * factor;
+        const fat = numberOrZero(ing.fat) * factor;
+        const carbs = numberOrZero(ing.carbs) * factor;
+        totalWeight += weightGrams;
+        totalCal += calories; totalProtein += protein; totalFat += fat; totalCarbs += carbs;
+        return { productId: ing.productId, name: ing.name, weightGrams, calories, protein, fat, carbs };
+      });
+      const cooked = cookedWeightGrams > 0 ? cookedWeightGrams : totalWeight;
+      const cookedFactor = cooked > 0 ? 100 / cooked : 0;
+
+      recipe.name = name;
+      recipe.ingredients = ingredients;
+      recipe.totalIngredientWeightGrams = totalWeight;
+      recipe.cookedWeightGrams = cooked;
+      recipe.product = {
+        ...recipe.product,
+        name,
+        calories: totalCal * cookedFactor, protein: totalProtein * cookedFactor,
+        fat: totalFat * cookedFactor, carbs: totalCarbs * cookedFactor
+      };
+      return res.json(recipe);
+    }
+
+    const existing = await prisma.recipe.findUnique({ where: { id } });
+    if (!existing || existing.userId !== userId) {
+      return res.status(403).json({ error: "Forbidden or not found" });
+    }
+
+    try {
+      const productIds = ingredientsInput.map((ing: any) => String(ing.productId));
+      const products = await prisma.product.findMany({ where: { id: { in: productIds } } });
+      const productMap = new Map(products.map((p: any) => [p.id, p]));
+
+      let totalWeight = 0, totalCal = 0, totalProtein = 0, totalFat = 0, totalCarbs = 0;
+      const ingredientRows: any[] = [];
+      for (const ing of ingredientsInput) {
+        const product: any = productMap.get(String(ing.productId));
+        if (!product) continue;
+        const weightGrams = numberOrZero(ing.weightGrams);
+        const factor = weightGrams / 100;
+        const calories = product.calories * factor;
+        const protein = product.protein * factor;
+        const fat = product.fat * factor;
+        const carbs = product.carbs * factor;
+        totalWeight += weightGrams;
+        totalCal += calories; totalProtein += protein; totalFat += fat; totalCarbs += carbs;
+        ingredientRows.push({ productId: product.id, weightGrams, calories, protein, fat, carbs });
+      }
+
+      if (ingredientRows.length === 0) {
+        return res.status(400).json({ error: "Не найдены продукты для ингредиентов" });
+      }
+
+      const cooked = cookedWeightGrams > 0 ? cookedWeightGrams : totalWeight;
+      const cookedFactor = cooked > 0 ? 100 / cooked : 0;
+
+      await prisma.recipeIngredient.deleteMany({ where: { recipeId: id } });
+      const recipe = await prisma.recipe.update({
+        where: { id },
+        data: {
+          name,
+          totalIngredientWeightGrams: totalWeight,
+          cookedWeightGrams: cooked,
+          ingredients: { create: ingredientRows },
+          product: {
+            update: {
+              name,
+              calories: totalCal * cookedFactor,
+              protein: totalProtein * cookedFactor,
+              fat: totalFat * cookedFactor,
+              carbs: totalCarbs * cookedFactor
+            }
+          }
+        },
+        include: { ingredients: true, product: true }
+      });
+
+      res.json(recipe);
+    } catch (e: any) {
+      console.error("Update Recipe Error:", e);
+      res.status(500).json({ error: "Failed to update recipe", message: e.message });
     }
   });
 

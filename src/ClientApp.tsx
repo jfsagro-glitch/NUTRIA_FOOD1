@@ -28,7 +28,8 @@ import {
   ChevronRight,
   ArrowRight,
   UserRound,
-  Sparkles
+  Sparkles,
+  ListChecks
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -51,6 +52,8 @@ interface Product {
   isUsda?: boolean;
   isAiEstimated?: boolean;
   explanation?: string;
+  // Если продукт — снимок блюда из ингредиентов (распознано голосом/фото или "Создать блюдо")
+  recipeId?: string;
   // Micronutrients stored as JSON in DB, parsed here
   vitamins?: Record<string, number>;
   minerals?: Record<string, number>;
@@ -92,6 +95,9 @@ interface ReviewDraftItem {
   product: Product;
   amount: number;
   usdaData?: Product;
+  // Если этот пункт — блюдо, собранное из ингредиентов (голос/фото "Котлета по-киевски" и т.п.),
+  // храним состав, чтобы можно было открыть его на правку без повторного запроса к серверу
+  dishIngredients?: DishIngredientDraft[];
 }
 
 interface NutrientTotals {
@@ -2396,6 +2402,9 @@ export default function App() {
   const [dishIngredientResults, setDishIngredientResults] = useState<Product[]>([]);
   const [isAutoFillingDish, setIsAutoFillingDish] = useState(false);
   const [isSavingDish, setIsSavingDish] = useState(false);
+  // Правка состава блюда прямо в черновике «Проверьте результат» — переиспользует
+  // состояние dishName/dishIngredients/dishCookedWeight выше (создание и правка не идут одновременно)
+  const [editDishReviewTempId, setEditDishReviewTempId] = useState<string | null>(null);
   const [editingMealItem, setEditingMealItem] = useState<{ id: string; amount: number; name: string } | null>(null);
   const [editAmountValue, setEditAmountValue] = useState('');
   const [selectedDiaryDate, setSelectedDiaryDate] = useState<string>(toDateKey(new Date()));
@@ -3011,10 +3020,10 @@ export default function App() {
 
   // --- «Проверьте результат»: единый черновик перед сохранением (см. прототип) ---
 
-  const addToReviewDraft = (product: Product, amount: number, usdaData?: Product) => {
+  const addToReviewDraft = (product: Product, amount: number, usdaData?: Product, dishIngredients?: DishIngredientDraft[]) => {
     setReviewItems((prev) => [
       ...prev,
-      { tempId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, product, amount, usdaData }
+      { tempId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, product, amount, usdaData, dishIngredients }
     ]);
     setIsReviewSheetOpen(true);
   };
@@ -3211,26 +3220,66 @@ export default function App() {
     { weight: 0, calories: 0, protein: 0, fat: 0, carbs: 0 }
   );
 
+  // Открыть правку состава блюда прямо в черновике «Проверьте результат»
+  const openEditDishIngredients = (item: ReviewDraftItem) => {
+    setEditDishReviewTempId(item.tempId);
+    setDishName(item.product.name);
+    setDishCookedWeight(String(Math.round(item.amount)));
+    setDishIngredients(item.dishIngredients ? item.dishIngredients.map((ing) => ({ ...ing })) : []);
+    setDishIngredientQuery('');
+    setDishIngredientResults([]);
+  };
+
+  const closeEditDishIngredients = () => {
+    setEditDishReviewTempId(null);
+    setDishName('');
+    setDishCookedWeight('');
+    setDishIngredients([]);
+    setDishIngredientQuery('');
+    setDishIngredientResults([]);
+  };
+
   const submitDish = async () => {
     if (!dishName.trim() || dishIngredients.length === 0) return;
     setIsSavingDish(true);
+    const payload = {
+      name: dishName.trim(),
+      cookedWeightGrams: Number(dishCookedWeight) || dishTotals.weight,
+      ingredients: dishIngredients.map((ing) => ({
+        productId: ing.productId,
+        name: ing.name,
+        weightGrams: Number(ing.weightGrams) || 0,
+        calories: ing.calories,
+        protein: ing.protein,
+        fat: ing.fat,
+        carbs: ing.carbs,
+      }))
+    };
     try {
+      if (editDishReviewTempId) {
+        const recipeId = reviewItems.find((it) => it.tempId === editDishReviewTempId)?.product.recipeId;
+        if (!recipeId) { closeEditDishIngredients(); return; }
+        const res = await fetch(`/api/recipes/${recipeId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          const recipe = await res.json();
+          const updatedProduct: Product = { ...recipe.product, recipeId: recipe.product?.recipeId || recipe.id };
+          const newWeight = payload.cookedWeightGrams;
+          const savedIngredients = dishIngredients.map((ing) => ({ ...ing }));
+          setReviewItems((prev) => prev.map((it) => it.tempId === editDishReviewTempId
+            ? { ...it, product: updatedProduct, amount: newWeight, dishIngredients: savedIngredients }
+            : it));
+          closeEditDishIngredients();
+        }
+        return;
+      }
       const res = await fetch('/api/recipes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: dishName.trim(),
-          cookedWeightGrams: Number(dishCookedWeight) || dishTotals.weight,
-          ingredients: dishIngredients.map((ing) => ({
-            productId: ing.productId,
-            name: ing.name,
-            weightGrams: Number(ing.weightGrams) || 0,
-            calories: ing.calories,
-            protein: ing.protein,
-            fat: ing.fat,
-            carbs: ing.carbs,
-          }))
-        })
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         setIsCreateDishOpen(false);
@@ -3626,7 +3675,17 @@ export default function App() {
             });
             if (recipeRes.ok) {
               const recipe = await recipeRes.json();
-              addToReviewDraft(recipe.product, totalWeight);
+              const product: Product = { ...recipe.product, recipeId: recipe.product?.recipeId || recipe.id };
+              const dishIngredientsDraft: DishIngredientDraft[] = weighedIngredients.map((ing) => ({
+                productId: ing.product.id,
+                name: ing.product.name,
+                weightGrams: String(ing.weightGrams),
+                calories: ing.product.calories,
+                protein: ing.product.protein,
+                fat: ing.product.fat,
+                carbs: ing.product.carbs,
+              }));
+              addToReviewDraft(product, totalWeight, undefined, dishIngredientsDraft);
               dishSaved = true;
             }
           } catch (e) {
@@ -4148,6 +4207,88 @@ export default function App() {
         </div>
       </BottomSheet>
 
+      {/* «Проверьте результат» → правка состава блюда, собранного из ингредиентов (голос/фото) */}
+      <BottomSheet isOpen={editDishReviewTempId !== null} onClose={closeEditDishIngredients} title="Состав блюда">
+        <div className="space-y-3">
+          <input
+            type="text" placeholder="Название блюда"
+            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            value={dishName}
+            onChange={(e) => setDishName(e.target.value)}
+          />
+
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+            <input
+              type="text" placeholder="Добавить ингредиент из базы..."
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 pl-11 pr-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              value={dishIngredientQuery}
+              onChange={(e) => { void searchDishIngredients(e.target.value); }}
+            />
+          </div>
+          {dishIngredientResults.length > 0 && (
+            <div className="space-y-1 max-h-40 overflow-y-auto">
+              {dishIngredientResults.map((product) => (
+                <button
+                  key={product.id}
+                  onClick={() => addDishIngredient(product)}
+                  className="w-full text-left bg-zinc-800/50 rounded-lg p-2.5 text-sm text-zinc-200 active:bg-zinc-800"
+                >
+                  {product.name} <span className="text-zinc-500 text-xs">{product.brand}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {dishIngredients.length > 0 && (
+            <div className="space-y-2 pt-2">
+              {dishIngredients.map((ing, idx) => (
+                <div key={`${ing.productId}-${idx}`} className="flex items-center gap-2 bg-zinc-800/50 rounded-xl p-3">
+                  <span className="flex-1 text-sm text-zinc-200 truncate">{ing.name}</span>
+                  <input
+                    type="number"
+                    className="w-20 bg-zinc-900 border border-zinc-700 rounded-lg py-1.5 px-2 text-zinc-100 text-sm text-right"
+                    value={ing.weightGrams}
+                    onChange={(e) => setDishIngredients((prev) => prev.map((it, i) => i === idx ? { ...it, weightGrams: e.target.value } : it))}
+                  />
+                  <span className="text-xs text-zinc-500">г</span>
+                  <button onClick={() => removeDishIngredient(idx)} className="text-red-400 active:scale-90 transition-transform">
+                    <X size={16} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div>
+            <label className="text-[11px] text-zinc-500 uppercase tracking-wider">Вес готового блюда, г</label>
+            <input
+              type="number" placeholder={dishTotals.weight ? String(Math.round(dishTotals.weight)) : 'Вес готового блюда'}
+              className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              value={dishCookedWeight}
+              onChange={(e) => setDishCookedWeight(e.target.value)}
+            />
+          </div>
+
+          {dishIngredients.length > 0 && (
+            <div className="bg-zinc-800/50 rounded-xl p-3 grid grid-cols-4 gap-2 text-center">
+              <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.calories)}</p><p className="text-[9px] text-zinc-500 uppercase">ккал</p></div>
+              <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.protein)}</p><p className="text-[9px] text-zinc-500 uppercase">белки</p></div>
+              <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.fat)}</p><p className="text-[9px] text-zinc-500 uppercase">жиры</p></div>
+              <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.carbs)}</p><p className="text-[9px] text-zinc-500 uppercase">углеводы</p></div>
+            </div>
+          )}
+
+          <button
+            onClick={() => { void submitDish(); }}
+            disabled={!dishName.trim() || dishIngredients.length === 0 || isSavingDish}
+            className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform disabled:opacity-40"
+          >
+            {isSavingDish ? 'Сохранение...' : 'Сохранить изменения'}
+          </button>
+        </div>
+      </BottomSheet>
+
       {/* Редактирование веса записи дневника */}
       <BottomSheet isOpen={!!editingMealItem} onClose={() => setEditingMealItem(null)} title={editingMealItem?.name || 'Изменить вес'}>
         {editingMealItem && (
@@ -4322,6 +4463,15 @@ export default function App() {
                         </p>
                       </button>
                       <div className="flex items-center gap-2 shrink-0">
+                        {item.product.recipeId && (
+                          <button
+                            onClick={() => openEditDishIngredients(item)}
+                            className="p-2 bg-zinc-900 text-emerald-400 rounded-lg border border-zinc-700"
+                            title="Состав блюда"
+                          >
+                            <ListChecks size={14} />
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             setReviewEditIndex(isEditing ? null : idx);
