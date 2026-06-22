@@ -6,9 +6,8 @@ import {
   BarChart3, 
   Plus, 
   ChevronDown, 
-  ChevronUp, 
-  Flame, 
-  Zap, 
+  ChevronUp,
+  Zap,
   Target,
   Search,
   Camera,
@@ -1238,10 +1237,15 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
                 )}
               </motion.div>
             ))
-          ) : (
+          ) : meals.some((m: any) => m.items.length > 0) ? (
             <div className="flex flex-col items-center py-4 text-zinc-500">
               <Loader2 className="animate-spin mb-2" size={20} />
               <p className="text-xs">Анализируем ваш рацион...</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center py-6 text-center text-zinc-500">
+              <Target size={20} className="mb-2 opacity-60" />
+              <p className="text-xs">Добавьте продукты в дневник — здесь появятся персональные рекомендации</p>
             </div>
           )}
         </div>
