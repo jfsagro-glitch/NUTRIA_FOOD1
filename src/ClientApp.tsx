@@ -350,18 +350,18 @@ const FAB = ({ onClick }: { onClick: () => void }) => {
       animate={{
         scale: [1, 1.04, 1, 1.03, 1],
         boxShadow: [
-          '0 8px 24px rgba(16,185,129,0.35)',
-          '0 10px 28px rgba(16,185,129,0.5)',
-          '0 8px 24px rgba(16,185,129,0.35)',
-          '0 10px 28px rgba(16,185,129,0.48)',
-          '0 8px 24px rgba(16,185,129,0.35)'
+          '0 8px 24px rgba(0,115,112,0.35)',
+          '0 10px 28px rgba(0,115,112,0.5)',
+          '0 8px 24px rgba(0,115,112,0.35)',
+          '0 10px 28px rgba(0,115,112,0.48)',
+          '0 8px 24px rgba(0,115,112,0.35)'
         ]
       }}
       transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
       whileTap={{ scale: 0.9 }}
       whileHover={{ scale: 1.05 }}
       onClick={onClick}
-      className="fixed bottom-[72px] left-1/2 -translate-x-1/2 w-14 h-14 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-full flex items-center justify-center border border-emerald-300/20 z-50"
+      className="fixed bottom-[72px] left-1/2 -translate-x-1/2 w-14 h-14 bg-gradient-to-br from-emerald-400 to-emerald-500 rounded-full flex items-center justify-center border border-emerald-300/20 z-50"
     >
       <Plus size={32} className="text-white" />
     </motion.button>
@@ -904,11 +904,12 @@ const PROTO = {
   text: 'oklch(0.20 0.025 230)',
   textMid: 'oklch(0.48 0.04 215)',
   textLt: 'oklch(0.62 0.035 210)',
-  primary: '#10b981',
-  primaryLt: '#6ee7b7',
-  primaryMid: '#34d399',
-  primaryDk: '#047857',
-  terra: 'oklch(0.62 0.13 25)',
+  primary: 'oklch(0.50 0.09 192)',
+  primaryLt: 'oklch(0.85 0.055 192)',
+  primaryMid: 'oklch(0.65 0.075 192)',
+  primaryDk: 'oklch(0.35 0.09 192)',
+  terra: 'oklch(0.62 0.1 38)',
+  goalAchieved: 'oklch(0.50 0.12 158)',
   btnNutrients: 'linear-gradient(180deg, oklch(0.905 0.028 193), oklch(0.872 0.032 193))',
   btnAddMore: 'oklch(0.928 0.022 193)',
   tactileSoft: '0 1px 2px oklch(0.4 0.04 200 / 0.12), 0 2px 6px oklch(0.4 0.04 200 / 0.10)',
@@ -1054,8 +1055,9 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
   const fillLen = arcLen * ringPct;
   let ringLabel = 'Можно ещё';
   let ringValue = `${remaining} ккал`;
+  const goalJustAchieved = remaining === 0 && eaten > 0 && over === 0;
   if (over > 0) { ringLabel = 'Выше цели на'; ringValue = `${over} ккал`; }
-  else if (remaining === 0 && eaten > 0) { ringLabel = 'Дневная цель'; ringValue = 'достигнута'; }
+  else if (goalJustAchieved) { ringLabel = 'Дневная цель'; ringValue = 'достигнута'; }
 
   const totalGlasses = Math.ceil(waterGoal / 250);
   const filledGlasses = Math.round(waterIntake / 250);
@@ -1105,7 +1107,7 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
             </svg>
             <div className="absolute flex flex-col items-center text-center">
               <span style={{ fontSize: 11, color: PROTO.textLt }}>{ringLabel}</span>
-              <span className="font-display" style={{ fontSize: 30, fontWeight: 600, lineHeight: 1.2, color: over > 0 ? PROTO.terra : PROTO.text }}>{ringValue}</span>
+              <span className="font-display" style={{ fontSize: 30, fontWeight: 600, lineHeight: 1.2, color: over > 0 ? PROTO.terra : goalJustAchieved ? PROTO.goalAchieved : PROTO.text }}>{ringValue}</span>
               <span style={{ fontSize: 11, color: PROTO.textLt, marginTop: 2 }}>Цель: {calorieGoal} ккал</span>
             </div>
           </div>
@@ -3695,7 +3697,7 @@ export default function App() {
         <p className="text-zinc-500 mb-12 max-w-[240px]">Ваш персональный гид в мире осознанного питания</p>
         <button 
           onClick={login}
-          className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-[0_8px_24px_rgba(16,185,129,0.3)] active:scale-95 transition-transform"
+          className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-[0_8px_24px_rgba(0,115,112,0.3)] active:scale-95 transition-transform"
         >
           Начать путешествие
         </button>
@@ -4516,7 +4518,7 @@ export default function App() {
             {!isBarcodeScanning && (
               <ScanBarcode size={64} className="text-emerald-500/20 z-20" />
             )}
-            <div className="absolute inset-x-0 top-1/2 h-0.5 bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)] animate-pulse z-20" />
+            <div className="absolute inset-x-0 top-1/2 h-0.5 bg-emerald-500 shadow-[0_0_10px_rgba(0,115,112,0.8)] animate-pulse z-20" />
           </div>
           {barcodeScannerError && (
             <p className="text-xs text-orange-400 mb-3 text-center">{barcodeScannerError}</p>
