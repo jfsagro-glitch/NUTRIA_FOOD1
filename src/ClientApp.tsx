@@ -2363,7 +2363,6 @@ export default function App() {
   const [isListening, setIsListening] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [isParsingVoice, setIsParsingVoice] = useState(false);
-  const [parsedVoiceItems, setParsedVoiceItems] = useState<any[]>([]);
   const getCurrentMealType = () => {
     const hour = new Date().getHours();
     if (hour >= 5 && hour < 11) return 'BREAKFAST';
@@ -2430,7 +2429,7 @@ export default function App() {
 
   const [selectedProductForAmount, setSelectedProductForAmount] = useState<Product | null>(null);
   const [foodAmount, setFoodAmount] = useState('100');
-  const [amountEntryContext, setAmountEntryContext] = useState<{ source: 'search' | 'photo' | 'voice' | 'barcode'; voiceIndex?: number } | null>(null);
+  const [amountEntryContext, setAmountEntryContext] = useState<{ source: 'search' | 'photo' | 'barcode' } | null>(null);
   const [photoCorrectionTarget, setPhotoCorrectionTarget] = useState<{ index: number; item: RecognizedPhotoItem } | null>(null);
 
   // «Проверьте результат» — единый черновик-список перед сохранением в дневник
@@ -3523,7 +3522,6 @@ export default function App() {
     recognitionRef.current = recognition;
 
     setVoiceTranscript('');
-    setParsedVoiceItems([]);
     setIsListening(true);
     
     recognition.onstart = () => {
@@ -3567,6 +3565,11 @@ export default function App() {
     }
   };
 
+  // Разбор голосовой фразы добавляет сразу ВСЕ распознанные продукты
+  // в единый черновик "Проверьте результат" с граммовкой от AI — без
+  // отдельного клика "Добавить" и подтверждения веса на каждый ингредиент,
+  // что раньше позволяло часть распознанных продуктов потеряться при закрытии
+  // листа кнопкой "Готово". Грамма после этого можно поправить в черновике.
   const handleVoiceParse = async () => {
     if (!voiceTranscript) {
       alert('Сначала скажите что-нибудь!');
@@ -3581,11 +3584,29 @@ export default function App() {
       });
       if (res.ok) {
         const itemsRaw = await res.json();
-        const items = Array.isArray(itemsRaw) ? itemsRaw : [];
+        const items: { name: string; amount: number; product: Product | null }[] = Array.isArray(itemsRaw) ? itemsRaw : [];
         if (items.length === 0) {
           alert('Не удалось распознать продукты. Попробуйте сказать иначе.');
+          return;
         }
-        setParsedVoiceItems(items);
+
+        const matched = items.filter((it) => it.product);
+        const unmatched = items.filter((it) => !it.product);
+
+        matched.forEach((it) => {
+          const product = it.product as Product;
+          const usda = (product.isUsda || product.isAiEstimated) ? product : undefined;
+          addToReviewDraft(product, Math.max(1, Math.round(it.amount || 100)), usda);
+        });
+
+        setIsVoiceSheetOpen(false);
+        setVoiceTranscript('');
+
+        if (matched.length === 0) {
+          alert('Не нашли в базе ни один продукт. Попробуйте сказать иначе или добавьте вручную через поиск.');
+        } else if (unmatched.length > 0) {
+          alert(`Не нашли в базе: ${unmatched.map((it) => it.name).join(', ')}. Добавьте их вручную через «Добавить ещё продукт».`);
+        }
       } else {
         const err = await res.json();
         alert(`Ошибка сервера: ${err.error || 'Неизвестная ошибка'}`);
@@ -3765,9 +3786,8 @@ export default function App() {
             <button 
               onClick={() => { 
                 setIsActionSheetOpen(false); 
-                setIsVoiceSheetOpen(true); 
-                setVoiceTranscript(''); 
-                setParsedVoiceItems([]);
+                setIsVoiceSheetOpen(true);
+                setVoiceTranscript('');
                 // Auto-start listening after a short delay to allow sheet animation
                 setTimeout(() => startListening(), 400);
               }}
@@ -4178,17 +4198,6 @@ export default function App() {
                     if (amountEntryContext?.source === 'photo') {
                       setIsPhotoSheetOpen(false);
                     }
-
-                    if (amountEntryContext?.source === 'voice' && Number.isInteger(amountEntryContext.voiceIndex)) {
-                      const idx = amountEntryContext.voiceIndex as number;
-                      setParsedVoiceItems((prev) => {
-                        const next = prev.filter((_, itemIndex) => itemIndex !== idx);
-                        if (next.length === 0) {
-                          setIsVoiceSheetOpen(false);
-                        }
-                        return next;
-                      });
-                    }
                   }
 
                   setSelectedProductForAmount(null);
@@ -4513,8 +4522,8 @@ export default function App() {
             )}
           </div>
 
-          {!isListening && voiceTranscript && !isParsingVoice && parsedVoiceItems.length === 0 && (
-            <button 
+          {!isListening && voiceTranscript && !isParsingVoice && (
+            <button
               onClick={handleVoiceParse}
               className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl mb-6 shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform"
             >
@@ -4523,7 +4532,7 @@ export default function App() {
           )}
 
           {isListening && voiceTranscript && (
-            <button 
+            <button
               onClick={stopListening}
               className="w-full py-4 bg-zinc-800 text-zinc-300 font-bold rounded-2xl mb-6 active:scale-95 transition-transform"
             >
@@ -4535,47 +4544,6 @@ export default function App() {
             <div className="flex flex-col items-center py-4">
               <Loader2 className="animate-spin text-emerald-500 mb-2" size={32} />
               <p className="text-zinc-400 text-sm">AI разбирает ваш рацион...</p>
-            </div>
-          )}
-
-          {parsedVoiceItems.length > 0 && (
-            <div className="w-full space-y-3 mt-4">
-              <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Распознанные продукты</p>
-              {parsedVoiceItems.map((item, i) => (
-                <div key={i} className="bg-zinc-800/80 border border-zinc-700 rounded-xl p-4 flex justify-between items-center">
-                  <div className="flex-1 mr-4">
-                    <p className="font-semibold text-zinc-200">{item.name}</p>
-                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{item.amount}г • {item.product?.brand || 'AI Оценка'}</p>
-                  </div>
-                  {item.product ? (
-                    <button 
-                      onClick={() => {
-                        setSelectedProductForAmount(item.product);
-                        setFoodAmount(String(Math.max(1, Math.round(item.amount || 100))));
-                        setAmountEntryContext({ source: 'voice', voiceIndex: i });
-                      }}
-                      className="px-4 py-2 bg-emerald-500 text-white text-xs font-bold rounded-lg shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform"
-                    >
-                      Добавить
-                    </button>
-                  ) : (
-                    <button 
-                      onClick={async () => {
-                        alert('Продукт не найден. Попробуйте поиск вручную.');
-                      }}
-                      className="p-2 bg-zinc-700 text-zinc-500 rounded-lg"
-                    >
-                      <Search size={20} />
-                    </button>
-                  )}
-                </div>
-              ))}
-              <button 
-                onClick={() => setIsVoiceSheetOpen(false)}
-                className="w-full py-4 bg-zinc-800 text-zinc-300 font-bold rounded-xl mt-4"
-              >
-                Готово
-              </button>
             </div>
           )}
         </div>
