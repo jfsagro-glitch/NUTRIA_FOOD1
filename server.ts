@@ -862,26 +862,10 @@ async function findBestPhotoRecognitionMatch(item: PhotoRecognitionItem, userId?
   }
 
   const barcodeCandidates = uniqueStrings(item.barcodeCandidates.flatMap((value) => extractBarcodeCandidates(value)), 8);
-  for (const barcodeCandidate of barcodeCandidates) {
-    const cached = getCachedBarcodeProduct([barcodeCandidate]);
-    if (cached) {
-      return { ...item, matchedBy: `barcode:${barcodeCandidate}`, matchScore: 0.99, product: cached };
-    }
-
-    if (isDatabaseConfigured()) {
-      const dbProduct = await prisma.product.findFirst({ where: { barcode: barcodeCandidate } });
-      if (dbProduct) {
-        cacheBarcodeProduct([barcodeCandidate], dbProduct);
-        return { ...item, matchedBy: `barcode:${barcodeCandidate}`, matchScore: 0.99, product: dbProduct };
-      }
-    }
-
-    const offProduct = await fetchOpenFoodFactsProduct(barcodeCandidate);
-    if (offProduct) {
-      const persisted = await upsertProductFromBarcodeLookup(offProduct);
-      const responseProduct = persisted || offProduct;
-      cacheBarcodeProduct([barcodeCandidate], responseProduct);
-      return { ...item, matchedBy: `barcode:${barcodeCandidate}`, matchScore: 0.99, product: responseProduct };
+  if (barcodeCandidates.length > 0) {
+    const { product: barcodeProduct } = await resolveBarcodeProduct(barcodeCandidates);
+    if (barcodeProduct) {
+      return { ...item, matchedBy: `barcode:${barcodeCandidates[0]}`, matchScore: 0.99, product: barcodeProduct };
     }
   }
 
@@ -1676,6 +1660,12 @@ async function upsertProductFromBarcodeLookup(product: any) {
   if (!isDatabaseConfigured()) return null;
   if (!product?.barcode || !product?.name) return null;
 
+  const micronutrients = typeof product.micronutrients === "string"
+    ? product.micronutrients
+    : product.micronutrients
+      ? JSON.stringify(product.micronutrients)
+      : "{}";
+
   try {
     return await prisma.product.upsert({
       where: { barcode: String(product.barcode) },
@@ -1687,6 +1677,7 @@ async function upsertProductFromBarcodeLookup(product: any) {
         fat: numberOrZero(product.fat),
         carbs: numberOrZero(product.carbs),
         fiber: numberOrZero(product.fiber),
+        ...(product.micronutrients ? { micronutrients } : {}),
       },
       create: {
         name: String(product.name),
@@ -1697,13 +1688,110 @@ async function upsertProductFromBarcodeLookup(product: any) {
         fat: numberOrZero(product.fat),
         carbs: numberOrZero(product.carbs),
         fiber: numberOrZero(product.fiber),
-        micronutrients: "{}"
+        micronutrients
       }
     });
   } catch (e) {
     console.warn("Failed to upsert barcode product:", e);
     return null;
   }
+}
+
+// USDA FoodData Central — Branded Foods, по штрихкоду (gtinUpc), без полного импорта датасета.
+// Branded Foods слишком большой для бакового импорта на бесплатном тире (см. import-usda.ts),
+// поэтому добиваем его точечно: один штрихкод -> один запрос к /v1/foods/search?dataType=Branded.
+function normalizeUsdaBrandedProduct(food: any, barcode: string) {
+  const getNutrient = (id: number) =>
+    food.foodNutrients?.find((n: any) => n.nutrientId === id || n.nutrientNumber === String(id))?.value || 0;
+  const extended = extractUsdaExtendedNutrients(food);
+  const fiber = getNutrient(1079) || getNutrient(291);
+  const completedMicro = buildCompleteMicronutrients({
+    vitamins: extended.vitamins,
+    minerals: extended.minerals,
+    aminoAcids: extended.aminoAcids,
+    fattyAcids: extended.fattyAcids,
+    carbohydrateTypes: extended.carbohydrateTypes,
+  }, fiber);
+
+  return {
+    id: `usda-branded-${food.fdcId}`,
+    name: food.description || `Product ${barcode}`,
+    brand: food.brandOwner || food.brandName || "USDA Branded",
+    calories: getNutrient(1008) || getNutrient(208),
+    protein: getNutrient(1003) || getNutrient(203),
+    fat: getNutrient(1004) || getNutrient(204),
+    carbs: getNutrient(1005) || getNutrient(205),
+    fiber,
+    micronutrients: JSON.stringify(completedMicro),
+    barcode,
+    isUsda: true,
+    source: "usda_branded",
+  };
+}
+
+async function fetchUsdaBrandedProduct(barcode: string) {
+  const usdaKey = process.env.USDA_FDC_API_KEY;
+  if (!usdaKey) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BARCODE_LOOKUP_TIMEOUT_MS);
+
+  try {
+    const url = `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${usdaKey}&query=${encodeURIComponent(barcode)}&dataType=Branded&pageSize=5`;
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) return null;
+
+    const data: any = await response.json().catch(() => null);
+    const foods = Array.isArray(data?.foods) ? data.foods : [];
+    // Ищем точное совпадение по gtinUpc (с учётом ведущих нулей), иначе берём первый результат.
+    const normalizedBarcode = barcode.replace(/^0+/, "");
+    const exact = foods.find((f: any) => {
+      const gtin = String(f?.gtinUpc || "").replace(/^0+/, "");
+      return gtin && gtin === normalizedBarcode;
+    });
+    const food = exact || foods[0];
+    if (!food) return null;
+
+    return normalizeUsdaBrandedProduct(food, barcode);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Единая цепочка источников для штрихкода: кэш -> локальная база -> OpenFoodFacts -> USDA Branded (по API, без бакового импорта).
+async function resolveBarcodeProduct(candidates: string[]) {
+  const cached = getCachedBarcodeProduct(candidates);
+  if (cached) return { product: cached, isNew: false };
+
+  if (isDatabaseConfigured()) {
+    const dbProduct = await prisma.product.findFirst({ where: { barcode: { in: candidates } } });
+    if (dbProduct) {
+      cacheBarcodeProduct(candidates, dbProduct);
+      return { product: dbProduct, isNew: false };
+    }
+  }
+
+  for (const candidate of candidates) {
+    const offProduct = await fetchOpenFoodFactsProduct(candidate);
+    if (offProduct) {
+      const persisted = await upsertProductFromBarcodeLookup(offProduct);
+      const responseProduct = persisted || offProduct;
+      cacheBarcodeProduct(candidates, responseProduct);
+      return { product: responseProduct, isNew: true };
+    }
+
+    const usdaProduct = await fetchUsdaBrandedProduct(candidate);
+    if (usdaProduct) {
+      const persisted = await upsertProductFromBarcodeLookup(usdaProduct);
+      const responseProduct = persisted || usdaProduct;
+      cacheBarcodeProduct(candidates, responseProduct);
+      return { product: responseProduct, isNew: true };
+    }
+  }
+
+  return { product: null, isNew: false };
 }
 
 // AI Helper: Unified AI Generation with Fallback (Gemini -> DeepSeek -> OpenAI)
@@ -1847,33 +1935,8 @@ async function startServer() {
       const candidates = extractBarcodeCandidates(code);
       if (candidates.length === 0) return res.status(400).json({ error: "Invalid barcode" });
 
-      const cached = getCachedBarcodeProduct(candidates);
-      if (cached) {
-        return res.json(cached);
-      }
-
-      if (isDatabaseConfigured()) {
-        const product = await prisma.product.findFirst({
-          where: {
-            barcode: { in: candidates }
-          }
-        });
-
-        if (product) {
-          cacheBarcodeProduct(candidates, product);
-          return res.json(product);
-        }
-      }
-
-      for (const candidate of candidates) {
-        const offProduct = await fetchOpenFoodFactsProduct(candidate);
-        if (!offProduct) continue;
-
-        const persisted = await upsertProductFromBarcodeLookup(offProduct);
-        const responseProduct = persisted || offProduct;
-        cacheBarcodeProduct(candidates, responseProduct);
-        return res.json(responseProduct);
-      }
+      const { product } = await resolveBarcodeProduct(candidates);
+      if (product) return res.json(product);
 
       return res.status(404).json({ error: "Not found" });
     } catch (e: any) {
