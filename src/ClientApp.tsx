@@ -971,7 +971,7 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
     <div className="p-4 pb-24">
       <header className="mb-6 pt-4 flex justify-between items-end">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Питание</h1>
+          <h1 className="font-display text-4xl font-bold tracking-tight">Питание</h1>
           <p className="text-zinc-500 text-sm">{headerDateText}</p>
         </div>
         <div className="w-10 h-10 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center overflow-hidden">
@@ -993,7 +993,7 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
           </svg>
           <div className="absolute flex flex-col items-center text-center">
             <span className="text-[11px] text-zinc-500">{ringLabel}</span>
-            <span className={cn("text-3xl font-bold leading-tight", over > 0 ? "text-orange-500" : "text-zinc-100")}>{ringValue}</span>
+            <span className={cn("font-display text-4xl font-bold leading-tight", over > 0 ? "text-orange-500" : "text-zinc-100")}>{ringValue}</span>
             <span className="text-[11px] text-zinc-500 mt-0.5">Цель: {calorieGoal} ккал</span>
           </div>
         </div>
@@ -1611,7 +1611,7 @@ const SummaryScreen = ({
   return (
     <div className="p-4">
       <header className="mb-6 pt-4">
-        <h1 className="text-3xl font-bold tracking-tight">Сводки</h1>
+        <h1 className="font-display text-4xl font-bold tracking-tight">Сводки</h1>
         <p className="text-zinc-500 text-sm">Макроэлементы, анализ и программы</p>
       </header>
 

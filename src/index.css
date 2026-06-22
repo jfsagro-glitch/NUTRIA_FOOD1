@@ -6,7 +6,8 @@
   --color-bg-dark: #09090b; /* Zinc 950 */
   --color-card-dark: #18181b; /* Zinc 900 */
   --color-border-dark: #27272a; /* Zinc 800 */
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "PT Sans", "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Cormorant Garamond", Georgia, serif;
 }
 
 @layer base {
@@ -26,6 +27,11 @@
 
 @utility pt-safe {
   padding-top: env(safe-area-inset-top);
+}
+
+@utility font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
 }
 
 /* Custom scrollbar for dark theme */
@@ -58,41 +64,55 @@
   display: none !important;
 }
 
-/* Light theme overrides */
+/* Light theme overrides — палитра и тон из прототипа NUTRIA MVP (холодный мятно-тиловый off-white,
+   не бежевый/кремовый). Эти селекторы перекрашивают существующие zinc-* классы глобально, поэтому
+   правка здесь сразу выравнивает все экраны приложения с прототипом, без переписывания каждого компонента. */
 .theme-light body {
-  background: #f7f1e6 !important;
-  color: #1f1b14 !important;
+  background: oklch(0.975 0.007 200) !important; /* COOL_BG */
+  color: oklch(0.20 0.025 230) !important; /* T.text */
 }
 
 .theme-light .bg-bg-dark,
-.theme-light [class*="bg-zinc-950"],
-.theme-light [class*="bg-zinc-900"],
+.theme-light [class*="bg-zinc-950"] {
+  background-color: oklch(0.975 0.007 200) !important; /* COOL_BG — фон экрана/корня */
+}
+
+.theme-light [class*="bg-zinc-900"] {
+  background-color: oklch(0.987 0.006 200) !important; /* COOL_BLOCK — основные карточки (чуть светлее фона) */
+  box-shadow: 0 1px 2px oklch(0.4 0.04 200 / 0.10), 0 2px 6px oklch(0.4 0.04 200 / 0.08) !important;
+}
+
 .theme-light [class*="bg-zinc-800"] {
-  background-color: #fdf7ed !important;
+  background-color: oklch(0.955 0.012 195) !important; /* COOL_ZONE — вторичные блоки (приёмы пищи, кнопки) */
 }
 
 .theme-light [class*="border-zinc-900"],
 .theme-light [class*="border-zinc-800"],
 .theme-light [class*="border-zinc-700"] {
-  border-color: #e7dac2 !important;
+  border-color: oklch(0.93 0.015 192) !important; /* T.borderLt / SOFT_DIVIDER */
 }
 
 .theme-light [class*="text-zinc-100"],
 .theme-light [class*="text-zinc-200"],
 .theme-light [class*="text-zinc-300"] {
-  color: #1f1b14 !important;
+  color: oklch(0.20 0.025 230) !important; /* T.text */
 }
 
 .theme-light [class*="text-zinc-400"],
 .theme-light [class*="text-zinc-500"],
 .theme-light [class*="text-zinc-600"] {
-  color: #6a5b42 !important;
+  color: oklch(0.48 0.04 215) !important; /* T.textMid */
 }
 
 .theme-light ::-webkit-scrollbar-track {
-  background: #f1e7d7;
+  background: oklch(0.955 0.012 195);
 }
 
 .theme-light ::-webkit-scrollbar-thumb {
-  background: #d3c29f;
+  background: oklch(0.87 0.028 192);
+}
+
+/* Премиальные акценты для "холодной" зоны — мягкие тактильные тени на кнопках/пилюлях */
+.theme-light button {
+  -webkit-tap-highlight-color: transparent;
 }
