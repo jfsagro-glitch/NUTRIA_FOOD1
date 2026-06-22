@@ -360,7 +360,7 @@ const FAB = ({ onClick }: { onClick: () => void }) => {
       whileTap={{ scale: 0.9 }}
       whileHover={{ scale: 1.05 }}
       onClick={onClick}
-      className="fixed bottom-6 left-1/2 -translate-x-1/2 w-14 h-14 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-full flex items-center justify-center border border-emerald-300/20 z-50"
+      className="fixed bottom-[72px] left-1/2 -translate-x-1/2 w-14 h-14 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-full flex items-center justify-center border border-emerald-300/20 z-50"
     >
       <Plus size={32} className="text-white" />
     </motion.button>
@@ -915,6 +915,8 @@ const PROTO = {
   proteinColor: 'oklch(0.58 0.10 192)',
   fatColor: 'oklch(0.70 0.12 65)',
   carbColor: 'oklch(0.62 0.13 25)',
+  waterBlue: '#3b82f6',
+  waterBlueLt: '#93c5fd',
 };
 
 // 7-дневная полоса дней над дневником, как DateStrip в прототипе — окно из последних 7 дней,
@@ -1380,21 +1382,26 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
             <Droplet size={22} />
           </div>
         </div>
-        <p style={{ fontSize: 10, color: PROTO.textLt, marginBottom: 8 }}>Нажимайте на стакан, чтобы отметить выпитое</p>
+        <p style={{ fontSize: 10, color: PROTO.textLt, marginBottom: 8 }}>Нажимайте на капли, чтобы отметить выпитое</p>
         <div className="flex gap-2 flex-wrap">
           {Array.from({ length: totalGlasses }).map((_, i) => {
             const filled = i < filledGlasses;
+            const handleClick = () => {
+              const target = i + 1;
+              const nextFilled = filledGlasses === target ? target - 1 : target;
+              onUpdateWater(nextFilled * 250 - waterIntake);
+            };
             return (
               <button
                 key={i}
-                onClick={() => onUpdateWater(filled ? -250 : 250)}
+                onClick={handleClick}
                 className="active:scale-90 transition-transform"
               >
                 <svg width="22" height="30" viewBox="0 0 26 38" fill="none">
                   <path d="M5 6C5 6 3 14 3 22c0 6.627 4.477 12 10 12s10-5.373 10-12c0-8-2-16-2-16H5z"
-                    stroke={filled ? PROTO.primary : PROTO.borderLt} strokeWidth="1.6"
-                    fill={filled ? PROTO.primaryLt : 'transparent'} fillOpacity={filled ? 0.3 : 1} />
-                  <path d="M8 3h10" stroke={filled ? PROTO.primary : PROTO.borderLt} strokeWidth="1.6" strokeLinecap="round" />
+                    stroke={filled ? PROTO.waterBlue : PROTO.borderLt} strokeWidth="1.6"
+                    fill={filled ? PROTO.waterBlueLt : 'transparent'} fillOpacity={filled ? 0.5 : 1} />
+                  <path d="M8 3h10" stroke={filled ? PROTO.waterBlue : PROTO.borderLt} strokeWidth="1.6" strokeLinecap="round" />
                 </svg>
               </button>
             );
