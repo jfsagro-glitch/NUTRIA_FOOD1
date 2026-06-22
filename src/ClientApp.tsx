@@ -884,7 +884,43 @@ const NutrientRow = ({ label, value, goal, unit, colorClass = "bg-emerald-500" }
   </div>
 );
 
-const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, onEditItem, onUpdateWater }: { data: any, onAddClick: (type: string) => void, hints: Hint[], onHintClick: (cta: string) => void, onDeleteItem: (id: string) => void, onEditItem: (item: any) => void, onUpdateWater: (amount: number) => void }) => {
+const DIARY_DATE_STRIP_DAY_LABELS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+
+// 7-дневная полоса дней над дневником, как DateStrip в прототипе — окно из последних 7 дней,
+// заканчивающееся сегодня, с переключением выбранной даты дневника.
+const DiaryDateStrip = ({ selectedDate, onSelect }: { selectedDate: string; onSelect: (dateKey: string) => void }) => {
+  const days = useMemo(() => {
+    const today = new Date();
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() - (6 - i));
+      return { key: toDateKey(d), label: DIARY_DATE_STRIP_DAY_LABELS[d.getDay()], num: d.getDate() };
+    });
+  }, []);
+
+  return (
+    <div className="flex gap-1 px-4 pb-2.5">
+      {days.map((d) => {
+        const isActive = d.key === selectedDate;
+        return (
+          <button
+            key={d.key}
+            onClick={() => onSelect(d.key)}
+            className={cn(
+              "flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-xl transition-colors active:scale-95",
+              isActive ? "bg-emerald-500" : "bg-transparent"
+            )}
+          >
+            <span className={cn("text-[10px] font-bold uppercase tracking-wide", isActive ? "text-white/80" : "text-zinc-500")}>{d.label}</span>
+            <span className={cn("font-display text-lg leading-none", isActive ? "text-white font-semibold" : "text-zinc-200")}>{d.num}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, onHintClick, onDeleteItem, onEditItem, onUpdateWater }: { data: any, selectedDate: string, onChangeDate: (dateKey: string) => void, onAddClick: (type: string) => void, hints: Hint[], onHintClick: (cta: string) => void, onDeleteItem: (id: string) => void, onEditItem: (item: any) => void, onUpdateWater: (amount: number) => void }) => {
   const { meals = [], waterIntake = 0 } = data;
   const goals = mergeGoals(data.goals);
   const waterGoal = 2500; // 2.5L in ml
@@ -968,7 +1004,7 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
 
   return (
     <div className="p-4 pb-24">
-      <header className="mb-6 pt-4 flex justify-between items-end">
+      <header className="mb-3 pt-4 flex justify-between items-end">
         <div>
           <h1 className="font-display text-4xl font-bold tracking-tight">Питание</h1>
           <p className="text-zinc-500 text-sm">{headerDateText}</p>
@@ -977,6 +1013,8 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
           <img src="/logo.png" alt="NUTRIA logo" className="w-full h-full object-cover" />
         </div>
       </header>
+
+      <DiaryDateStrip selectedDate={selectedDate} onSelect={onChangeDate} />
 
       {/* Калории — единое кольцо + БЖУ, как в прототипе */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 mb-4">
@@ -1022,6 +1060,96 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
           Все нутриенты
           {allNutrientsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
+      </div>
+
+      {/* Дневник — приёмы пищи, как MealBlock в прототипе */}
+      <div className="mb-4">
+        <h3 className="text-lg font-bold mb-4 px-1">Дневник</h3>
+        <div className="space-y-3">
+          {mealTypes.map((type) => {
+            const meal = meals.find((m: any) => m.type === type);
+            const items = meal?.items || [];
+            const isEmpty = items.length === 0;
+            const expanded = !!mealExpanded[type];
+            const mealTotal = items.reduce((s: number, item: any) => s + (item.product.calories * item.amount) / 100, 0);
+            const totalP = items.reduce((s: number, item: any) => s + (item.product.protein * item.amount) / 100, 0);
+            const totalF = items.reduce((s: number, item: any) => s + (item.product.fat * item.amount) / 100, 0);
+            const totalC = items.reduce((s: number, item: any) => s + (item.product.carbs * item.amount) / 100, 0);
+
+            return (
+              <div key={type} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+                <div
+                  onClick={() => toggleMeal(type)}
+                  className="flex items-center gap-3 p-4 cursor-pointer active:bg-zinc-800/40 transition-colors"
+                >
+                  <div className="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 flex-shrink-0">
+                    <Utensils size={16} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-zinc-200">{mealLabels[type]}</span>
+                      {!isEmpty && <span className="text-sm font-semibold text-emerald-500 flex-shrink-0">{Math.round(mealTotal)} ккал</span>}
+                    </div>
+                    {isEmpty ? (
+                      <p className="text-xs text-zinc-500 mt-0.5">Нажмите, чтобы добавить</p>
+                    ) : (
+                      <p className="text-xs text-zinc-500 mt-0.5 truncate">{items.map((i: any) => i.product.name).join(' · ')}</p>
+                    )}
+                  </div>
+                  <ChevronDown size={18} className={cn("text-zinc-500 flex-shrink-0 transition-transform", expanded && "rotate-180")} />
+                </div>
+
+                {expanded && (
+                  <div className="border-t border-zinc-800/70">
+                    {isEmpty ? (
+                      <div className="p-4 text-center">
+                        <p className="text-xs text-zinc-500 mb-3">В этом приёме пищи пока нет записей</p>
+                        <button
+                          onClick={() => onAddClick(type)}
+                          className="w-full h-10 rounded-xl bg-emerald-500 text-white text-sm font-semibold active:scale-[0.98] transition-transform"
+                        >
+                          + Добавить продукт
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="py-1">
+                          {items.map((item: any, idx: number) => (
+                            <div key={item.id} className={cn("flex items-center gap-2 px-4 py-2.5 group", idx > 0 && "border-t border-zinc-800/50")}>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-zinc-200">{item.product.name}</p>
+                                <p className="text-[11px] text-zinc-500 mt-0.5">{item.amount} г · Б{Math.round((item.product.protein * item.amount) / 100)} · Ж{Math.round((item.product.fat * item.amount) / 100)} · У{Math.round((item.product.carbs * item.amount) / 100)}</p>
+                              </div>
+                              <span className="text-xs text-zinc-400 flex-shrink-0">{Math.round((item.product.calories * item.amount) / 100)} ккал</span>
+                              <button onClick={() => onEditItem(item)} className="p-1.5 text-zinc-600 hover:text-emerald-500 transition-colors flex-shrink-0">
+                                <Pencil size={14} />
+                              </button>
+                              <button onClick={() => onDeleteItem(item.id)} className="p-1.5 text-zinc-600 hover:text-red-500 transition-colors flex-shrink-0">
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="flex justify-between px-4 py-2.5 border-t border-zinc-800/50">
+                          <span className="text-[11px] font-bold text-zinc-500">Итого</span>
+                          <span className="text-[11px] font-bold text-zinc-300">{Math.round(mealTotal)} ккал · Б{Math.round(totalP)} / Ж{Math.round(totalF)} / У{Math.round(totalC)}</span>
+                        </div>
+                        <div className="flex justify-center px-4 py-3">
+                          <button
+                            onClick={() => onAddClick(type)}
+                            className="h-9 px-4 rounded-full bg-zinc-800 text-zinc-300 text-xs font-bold active:scale-95 transition-transform"
+                          >
+                            + Добавить ещё
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {allNutrientsOpen && (
@@ -1250,96 +1378,6 @@ const NutritionScreen = ({ data, onAddClick, hints, onHintClick, onDeleteItem, o
           )}
         </div>
       </CollapsibleCard>
-
-      {/* Дневник — приёмы пищи, как MealBlock в прототипе */}
-      <div className="mb-4">
-        <h3 className="text-lg font-bold mb-4 px-1">Дневник</h3>
-        <div className="space-y-3">
-          {mealTypes.map((type) => {
-            const meal = meals.find((m: any) => m.type === type);
-            const items = meal?.items || [];
-            const isEmpty = items.length === 0;
-            const expanded = !!mealExpanded[type];
-            const mealTotal = items.reduce((s: number, item: any) => s + (item.product.calories * item.amount) / 100, 0);
-            const totalP = items.reduce((s: number, item: any) => s + (item.product.protein * item.amount) / 100, 0);
-            const totalF = items.reduce((s: number, item: any) => s + (item.product.fat * item.amount) / 100, 0);
-            const totalC = items.reduce((s: number, item: any) => s + (item.product.carbs * item.amount) / 100, 0);
-
-            return (
-              <div key={type} className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
-                <div
-                  onClick={() => toggleMeal(type)}
-                  className="flex items-center gap-3 p-4 cursor-pointer active:bg-zinc-800/40 transition-colors"
-                >
-                  <div className="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center text-zinc-400 flex-shrink-0">
-                    <Utensils size={16} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-zinc-200">{mealLabels[type]}</span>
-                      {!isEmpty && <span className="text-sm font-semibold text-emerald-500 flex-shrink-0">{Math.round(mealTotal)} ккал</span>}
-                    </div>
-                    {isEmpty ? (
-                      <p className="text-xs text-zinc-500 mt-0.5">Нажмите, чтобы добавить</p>
-                    ) : (
-                      <p className="text-xs text-zinc-500 mt-0.5 truncate">{items.map((i: any) => i.product.name).join(' · ')}</p>
-                    )}
-                  </div>
-                  <ChevronDown size={18} className={cn("text-zinc-500 flex-shrink-0 transition-transform", expanded && "rotate-180")} />
-                </div>
-
-                {expanded && (
-                  <div className="border-t border-zinc-800/70">
-                    {isEmpty ? (
-                      <div className="p-4 text-center">
-                        <p className="text-xs text-zinc-500 mb-3">В этом приёме пищи пока нет записей</p>
-                        <button
-                          onClick={() => onAddClick(type)}
-                          className="w-full h-10 rounded-xl bg-emerald-500 text-white text-sm font-semibold active:scale-[0.98] transition-transform"
-                        >
-                          + Добавить продукт
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="py-1">
-                          {items.map((item: any, idx: number) => (
-                            <div key={item.id} className={cn("flex items-center gap-2 px-4 py-2.5 group", idx > 0 && "border-t border-zinc-800/50")}>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm text-zinc-200">{item.product.name}</p>
-                                <p className="text-[11px] text-zinc-500 mt-0.5">{item.amount} г · Б{Math.round((item.product.protein * item.amount) / 100)} · Ж{Math.round((item.product.fat * item.amount) / 100)} · У{Math.round((item.product.carbs * item.amount) / 100)}</p>
-                              </div>
-                              <span className="text-xs text-zinc-400 flex-shrink-0">{Math.round((item.product.calories * item.amount) / 100)} ккал</span>
-                              <button onClick={() => onEditItem(item)} className="p-1.5 text-zinc-600 hover:text-emerald-500 transition-colors flex-shrink-0">
-                                <Pencil size={14} />
-                              </button>
-                              <button onClick={() => onDeleteItem(item.id)} className="p-1.5 text-zinc-600 hover:text-red-500 transition-colors flex-shrink-0">
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="flex justify-between px-4 py-2.5 border-t border-zinc-800/50">
-                          <span className="text-[11px] font-bold text-zinc-500">Итого</span>
-                          <span className="text-[11px] font-bold text-zinc-300">{Math.round(mealTotal)} ккал · Б{Math.round(totalP)} / Ж{Math.round(totalF)} / У{Math.round(totalC)}</span>
-                        </div>
-                        <div className="flex justify-center px-4 py-3">
-                          <button
-                            onClick={() => onAddClick(type)}
-                            className="h-9 px-4 rounded-full bg-zinc-800 text-zinc-300 text-xs font-bold active:scale-95 transition-transform"
-                          >
-                            + Добавить ещё
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
     </div>
   );
 };
@@ -2251,7 +2289,7 @@ export default function App() {
   const [isSavingDish, setIsSavingDish] = useState(false);
   const [editingMealItem, setEditingMealItem] = useState<{ id: string; amount: number; name: string } | null>(null);
   const [editAmountValue, setEditAmountValue] = useState('');
-  const [selectedDiaryDate] = useState<string>(toDateKey(new Date()));
+  const [selectedDiaryDate, setSelectedDiaryDate] = useState<string>(toDateKey(new Date()));
   const [diaryData, setDiaryData] = useState<DiaryData>({ meals: [], goals: null, waterIntake: 0, date: selectedDiaryDate });
   const [weeklyHistory, setWeeklyHistory] = useState<DiaryHistoryPoint[]>([]);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
@@ -2652,6 +2690,12 @@ export default function App() {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const changeDiaryDate = (dateKey: string) => {
+    if (dateKey === selectedDiaryDate) return;
+    setSelectedDiaryDate(dateKey);
+    fetchDiary(dateKey);
   };
 
   const deleteMealItem = async (itemId: string) => {
@@ -3460,9 +3504,11 @@ export default function App() {
           transition={{ duration: 0.2 }}
         >
           {activeTab === 'nutrition' ? (
-            <NutritionScreen 
-              data={{ ...diaryData, goals: effectiveGoals }} 
-              onAddClick={openAddFood} 
+            <NutritionScreen
+              data={{ ...diaryData, goals: effectiveGoals }}
+              selectedDate={selectedDiaryDate}
+              onChangeDate={changeDiaryDate}
+              onAddClick={openAddFood}
               hints={hints}
               onHintClick={handleHintClick}
               onDeleteItem={deleteMealItem}
