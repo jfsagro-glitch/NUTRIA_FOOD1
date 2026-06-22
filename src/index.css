@@ -82,13 +82,16 @@
   box-shadow: 0 1px 2px oklch(0.4 0.04 200 / 0.10), 0 2px 6px oklch(0.4 0.04 200 / 0.08) !important;
 }
 
-.theme-light [class*="bg-zinc-800"] {
+.theme-light [class*="bg-zinc-800"],
+.theme-light [class*="bg-zinc-700"],
+.theme-light [class*="bg-zinc-600"] {
   background-color: oklch(0.955 0.012 195) !important; /* COOL_ZONE — вторичные блоки (приёмы пищи, кнопки) */
 }
 
 .theme-light [class*="border-zinc-900"],
 .theme-light [class*="border-zinc-800"],
-.theme-light [class*="border-zinc-700"] {
+.theme-light [class*="border-zinc-700"],
+.theme-light [class*="border-zinc-600"] {
   border-color: oklch(0.93 0.015 192) !important; /* T.borderLt / SOFT_DIVIDER */
 }
 
@@ -102,6 +105,11 @@
 .theme-light [class*="text-zinc-500"],
 .theme-light [class*="text-zinc-600"] {
   color: oklch(0.48 0.04 215) !important; /* T.textMid */
+}
+
+.theme-light [class*="text-zinc-700"],
+.theme-light [class*="text-zinc-800"] {
+  color: oklch(0.62 0.035 210) !important; /* T.textLt */
 }
 
 .theme-light ::-webkit-scrollbar-track {
