@@ -2768,129 +2768,44 @@ async function startServer() {
     if (!transcript) return res.status(400).json({ error: "No transcript provided" });
 
     try {
-      const responseText = await generateAI(`Пользователь сказал: "${transcript}".
-        Извлеки продукты/блюда и оценочное количество (в граммах или мл).
-        Если количество не указано, оцени типичную порцию.
-        Верни только JSON-массив объектов: [{ "name": "название на русском", "amount": number }].`);
+      const responseText = await generateAI(`Пользователь записал голосовую заметку о приёме пищи: "${transcript}".
 
-      const itemsRaw = parseAiJsonPayload(responseText || "[]");
-      const items = Array.isArray(itemsRaw) ? itemsRaw : [];
-      
-      // Match each item with database products
-      const dbReady = isDatabaseConfigured();
+Разбери фразу на отдельные продукты/ингредиенты для базы данных питания.
+- Если упомянуто составное блюдо (например "яичница с говядиной и луком"), РАЗБЕЙ его на отдельные ингредиенты — каждый отдельным элементом массива (например: яйца, говядина, лук, масло для жарки).
+- Распознавай числительные, включая словесные ("два", "четыре", "пара", "пол"), и переводи количество штук в граммы через типичный вес одной штуки (яйцо ≈ 50 г, помидор ≈ 120 г, банан ≈ 120 г, кусок хлеба ≈ 30 г и т.д.), умножая на указанное число.
+- Если количество не указано вовсе, оцени типичную порцию для этого ингредиента в составе блюда.
+- Названия продуктов указывай в нормальной словарной форме на русском (именительный падеж, без лишних слов), чтобы их легко было найти в базе питания, например "Яйцо куриное", "Говядина", "Лук репчатый".
+
+Пример:
+Фраза: "Яичница с говядиной и луком, четыре яйца"
+Ответ: {"items": [
+  {"name": "Яйцо куриное", "amount": 200},
+  {"name": "Говядина", "amount": 100},
+  {"name": "Лук репчатый", "amount": 40},
+  {"name": "Растительное масло", "amount": 10}
+]}
+
+Верни только JSON-объект вида: {"items": [{"name": "название на русском", "amount": число в граммах или мл}]}.
+Если не удалось распознать ни одного продукта, верни {"items": []}.`);
+
+      const itemsRaw = parseAiJsonPayload(responseText || "{}");
+      const items: any[] = Array.isArray(itemsRaw)
+        ? itemsRaw
+        : (Array.isArray(itemsRaw?.items) ? itemsRaw.items : []);
 
       const matchedItems = await Promise.all(items.map(async (item: any) => {
-        // Use the existing search logic (internal call or refactor search logic)
-        // For simplicity, we'll fetch from our own search endpoint or reuse the logic
-        // Let's just do a quick search here
-        const normalizedQuery = item.name;
-        const localProducts = dbReady
-          ? await prisma.product.findMany({
-              where: {
-                OR: [
-                  { name: { contains: normalizedQuery, mode: "insensitive" } },
-                  { brand: { contains: normalizedQuery, mode: "insensitive" } }
-                ]
-              },
-              take: 1
-            })
-          : [];
+        const itemName = String(item?.name || "").trim();
+        const amount = clampNumber(item?.amount, 1, 5000, 100);
+        if (!itemName) return { name: itemName, amount, product: null };
 
-        if (localProducts.length > 0) {
-          const localizedLocalProduct = await localizeProductForRussianAudience({ ...localProducts[0], source: 'local' });
-          return { ...item, product: localizedLocalProduct };
-        }
+        const candidates = await searchProductsEngine(itemName, {
+          limit: 1,
+          cache: true,
+          localize: true,
+          allowAiEstimate: true,
+        });
 
-        // Try USDA
-        const usdaKey = process.env.USDA_FDC_API_KEY;
-        if (usdaKey) {
-          try {
-            let usdaQuery = item.name;
-            try {
-              const usdaQueryText = await generateAI(`Преобразуй русское/смешанное название продукта в короткий английский запрос для USDA: "${item.name}".
-Верни только JSON вида: {"english":"..."}`);
-              const usdaQueryData = parseAiJsonPayload(usdaQueryText || '{}');
-              usdaQuery = String(usdaQueryData?.english || item.name).trim() || item.name;
-            } catch {
-              usdaQuery = item.name;
-            }
-
-            const usdaRes = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${usdaKey}&query=${encodeURIComponent(usdaQuery)}&pageSize=1`);
-            if (usdaRes.ok) {
-              const usdaData: any = await usdaRes.json();
-              if (usdaData.foods && usdaData.foods.length > 0) {
-                const f = usdaData.foods[0];
-                const getNutrient = (id: number) => f.foodNutrients?.find((n: any) => n.nutrientId === id || n.nutrientNumber === String(id))?.value || 0;
-                const extended = extractUsdaExtendedNutrients(f);
-                const localizedUsdaProduct = await localizeProductForRussianAudience({
-                  id: `usda-${f.fdcId}`,
-                  name: f.description,
-                  brand: f.brandOwner || 'USDA',
-                  calories: getNutrient(1008) || getNutrient(208),
-                  protein: getNutrient(1003) || getNutrient(203),
-                  fat: getNutrient(1004) || getNutrient(204),
-                  carbs: getNutrient(1005) || getNutrient(205),
-                  fiber: getNutrient(1079) || getNutrient(291),
-                  vitamins: extended.vitamins,
-                  minerals: extended.minerals,
-                  aminoAcids: extended.aminoAcids,
-                  fattyAcids: extended.fattyAcids,
-                  carbohydrateTypes: extended.carbohydrateTypes,
-                  source: 'usda',
-                  isUsda: true
-                });
-                return { ...item, product: localizedUsdaProduct };
-              }
-            }
-          } catch (e) {}
-        }
-
-        // If still no product, use AI to estimate
-        try {
-          const estText = await generateAI(`Оцени пищевую ценность для 100 г продукта "${item.name}".
-            Верни только JSON:
-            {
-              "calories": number,
-              "protein": number,
-              "fat": number,
-              "carbs": number,
-              "fiber": number,
-              "vitamins": { "BetaCarotene": number, "B1": number, "B2": number, "B5": number, "B6": number, "B9": number, "B12": number, "C": number, "A": number, "D": number, "E": number, "K": number, "B3": number, "Biotin": number, "Choline": number },
-              "minerals": { "Potassium": number, "Calcium": number, "Silicon": number, "Magnesium": number, "Sodium": number, "Sulfur": number, "Phosphorus": number, "Chlorine": number, "Vanadium": number, "Iron": number, "Iodine": number, "Cobalt": number, "Manganese": number, "Copper": number, "Molybdenum": number, "Selenium": number, "Chromium": number, "Zinc": number, "Salt": number },
-              "fattyAcids": { "Omega3": number, "Omega6": number, "Omega9": number, "TransFats": number, "Cholesterol": number },
-              "carbohydrateTypes": { "Glucose": number, "Fructose": number, "Galactose": number, "Sucrose": number, "Lactose": number, "Maltose": number, "Starch": number, "Fiber": number },
-              "aminoAcids": { "Alanine": number, "Arginine": number, "Asparagine": number, "AsparticAcid": number, "Valine": number, "Histidine": number, "Glycine": number, "Glutamine": number, "GlutamicAcid": number, "Isoleucine": number, "Leucine": number, "Lysine": number, "Methionine": number, "Proline": number, "Serine": number, "Tyrosine": number, "Threonine": number, "Tryptophan": number, "Phenylalanine": number, "Cysteine": number },
-              "explanation": "краткое пояснение"
-            }
-            Важно:
-            - aminoAcids: mg на 100 г
-            - fattyAcids: g на 100 г, кроме Cholesterol (mg)
-            - carbohydrateTypes: g на 100 г`);
-          const est = parseAiJsonPayload(estText || '{}');
-          const localizedAiProduct = await localizeProductForRussianAudience({
-            id: `ai-est-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-            name: `✨ ${item.name} (AI Оценка)`,
-            brand: 'AI Nutria Engine',
-            calories: est.calories || 0,
-            protein: est.protein || 0,
-            fat: est.fat || 0,
-            carbs: est.carbs || 0,
-            fiber: est.fiber || 0,
-            vitamins: est.vitamins || {},
-            minerals: est.minerals || {},
-            aminoAcids: est.aminoAcids || {},
-            fattyAcids: est.fattyAcids || {},
-            carbohydrateTypes: est.carbohydrateTypes || {},
-            isAiEstimated: true,
-            explanation: est.explanation,
-            source: 'ai'
-          });
-          return { ...item, product: localizedAiProduct };
-        } catch (e) {
-          console.error("AI estimation in voice parse failed:", e);
-        }
-
-        return { ...item, product: null };
+        return { name: itemName, amount, product: candidates[0] || null };
       }));
 
       res.json(matchedItems);
