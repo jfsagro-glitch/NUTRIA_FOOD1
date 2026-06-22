@@ -548,7 +548,21 @@ type ProductSearchOptions = {
   cache?: boolean;
   localize?: boolean;
   allowAiEstimate?: boolean;
+  // Skips the AI query-normalization, USDA lookup and AI re-ranking round trips.
+  // Use when the input is already a clean canonical name (e.g. produced by another
+  // AI step) and low latency matters more than maximal recall.
+  fast?: boolean;
 };
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
 
 type PhotoRecognitionItem = {
   name: string;
@@ -645,6 +659,7 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
   const useCache = options.cache !== false;
   const localize = options.localize !== false;
   const allowAiEstimate = options.allowAiEstimate !== false;
+  const fast = options.fast === true;
 
   if (useCache) {
     const cachedSearch = getCachedProductSearch(normalizedInput);
@@ -658,26 +673,28 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
   let englishQuery = normalizedInput;
   let searchTerms: string[] = [normalizedInput];
 
-  try {
-    const normResponseText = await generateAI(`Проанализируй поисковый запрос по еде: "${normalizedInput}".
+  if (!fast) {
+    try {
+      const normResponseText = await withTimeout(generateAI(`Проанализируй поисковый запрос по еде: "${normalizedInput}".
 Пользователь русскоязычный. Верни JSON со структурой:
 - normalized: каноничное название на русском
 - english: краткий англоязычный термин для поиска в USDA
 - search_terms: массив из 3-5 ключевых слов для поиска (русские и английские варианты)
 - tags: массив категорий
 - isDrink: boolean
-Верни только JSON.`);
-    const normData = parseAiJsonPayload(normResponseText || "{}");
-    normalizedQuery = String(normData?.normalized || normalizedInput).trim() || normalizedInput;
-    englishQuery = String(normData?.english || normalizedInput).trim() || normalizedInput;
-    searchTerms = uniqueStrings([
-      normalizedInput,
-      normalizedQuery,
-      englishQuery,
-      ...(Array.isArray(normData?.search_terms) ? normData.search_terms : []),
-    ], 2);
-  } catch (e) {
-    console.error("Normalization error:", e);
+Верни только JSON.`), 7000, "AI normalization");
+      const normData = parseAiJsonPayload(normResponseText || "{}");
+      normalizedQuery = String(normData?.normalized || normalizedInput).trim() || normalizedInput;
+      englishQuery = String(normData?.english || normalizedInput).trim() || normalizedInput;
+      searchTerms = uniqueStrings([
+        normalizedInput,
+        normalizedQuery,
+        englishQuery,
+        ...(Array.isArray(normData?.search_terms) ? normData.search_terms : []),
+      ], 2);
+    } catch (e) {
+      console.error("Normalization error:", e);
+    }
   }
 
   const queryTokens = uniqueStrings([
@@ -709,9 +726,9 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
 
   let usdaProducts: any[] = [];
   const usdaKey = process.env.USDA_FDC_API_KEY;
-  if (usdaKey && englishQuery.length > 1) {
+  if (!fast && usdaKey && englishQuery.length > 1) {
     try {
-      const response = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${usdaKey}&query=${encodeURIComponent(englishQuery)}&pageSize=15`);
+      const response = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${usdaKey}&query=${encodeURIComponent(englishQuery)}&pageSize=15`, { signal: AbortSignal.timeout(6000) });
       if (response.ok) {
         const data: any = await response.json();
         usdaProducts = (data.foods || []).map((food: any) => {
@@ -769,7 +786,7 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
 
   if (allowAiEstimate && (finalResults.length === 0 || numberOrZero(finalResults[0]?.matchScore) < 0.6)) {
     try {
-      const estimateResponseText = await generateAI(`Пользователь ищет продукт: "${normalizedInput}".
+      const estimateResponseText = await withTimeout(generateAI(`Пользователь ищет продукт: "${normalizedInput}".
 Точного совпадения в базе нет.
 Оцени пищевую ценность для 100 г и верни только JSON:
 {
@@ -785,7 +802,7 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
   "carbohydrateTypes": { "Glucose": number, "Fructose": number, "Galactose": number, "Sucrose": number, "Lactose": number, "Maltose": number, "Starch": number, "Fiber": number },
   "aminoAcids": { "Alanine": number, "Arginine": number, "Asparagine": number, "AsparticAcid": number, "Valine": number, "Histidine": number, "Glycine": number, "Glutamine": number, "GlutamicAcid": number, "Isoleucine": number, "Leucine": number, "Lysine": number, "Methionine": number, "Proline": number, "Serine": number, "Tyrosine": number, "Threonine": number, "Tryptophan": number, "Phenylalanine": number, "Cysteine": number },
   "explanation": "Коротко почему такие значения"
-}`);
+}`), 8000, "AI estimate");
       const estimateData = parseAiJsonPayload(estimateResponseText || "{}");
       if (estimateData?.name) {
         finalResults.unshift({
@@ -815,16 +832,16 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
 
   finalResults.sort((left, right) => numberOrZero(right.matchScore) - numberOrZero(left.matchScore));
 
-  if (finalResults.length > 1 && numberOrZero(finalResults[0]?.matchScore) < 0.95) {
+  if (!fast && finalResults.length > 1 && numberOrZero(finalResults[0]?.matchScore) < 0.95) {
     try {
-      const reRankResponseText = await generateAI(`Пользователь ищет: "${normalizedInput}" (нормализовано: "${normalizedQuery}").
+      const reRankResponseText = await withTimeout(generateAI(`Пользователь ищет: "${normalizedInput}" (нормализовано: "${normalizedQuery}").
 Найдены кандидаты:
 ${finalResults.map((candidate, index) => `${index}: ${candidate.name} (${candidate.brand}) - Score: ${candidate.matchScore}`).join("\n")}
 
 Выбери лучшие совпадения.
 Верни только JSON с массивом индексов по убыванию релевантности.
 Полностью нерелевантные позиции исключи.
-Если есть AI-оценка и она выглядит корректно, можно поставить ее выше.`);
+Если есть AI-оценка и она выглядит корректно, можно поставить ее выше.`), 7000, "AI re-rank");
       const reRankData = parseAiJsonPayload(reRankResponseText || "{}");
       const indices = Array.isArray(reRankData)
         ? reRankData
@@ -2767,8 +2784,9 @@ async function startServer() {
     const { transcript } = req.body;
     if (!transcript) return res.status(400).json({ error: "No transcript provided" });
 
+    let items: any[] = [];
     try {
-      const responseText = await generateAI(`Пользователь записал голосовую заметку о приёме пищи: "${transcript}".
+      const responseText = await withTimeout(generateAI(`Пользователь записал голосовую заметку о приёме пищи: "${transcript}".
 
 Разбери фразу на отдельные продукты/ингредиенты для базы данных питания.
 - Если упомянуто составное блюдо (например "яичница с говядиной и луком"), РАЗБЕЙ его на отдельные ингредиенты — каждый отдельным элементом массива (например: яйца, говядина, лук, масло для жарки).
@@ -2786,33 +2804,45 @@ async function startServer() {
 ]}
 
 Верни только JSON-объект вида: {"items": [{"name": "название на русском", "amount": число в граммах или мл}]}.
-Если не удалось распознать ни одного продукта, верни {"items": []}.`);
+Если не удалось распознать ни одного продукта, верни {"items": []}.`), 12000, "Voice decomposition");
 
       const itemsRaw = parseAiJsonPayload(responseText || "{}");
-      const items: any[] = Array.isArray(itemsRaw)
+      items = Array.isArray(itemsRaw)
         ? itemsRaw
         : (Array.isArray(itemsRaw?.items) ? itemsRaw.items : []);
-
-      const matchedItems = await Promise.all(items.map(async (item: any) => {
-        const itemName = String(item?.name || "").trim();
-        const amount = clampNumber(item?.amount, 1, 5000, 100);
-        if (!itemName) return { name: itemName, amount, product: null };
-
-        const candidates = await searchProductsEngine(itemName, {
-          limit: 1,
-          cache: true,
-          localize: true,
-          allowAiEstimate: true,
-        });
-
-        return { name: itemName, amount, product: candidates[0] || null };
-      }));
-
-      res.json(matchedItems);
     } catch (e) {
-      console.error("Voice parsing error:", e);
-      res.status(500).json({ error: "Failed to parse voice input" });
+      console.error("Voice decomposition error:", e);
+      return res.status(500).json({ error: "Failed to parse voice input" });
     }
+
+    // Match each decomposed item independently: a slow/failing lookup for one
+    // ingredient must not take down the whole phrase, so failures and timeouts
+    // degrade to product: null instead of rejecting the batch.
+    const matchedItems = await Promise.all(items.map(async (item: any) => {
+      const itemName = String(item?.name || "").trim();
+      const amount = clampNumber(item?.amount, 1, 5000, 100);
+      if (!itemName) return { name: itemName, amount, product: null };
+
+      try {
+        const candidates = await withTimeout(
+          searchProductsEngine(itemName, {
+            limit: 1,
+            cache: true,
+            localize: true,
+            allowAiEstimate: true,
+            fast: true,
+          }),
+          15000,
+          `Match "${itemName}"`
+        );
+        return { name: itemName, amount, product: candidates[0] || null };
+      } catch (e) {
+        console.error(`Voice item match failed for "${itemName}":`, e);
+        return { name: itemName, amount, product: null };
+      }
+    }));
+
+    res.json(matchedItems);
   });
 
   // --- Admin Routes ---
