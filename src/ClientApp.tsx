@@ -3593,11 +3593,58 @@ export default function App() {
         const matched = items.filter((it) => it.product);
         const unmatched = items.filter((it) => !it.product);
 
-        matched.forEach((it) => {
-          const product = it.product as Product;
-          const usda = (product.isUsda || product.isAiEstimated) ? product : undefined;
-          addToReviewDraft(product, Math.max(1, Math.round(it.amount || 100)), usda);
-        });
+        if (matched.length > 1) {
+          // AI разложил фразу на несколько ингредиентов одного блюда — собираем их
+          // в одну позицию "/api/recipes" (как в "Создать блюдо"), чтобы в дневник
+          // попало одно название блюда, а не отдельная строка на каждый ингредиент.
+          const dishName = voiceTranscript.trim().replace(/^./, (c) => c.toUpperCase());
+          const weighedIngredients = matched.map((it) => ({
+            product: it.product as Product,
+            weightGrams: Math.max(1, Math.round(it.amount || 100)),
+          }));
+          const totalWeight = weighedIngredients.reduce((sum, ing) => sum + ing.weightGrams, 0);
+          let dishSaved = false;
+          try {
+            const recipeRes = await fetch('/api/recipes', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: dishName,
+                cookedWeightGrams: totalWeight,
+                ingredients: weighedIngredients.map((ing) => ({
+                  productId: ing.product.id,
+                  name: ing.product.name,
+                  weightGrams: ing.weightGrams,
+                  calories: ing.product.calories,
+                  protein: ing.product.protein,
+                  fat: ing.product.fat,
+                  carbs: ing.product.carbs,
+                }))
+              })
+            });
+            if (recipeRes.ok) {
+              const recipe = await recipeRes.json();
+              addToReviewDraft(recipe.product, totalWeight);
+              dishSaved = true;
+            }
+          } catch (e) {
+            console.error(e);
+          }
+          if (!dishSaved) {
+            // Не удалось собрать блюдо одной позицией — не теряем распознанное,
+            // добавляем ингредиенты по отдельности, как раньше.
+            weighedIngredients.forEach((ing) => {
+              const usda = (ing.product.isUsda || ing.product.isAiEstimated) ? ing.product : undefined;
+              addToReviewDraft(ing.product, ing.weightGrams, usda);
+            });
+          }
+        } else {
+          matched.forEach((it) => {
+            const product = it.product as Product;
+            const usda = (product.isUsda || product.isAiEstimated) ? product : undefined;
+            addToReviewDraft(product, Math.max(1, Math.round(it.amount || 100)), usda);
+          });
+        }
 
         setIsVoiceSheetOpen(false);
         setVoiceTranscript('');
