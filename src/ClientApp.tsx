@@ -26,7 +26,8 @@ import {
   Droplet,
   Calendar,
   ChevronRight,
-  ArrowRight
+  ArrowRight,
+  UserRound
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -313,31 +314,31 @@ const parseAiJsonPayload = (text: string) => {
 // --- Components ---
 
 const BottomNav = ({ activeTab, onTabChange }: { activeTab: string, onTabChange: (tab: string) => void }) => {
+  const tabs = [
+    { id: 'nutrition', label: 'Дневник', icon: Utensils },
+    { id: 'stats', label: 'Статистика', icon: BarChart3 },
+    { id: 'profile', label: 'Профиль', icon: UserRound },
+  ];
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-zinc-900/80 backdrop-blur-xl border-t border-zinc-800 pb-safe pt-2 px-6 flex justify-around items-center z-40">
-      <button 
-        onClick={() => onTabChange('nutrition')}
-        className={cn(
-          "flex flex-col items-center gap-1 transition-colors",
-          activeTab === 'nutrition' ? "text-emerald-500" : "text-zinc-500"
-        )}
-      >
-        <Utensils size={24} />
-        <span className="text-[10px] font-medium uppercase tracking-wider">Питание</span>
-      </button>
-      
-      <div className="w-12" /> {/* Spacer for FAB */}
-      
-      <button 
-        onClick={() => onTabChange('summary')}
-        className={cn(
-          "flex flex-col items-center gap-1 transition-colors",
-          activeTab === 'summary' ? "text-emerald-500" : "text-zinc-500"
-        )}
-      >
-        <BarChart3 size={24} />
-        <span className="text-[10px] font-medium uppercase tracking-wider">Сводки</span>
-      </button>
+    <nav
+      className="fixed bottom-0 left-0 right-0 pb-safe pt-2 px-2 flex justify-around items-center z-40"
+      style={{ background: PROTO.coolBlock, borderTop: `1px solid ${PROTO.borderLt}` }}
+    >
+      {tabs.map((tab) => {
+        const isActive = activeTab === tab.id;
+        const Icon = tab.icon;
+        return (
+          <button
+            key={tab.id}
+            onClick={() => onTabChange(tab.id)}
+            className="flex flex-col items-center gap-1 transition-colors px-6 py-1"
+            style={{ color: isActive ? PROTO.primary : PROTO.textLt }}
+          >
+            <Icon size={22} strokeWidth={isActive ? 2.2 : 1.8} />
+            <span className="text-[10px] uppercase tracking-wider" style={{ fontWeight: isActive ? 700 : 400 }}>{tab.label}</span>
+          </button>
+        );
+      })}
     </nav>
   );
 };
@@ -1471,6 +1472,7 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
 };
 
 const SummaryScreen = ({
+  view,
   goals,
   profile,
   weeklyHistory,
@@ -1487,6 +1489,7 @@ const SummaryScreen = ({
   onSaveProfileGoals,
   onToggleTheme,
 }: {
+  view: 'stats' | 'profile';
   goals: NutrientGoalSet;
   profile: UserProfileSettings;
   weeklyHistory: DiaryHistoryPoint[];
@@ -1741,10 +1744,12 @@ const SummaryScreen = ({
   return (
     <div className="p-4">
       <header className="mb-6 pt-4">
-        <h1 className="font-display text-4xl font-bold tracking-tight">Сводки</h1>
-        <p className="text-zinc-500 text-sm">Макроэлементы, анализ и программы</p>
+        <h1 className="font-display text-4xl font-bold tracking-tight">{view === 'stats' ? 'Статистика' : 'Профиль'}</h1>
+        <p className="text-zinc-500 text-sm">{view === 'stats' ? 'Динамика, рейтинг и рекомендации' : 'Цели, программы и настройки'}</p>
       </header>
 
+      {view === 'stats' && (
+      <>
       <div className="mb-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-3">
         <div className="flex items-center justify-between mb-3 px-1">
           <p className="text-sm font-semibold text-zinc-200">Пульс питания за 7 дней</p>
@@ -1836,7 +1841,11 @@ const SummaryScreen = ({
           )}
         </AnimatePresence>
       </div>
+      </>
+      )}
 
+      {view === 'profile' && (
+      <>
       <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
         <button
           onClick={() => {
@@ -2042,6 +2051,8 @@ const SummaryScreen = ({
           )}
         </AnimatePresence>
       </div>
+      </>
+      )}
 
       <BottomSheet isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} title="Профиль и цели">
         <div className="space-y-4">
@@ -3608,6 +3619,7 @@ export default function App() {
             />
           ) : (
             <SummaryScreen
+              view={activeTab === 'stats' ? 'stats' : 'profile'}
               goals={effectiveGoals}
               profile={profileSettings}
               weeklyHistory={weeklyHistory}
@@ -3628,10 +3640,12 @@ export default function App() {
         </motion.div>
       </AnimatePresence>
 
-      <FAB onClick={() => {
-        setSelectedMealType(getCurrentMealType());
-        setIsActionSheetOpen(true);
-      }} />
+      {activeTab === 'nutrition' && (
+        <FAB onClick={() => {
+          setSelectedMealType(getCurrentMealType());
+          setIsActionSheetOpen(true);
+        }} />
+      )}
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
 
       <input 
