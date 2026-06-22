@@ -3222,6 +3222,9 @@ export default function App() {
 
   // Открыть правку состава блюда прямо в черновике «Проверьте результат»
   const openEditDishIngredients = (item: ReviewDraftItem) => {
+    // Закрываем «Проверьте результат» на время правки — обе шторки используют
+    // одинаковый fixed-оверлей, и при одновременном показе они залезают друг на друга
+    setIsReviewSheetOpen(false);
     setEditDishReviewTempId(item.tempId);
     setDishName(item.product.name);
     setDishCookedWeight(String(Math.round(item.amount)));
@@ -3237,6 +3240,7 @@ export default function App() {
     setDishIngredients([]);
     setDishIngredientQuery('');
     setDishIngredientResults([]);
+    setIsReviewSheetOpen(true);
   };
 
   const submitDish = async () => {
