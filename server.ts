@@ -887,16 +887,8 @@ async function findBestPhotoRecognitionMatch(item: PhotoRecognitionItem, userId?
   }
 
   const queries = buildPhotoRecognitionQueries(item);
-  let bestMatch: any = null;
 
-  for (const query of queries) {
-    const candidates = await searchProductsEngine(query, {
-      limit: 5,
-      cache: true,
-      localize: true,
-      allowAiEstimate: numberOrZero(item.confidence) >= 0.55,
-    });
-
+  const scoreCandidates = (query: string, candidates: any[], bestMatch: any) => {
     for (const candidate of candidates) {
       const similarity = Math.max(
         computeTextSimilarity(item.name, candidate.name),
@@ -915,13 +907,37 @@ async function findBestPhotoRecognitionMatch(item: PhotoRecognitionItem, userId?
       );
 
       if (!bestMatch || finalScore > numberOrZero(bestMatch.matchScore)) {
-        bestMatch = {
-          ...item,
-          matchedBy: query,
-          matchScore: finalScore,
-          product: candidate,
-        };
+        bestMatch = { ...item, matchedBy: query, matchScore: finalScore, product: candidate };
       }
+    }
+    return bestMatch;
+  };
+
+  const queryResults = await Promise.all(
+    queries.map((query) =>
+      withTimeout(
+        searchProductsEngine(query, { limit: 5, cache: true, localize: true, allowAiEstimate: false, fast: true }),
+        6000,
+        `Photo match "${query}"`
+      ).catch(() => [] as any[])
+    )
+  );
+
+  let bestMatch: any = null;
+  queries.forEach((query, index) => {
+    bestMatch = scoreCandidates(query, queryResults[index] || [], bestMatch);
+  });
+
+  if ((!bestMatch || numberOrZero(bestMatch.matchScore) < 0.5) && numberOrZero(item.confidence) >= 0.55) {
+    try {
+      const fallbackCandidates = await withTimeout(
+        searchProductsEngine(item.name, { limit: 5, cache: true, localize: true, allowAiEstimate: true }),
+        12000,
+        `Photo fallback match "${item.name}"`
+      );
+      bestMatch = scoreCandidates(item.name, fallbackCandidates, bestMatch);
+    } catch (e) {
+      console.error(`Photo fallback match failed for "${item.name}":`, e);
     }
   }
 
@@ -944,7 +960,11 @@ async function recognizeProductsFromPhoto(image: { data: string; mimeType: strin
 - Без пробелов и дефисов.
 - Если штрихкод не виден, верни пустой массив.`;
 
-  const barcodeProbeText = await generateAI(barcodeProbePrompt, "application/json", image);
+  const barcodeProbeText = await withTimeout(
+    generateAI(barcodeProbePrompt, "application/json", image),
+    10000,
+    "Barcode probe"
+  ).catch(() => "");
   const barcodeProbeRaw = parseAiJsonPayload(barcodeProbeText || "{}");
   const photoBarcodeCandidates = uniqueStrings(
     (Array.isArray(barcodeProbeRaw?.barcodeCandidates) ? barcodeProbeRaw.barcodeCandidates : [])
@@ -1033,7 +1053,11 @@ async function recognizeProductsFromPhoto(image: { data: string; mimeType: strin
 - confidence от 0.0 до 1.0.
 - Если уверенность низкая, всё равно верни лучшую гипотезу.`;
 
-  const recognitionText = await generateAI(recognitionPrompt, "application/json", image);
+  const recognitionText = await withTimeout(
+    generateAI(recognitionPrompt, "application/json", image),
+    20000,
+    "Photo recognition"
+  );
   const recognitionRaw = parseAiJsonPayload(recognitionText || "{}");
   let recognizedItemsSource = Array.isArray(recognitionRaw)
     ? recognitionRaw
@@ -1055,7 +1079,11 @@ async function recognizeProductsFromPhoto(image: { data: string; mimeType: strin
   "confidence": 0.0,
   "isPackaged": false
 }`;
-    const singleFoodText = await generateAI(singleFoodFallbackPrompt, "application/json", image);
+    const singleFoodText = await withTimeout(
+      generateAI(singleFoodFallbackPrompt, "application/json", image),
+      10000,
+      "Single food fallback"
+    ).catch(() => "");
     const singleFoodRaw = parseAiJsonPayload(singleFoodText || "{}");
     if (singleFoodRaw && typeof singleFoodRaw === "object" && !Array.isArray(singleFoodRaw)) {
       recognizedItemsSource = [singleFoodRaw];
@@ -1178,9 +1206,13 @@ async function localizeTextToRussian(value: any, type: "name" | "brand") {
   if (cached) return cached;
 
   try {
-    const text = await generateAI(`Переведи на русский язык ${type === "name" ? "название продукта/блюда" : "название бренда"}: "${raw}".
+    const text = await withTimeout(
+      generateAI(`Переведи на русский язык ${type === "name" ? "название продукта/блюда" : "название бренда"}: "${raw}".
 Сохрани смысл и пищевой контекст.
-Верни только JSON вида: {"text":"..."}`);
+Верни только JSON вида: {"text":"..."}`),
+      6000,
+      "RU localization"
+    );
     const parsed = parseAiJsonPayload(text || "{}");
     const localized = String(parsed?.text || "").trim();
     if (localized) {
@@ -1197,8 +1229,10 @@ async function localizeTextToRussian(value: any, type: "name" | "brand") {
 async function localizeProductForRussianAudience<T extends Record<string, any>>(product: T): Promise<T> {
   if (!product || typeof product !== "object") return product;
 
-  const localizedName = await localizeTextToRussian(product.name, "name");
-  const localizedBrand = product.brand ? await localizeTextToRussian(product.brand, "brand") : product.brand;
+  const [localizedName, localizedBrand] = await Promise.all([
+    localizeTextToRussian(product.name, "name"),
+    product.brand ? localizeTextToRussian(product.brand, "brand") : Promise.resolve(product.brand),
+  ]);
 
   return {
     ...product,
@@ -1926,7 +1960,7 @@ async function startServer() {
     if (!prompt) return res.status(400).json({ error: "No prompt provided" });
 
     try {
-      const text = await generateAI(prompt, responseMimeType, image);
+      const text = await withTimeout(generateAI(prompt, responseMimeType, image), 20000, "AI proxy");
       res.json({ text });
     } catch (e: any) {
       console.error("AI Proxy Error:", e);
