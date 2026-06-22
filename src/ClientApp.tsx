@@ -4522,21 +4522,15 @@ export default function App() {
             )}
           </div>
 
-          {!isListening && voiceTranscript && !isParsingVoice && (
+          {voiceTranscript && !isParsingVoice && (
             <button
-              onClick={handleVoiceParse}
+              onClick={() => {
+                if (isListening) stopListening();
+                handleVoiceParse();
+              }}
               className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl mb-6 shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform"
             >
-              Разобрать фразу
-            </button>
-          )}
-
-          {isListening && voiceTranscript && (
-            <button
-              onClick={stopListening}
-              className="w-full py-4 bg-zinc-800 text-zinc-300 font-bold rounded-2xl mb-6 active:scale-95 transition-transform"
-            >
-              Закончить запись
+              Готово
             </button>
           )}
 
