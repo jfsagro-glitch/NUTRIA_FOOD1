@@ -1039,7 +1039,7 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
 
   const [allNutrientsOpen, setAllNutrientsOpen] = useState(false);
   const [mealExpanded, setMealExpanded] = useState<Record<string, boolean>>({
-    BREAKFAST: true, LUNCH: false, DINNER: false, SNACK: false,
+    BREAKFAST: false, LUNCH: false, DINNER: false, SNACK: false,
   });
   const toggleMeal = (type: string) => setMealExpanded((m) => ({ ...m, [type]: !m[type] }));
   const dateInputRef = useRef<HTMLInputElement>(null);
