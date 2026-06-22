@@ -19,26 +19,33 @@
 3. Запустить проект:
    `npm run dev`
 
-## Деплой на Railway
+## Деплой (Render) — единственный источник правды
 
-В проекте уже есть `railway.json`, поэтому достаточно подключить репозиторий и задать переменные окружения.
-Также добавлен `nixpacks.toml`, который фиксирует Node.js 20 для сборки Railway.
+Прод (`app.nutria.one`) хостится на **Render**, сервис `NUTRIA_FOOD1` (`srv-d8qfk7i8qa3s73c7nen0`).
+Render настроен на **Auto-Deploy при пуше в ветку `main`** — других механизмов деплоя в проекте нет.
 
-1. Создайте новый проект в Railway и подключите этот репозиторий.
-2. В `Variables` добавьте:
-   - `NODE_ENV=production`
-   - `DATABASE_URL=...` (из Railway PostgreSQL)
-   - `GEMINI_API_KEY=...`
-   - `USDA_FDC_API_KEY=...` (если нужен поиск по USDA)
-   - `BARCODE_PREFERRED_COUNTRY=ru`
-   - `BARCODE_PREFERRED_LANG=ru`
-3. Railway автоматически выполнит:
-   - `npm install`
-   - `npm run build`
-   - `node scripts/start-railway.mjs` (из `railway.json`)
-4. Сервер автоматически подхватывает `PORT` из окружения хостинга.
+**Правило для любой разработки (в т.ч. через Claude Code):**
+1. Все рабочие коммиты — в свою feature-ветку (`claude/...` или иную), **никогда напрямую в `main`**.
+2. Когда изменения проверены и готовы к продакшену — слить ветку в `main` (fast-forward или PR) и запушить.
+3. Пуш в `main` = немедленный автодеплой на Render. Прогресс смотреть в Render Dashboard → `Events` (там видно `Deploy started` → `Deploy live` для конкретного коммита).
+4. Если коммиты лежат только в feature-ветке и не слиты в `main` — на проде ничего не изменится, как бы много коммитов ни было.
 
-Скрипт `scripts/start-railway.mjs` делает запуск автоматическим:
+Render-настройки сервиса (Build/Start command, переменные окружения) задаются в самой панели Render, а не файлами в репозитории — `railway.json`/`nixpacks.toml` (Railway-specific) удалены, т.к. Render их не читает.
+
+Build command: `npm install && npm run build`
+Start command: `npm start` (= `node scripts/start-server.mjs`)
+
+Обязательные переменные окружения в Render → `Environment`:
+- `NODE_ENV=production`
+- `DATABASE_URL=...` (Postgres-инстанс)
+- `GEMINI_API_KEY=...`
+- `USDA_FDC_API_KEY=...` (опционально, для поиска по USDA)
+- `BARCODE_PREFERRED_COUNTRY=ru`
+- `BARCODE_PREFERRED_LANG=ru`
+
+Сервер автоматически подхватывает `PORT` из окружения хостинга.
+
+`scripts/start-server.mjs` выполняется через `npm start` при каждом старте процесса:
 - пытается взять `DATABASE_URL` (или fallback `DATABASE_PRIVATE_URL` / `POSTGRES_URL` / `PG*` переменные),
 - если URL найден — выполняет `prisma db push`,
 - если URL пустой — пропускает `db push` и запускает сервер с предупреждением в логах.
@@ -52,7 +59,7 @@ Prisma уже настроена на PostgreSQL через `DATABASE_URL`.
 - `npm run db:migrate` — применить миграции в проде
 - `npm run db:seed` — заполнить базу стартовыми продуктами
 
-Для Railway: добавьте сервис PostgreSQL, скопируйте его `DATABASE_URL` в Variables вашего web-сервиса, затем выполните деплой.
+На Render: создайте/подключите Postgres-инстанс, скопируйте его `DATABASE_URL` в `Environment` веб-сервиса, затем запушите в `main`, чтобы запустить деплой.
 
 ## QR / штрихкод (быстро и качественно)
 

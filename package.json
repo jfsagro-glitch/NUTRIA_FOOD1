@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "prisma generate && tsc && vite build",
-    "start": "tsx server.ts",
+    "start": "node scripts/start-server.mjs",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "db:generate": "prisma generate",

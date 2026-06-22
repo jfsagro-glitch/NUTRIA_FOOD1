@@ -47,7 +47,7 @@ if (resolvedDatabaseUrl) {
   runOrExit("npx", ["prisma", "db", "push"], env);
 } else {
   console.warn("[startup] DATABASE_URL is empty. Skipping prisma db push.");
-  console.warn("[startup] Set DATABASE_URL in Railway Variables to enable DB features.");
+  console.warn("[startup] Set DATABASE_URL in the Render service's Environment variables to enable DB features.");
 }
 
 console.log("[startup] Starting server...");

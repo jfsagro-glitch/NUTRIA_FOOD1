@@ -13,8 +13,15 @@ description: Контекст проекта NUTRIA FOOD — карта архи
 - `npm run dev` / `npm run start` — `tsx server.ts` (фронт и API вместе).
 - `npm run lint` — `tsc --noEmit` (полный типчек, ~ok без сети).
 - `npm run db:push` / `db:migrate` / `db:seed` — Prisma.
-- Деплой — Railway (`railway.json`, `nixpacks.toml`, `scripts/start-railway.mjs`).
 - AI-ключи через `.env`: `GEMINI_API_KEY` (основной), `DEEPSEEK_API_KEY`, `OPENAI_API_KEY` (фоллбэки), `USDA_FDC_API_KEY` (опционально).
+
+## Деплой — единственный источник правды
+
+- Прод (`app.nutria.one`) хостится на **Render**, сервис `NUTRIA_FOOD1`. Auto-Deploy срабатывает **только на пуш в `main`**. Нет ни Railway, ни GitHub Actions, ни других путей деплоя.
+- Все правки делать в feature-ветке (например `claude/...`), **никогда коммитить прямо в `main`**.
+- Прежде чем сливать feature-ветку в `main` и пушить туда (= триггерить прод-деплой), нужно явное подтверждение пользователя — это hard-to-reverse, видимое для всех действие.
+- Если после нескольких коммитов в feature-ветке пользователь говорит "ничего не меняется на проде" — первым делом проверь, слита ли ветка в `main` (`git log main..<branch> --oneline`), а не ищи баг в коде.
+- `scripts/start-server.mjs` (запускается через `npm start`) на старте процесса резолвит `DATABASE_URL` (или `PG*`/`POSTGRES_*` переменные), при наличии — гонит `prisma db push`, затем стартует `server.ts`. Build/Start command настроены в самой панели Render, не файлами в репо.
 
 ## Где что лежит
 
