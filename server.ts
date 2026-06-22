@@ -240,6 +240,18 @@ function parseAiJsonPayload(text: string) {
   }
 }
 
+function unwrapAiItemsArray(payload: any): any[] {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+
+  for (const key of ["items", "ingredients", "products", "components", "results"]) {
+    if (Array.isArray(payload[key])) return payload[key];
+  }
+
+  const arrayValues = Object.values(payload).filter((value) => Array.isArray(value));
+  return arrayValues.length === 1 ? (arrayValues[0] as any[]) : [];
+}
+
 function clampNumber(value: any, min: number, max: number, fallback: number) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -1059,9 +1071,7 @@ async function recognizeProductsFromPhoto(image: { data: string; mimeType: strin
     "Photo recognition"
   );
   const recognitionRaw = parseAiJsonPayload(recognitionText || "{}");
-  let recognizedItemsSource = Array.isArray(recognitionRaw)
-    ? recognitionRaw
-    : (Array.isArray(recognitionRaw?.items) ? recognitionRaw.items : []);
+  let recognizedItemsSource = unwrapAiItemsArray(recognitionRaw);
   const dishEstimateRaw = recognitionRaw && typeof recognitionRaw === "object" && !Array.isArray(recognitionRaw)
     ? recognitionRaw.dishEstimate
     : null;
@@ -2818,17 +2828,17 @@ async function startServer() {
     const { transcript } = req.body;
     if (!transcript) return res.status(400).json({ error: "No transcript provided" });
 
-    let items: any[] = [];
-    try {
-      const responseText = await withTimeout(generateAI(`Пользователь записал голосовую заметку о приёме пищи: "${transcript}".
+    const buildDecompositionPrompt = (reinforce: boolean) => `Пользователь записал голосовую заметку о приёме пищи: "${transcript}".
 
 Разбери фразу на отдельные продукты/ингредиенты для базы данных питания.
 - Если упомянуто составное блюдо (например "яичница с говядиной и луком"), РАЗБЕЙ его на отдельные ингредиенты — каждый отдельным элементом массива (например: яйца, говядина, лук, масло для жарки).
+- Если упомянут один-единственный продукт (например "яичница из четырёх яиц" или просто "банан"), верни его как ингредиент(ы) этого продукта — не выдумывай компоненты, которых нет во фразе, но не оставляй список пустым.
 - Распознавай числительные, включая словесные ("два", "четыре", "пара", "пол"), и переводи количество штук в граммы через типичный вес одной штуки (яйцо ≈ 50 г, помидор ≈ 120 г, банан ≈ 120 г, кусок хлеба ≈ 30 г и т.д.), умножая на указанное число.
 - Если количество не указано вовсе, оцени типичную порцию для этого ингредиента в составе блюда.
+- Фраза — это результат распознавания речи: в ней могут быть опечатки, слова-паразиты или неточная транскрипция. Ищи в ней пищевые слова даже при неидеальной формулировке, не отбрасывай фразу целиком из-за мелких неточностей.
 - Названия продуктов указывай в нормальной словарной форме на русском (именительный падеж, без лишних слов), чтобы их легко было найти в базе питания, например "Яйцо куриное", "Говядина", "Лук репчатый".
 
-Пример:
+Примеры:
 Фраза: "Яичница с говядиной и луком, четыре яйца"
 Ответ: {"items": [
   {"name": "Яйцо куриное", "amount": 200},
@@ -2837,13 +2847,24 @@ async function startServer() {
   {"name": "Растительное масло", "amount": 10}
 ]}
 
-Верни только JSON-объект вида: {"items": [{"name": "название на русском", "amount": число в граммах или мл}]}.
-Если не удалось распознать ни одного продукта, верни {"items": []}.`), 12000, "Voice decomposition");
+Фраза: "Яичница из четырёх яиц"
+Ответ: {"items": [
+  {"name": "Яйцо куриное", "amount": 200},
+  {"name": "Растительное масло", "amount": 5}
+]}
 
-      const itemsRaw = parseAiJsonPayload(responseText || "{}");
-      items = Array.isArray(itemsRaw)
-        ? itemsRaw
-        : (Array.isArray(itemsRaw?.items) ? itemsRaw.items : []);
+Верни только JSON-объект вида: {"items": [{"name": "название на русском", "amount": число в граммах или мл}]}.
+Пустой список items допустим только если во фразе вообще нет ни одного упоминания еды или напитка.${reinforce ? " В этой фразе есть упоминание еды — найди хотя бы один продукт, не возвращай пустой список." : ""}`;
+
+    let items: any[] = [];
+    try {
+      const responseText = await withTimeout(generateAI(buildDecompositionPrompt(false)), 12000, "Voice decomposition");
+      items = unwrapAiItemsArray(parseAiJsonPayload(responseText || "{}"));
+
+      if (items.length === 0) {
+        const retryText = await withTimeout(generateAI(buildDecompositionPrompt(true)), 12000, "Voice decomposition retry");
+        items = unwrapAiItemsArray(parseAiJsonPayload(retryText || "{}"));
+      }
     } catch (e) {
       console.error("Voice decomposition error:", e);
       return res.status(500).json({ error: "Failed to parse voice input" });
