@@ -1768,9 +1768,10 @@ const SummaryScreen = ({
   });
   const [isSettingsCollapsed, setIsSettingsCollapsed] = useState(() => localStorage.getItem('collapse_summary_settings') === 'true');
   const [telegramAvailable, setTelegramAvailable] = useState(true);
-  const [telegramStatus, setTelegramStatus] = useState<{ linked: boolean; username: string | null; firstName: string | null } | null>(null);
+  const [telegramStatus, setTelegramStatus] = useState<{ linked: boolean; username: string | null; firstName: string | null; smartRemindersEnabled: boolean; smartReminderMaxPerDay: number } | null>(null);
   const [telegramLinkCode, setTelegramLinkCode] = useState<{ code: string; deepLink: string | null; expiresInMinutes: number } | null>(null);
   const [isLoadingTelegram, setIsLoadingTelegram] = useState(false);
+  const [isSavingSmartReminders, setIsSavingSmartReminders] = useState(false);
 
   useEffect(() => {
     if (view !== 'profile') return;
@@ -1818,13 +1819,32 @@ const SummaryScreen = ({
     try {
       const res = await fetch('/api/telegram/unlink', { method: 'POST' });
       if (res.ok) {
-        setTelegramStatus({ linked: false, username: null, firstName: null });
+        setTelegramStatus({ linked: false, username: null, firstName: null, smartRemindersEnabled: false, smartReminderMaxPerDay: 3 });
         setTelegramLinkCode(null);
       }
     } catch (e) {
       console.error(e);
     } finally {
       setIsLoadingTelegram(false);
+    }
+  };
+
+  const updateSmartReminders = async (patch: { enabled?: boolean; maxPerDay?: number }) => {
+    setIsSavingSmartReminders(true);
+    try {
+      const res = await fetch('/api/telegram/smart-reminders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTelegramStatus((prev) => prev ? { ...prev, ...data } : prev);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSavingSmartReminders(false);
     }
   };
 
@@ -2266,17 +2286,62 @@ const SummaryScreen = ({
                   {!telegramAvailable ? (
                     <p className="text-sm text-zinc-400">Telegram-бот не настроен в этом окружении.</p>
                   ) : telegramStatus?.linked ? (
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm text-zinc-300">
-                        Привязан{telegramStatus.username ? <> как <span className="text-zinc-100">@{telegramStatus.username}</span></> : telegramStatus.firstName ? <> ({telegramStatus.firstName})</> : ''}
-                      </p>
-                      <button
-                        onClick={unlinkTelegram}
-                        disabled={isLoadingTelegram}
-                        className="px-3 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-sm disabled:opacity-50 flex-shrink-0"
-                      >
-                        Отвязать
-                      </button>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm text-zinc-300">
+                          Привязан{telegramStatus.username ? <> как <span className="text-zinc-100">@{telegramStatus.username}</span></> : telegramStatus.firstName ? <> ({telegramStatus.firstName})</> : ''}
+                        </p>
+                        <button
+                          onClick={unlinkTelegram}
+                          disabled={isLoadingTelegram}
+                          className="px-3 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-sm disabled:opacity-50 flex-shrink-0"
+                        >
+                          Отвязать
+                        </button>
+                      </div>
+
+                      <div className="border-t border-zinc-700 pt-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm text-zinc-300">Умные напоминания о приёме пищи</p>
+                          <button
+                            onClick={() => updateSmartReminders({ enabled: !telegramStatus.smartRemindersEnabled })}
+                            disabled={isSavingSmartReminders}
+                            className={`px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-50 flex-shrink-0 transition-colors ${
+                              telegramStatus.smartRemindersEnabled
+                                ? 'bg-emerald-500 hover:bg-emerald-400 text-white'
+                                : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-100'
+                            }`}
+                          >
+                            {telegramStatus.smartRemindersEnabled ? '🔔 Включены' : '🔕 Включить умные'}
+                          </button>
+                        </div>
+
+                        {telegramStatus.smartRemindersEnabled && (
+                          <div className="mt-3">
+                            <p className="text-xs text-zinc-500 mb-2">Напоминаний в день (максимум):</p>
+                            <div className="flex gap-2">
+                              {[1, 2, 3, 4, 5].map((n) => (
+                                <button
+                                  key={n}
+                                  onClick={() => updateSmartReminders({ maxPerDay: n })}
+                                  disabled={isSavingSmartReminders}
+                                  className={`w-9 h-9 rounded-lg text-sm font-medium disabled:opacity-50 transition-colors ${
+                                    telegramStatus.smartReminderMaxPerDay === n
+                                      ? 'bg-emerald-500 text-white'
+                                      : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-300'
+                                  }`}
+                                >
+                                  {n}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <p className="text-xs text-zinc-500 mt-3">
+                          Если завтрак, обед или ужин не отмечены в дневнике спустя 3 часа после обычного времени (08:00 / 13:00 / 19:00) — бот напомнит, не более {telegramStatus.smartReminderMaxPerDay} раз в день. Перекус не отслеживается.
+                        </p>
+                      </div>
                     </div>
                   ) : telegramLinkCode ? (
                     <div className="space-y-2">

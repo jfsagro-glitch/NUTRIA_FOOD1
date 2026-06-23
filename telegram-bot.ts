@@ -1053,7 +1053,13 @@ export function registerTelegramBot(app: Express, prisma: PrismaClient) {
     const userId = req.cookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     const account = await (prisma as any).telegramAccount.findUnique({ where: { userId } });
-    res.json({ linked: !!account, username: account?.username || null, firstName: account?.firstNameTg || null });
+    res.json({
+      linked: !!account,
+      username: account?.username || null,
+      firstName: account?.firstNameTg || null,
+      smartRemindersEnabled: account?.smartRemindersEnabled ?? false,
+      smartReminderMaxPerDay: account?.smartReminderMaxPerDay ?? 3,
+    });
   });
 
   app.post("/api/telegram/unlink", async (req: Request, res: Response) => {
@@ -1061,6 +1067,29 @@ export function registerTelegramBot(app: Express, prisma: PrismaClient) {
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     await (prisma as any).telegramAccount.updateMany({ where: { userId }, data: { userId: null } });
     res.json({ ok: true });
+  });
+
+  // Настройка умных напоминаний из веб-интерфейса — нужна клиентам, которые
+  // привязали Telegram через код (а не завели аккаунт онбордингом в самом
+  // боте) и не будут листать меню бота, чтобы их включить.
+  app.post("/api/telegram/smart-reminders", async (req: Request, res: Response) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    const account = await (prisma as any).telegramAccount.findUnique({ where: { userId } });
+    if (!account) return res.status(404).json({ error: "Telegram не привязан" });
+
+    const data: { smartRemindersEnabled?: boolean; smartReminderMaxPerDay?: number } = {};
+    if (typeof req.body.enabled === "boolean") data.smartRemindersEnabled = req.body.enabled;
+    if (req.body.maxPerDay !== undefined) {
+      const n = Math.max(1, Math.min(5, Number(req.body.maxPerDay) || 3));
+      data.smartReminderMaxPerDay = n;
+    }
+
+    const updated = await (prisma as any).telegramAccount.update({ where: { userId }, data });
+    res.json({
+      smartRemindersEnabled: updated.smartRemindersEnabled,
+      smartReminderMaxPerDay: updated.smartReminderMaxPerDay,
+    });
   });
 
   if (PUBLIC_URL) {
