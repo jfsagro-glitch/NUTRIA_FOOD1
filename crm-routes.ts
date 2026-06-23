@@ -53,6 +53,13 @@ function requireNutritionist(req: Request, res: Response, next: NextFunction) {
   });
 }
 
+// Сотрудники (нутрициологи/админы) — все остальные роли считаются клиентами
+// дневника питания, включая общий демо-аккаунт ("USER") и любые будущие значения.
+const STAFF_ROLES = ["NUTRITIONIST", "ADMIN"];
+function isClientRole(role: string | null | undefined) {
+  return !!role && !STAFF_ROLES.includes(role);
+}
+
 // ─── BMR / TDEE расчёты ──────────────────────────────────────────────────────
 
 const PAL: Record<string, number> = {
@@ -196,9 +203,11 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       const nutritionistId = (req as any).user.id;
 
       // Показываем ВСЕХ зарегистрированных клиентов дневника питания (app.nutria.one),
-      // а не только тех, кого пригласил именно этот нутрициолог.
+      // а не только тех, кого пригласил именно этот нутрициолог. Клиент — любой
+      // пользователь, кроме сотрудников (нутрициологов/админов), включая общий
+      // демо-аккаунт веб-приложения и аккаунты, созданные через Telegram-бота.
       const clientUsers = await prisma.user.findMany({
-        where: { role: "CLIENT" },
+        where: { role: { notIn: STAFF_ROLES } },
         include: {
           clientProfile: true,
           inviteReceived: { include: { nutritionist: { include: { nutritionistProfile: true } } } },
@@ -286,7 +295,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
         where: { id: clientId },
         include: { clientProfile: true, inviteReceived: true },
       });
-      if (!user || user.role !== "CLIENT") return res.status(404).json({ error: "Клиент не найден" });
+      if (!user || !isClientRole(user.role)) return res.status(404).json({ error: "Клиент не найден" });
 
       const invite = (user as any).inviteReceived;
 
@@ -323,7 +332,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       const { clientName, status, tags } = req.body;
 
       const clientUser = await prisma.user.findUnique({ where: { id: clientId } });
-      if (!clientUser || clientUser.role !== "CLIENT") return res.status(404).json({ error: "Клиент не найден" });
+      if (!clientUser || !isClientRole(clientUser.role)) return res.status(404).json({ error: "Клиент не найден" });
 
       let invite = await (prisma as any).clientInvite.findFirst({ where: { clientId } });
       if (!invite) {
@@ -364,7 +373,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       const { date, days = "7" } = req.query;
 
       const clientUser = await prisma.user.findUnique({ where: { id: clientId } });
-      if (!clientUser || clientUser.role !== "CLIENT") return res.status(404).json({ error: "Клиент не найден" });
+      if (!clientUser || !isClientRole(clientUser.role)) return res.status(404).json({ error: "Клиент не найден" });
 
       const endDate = date ? new Date(String(date)) : new Date();
       endDate.setHours(23, 59, 59, 999);
@@ -661,7 +670,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       const { clientId } = req.params;
 
       const clientUser = await prisma.user.findUnique({ where: { id: clientId } });
-      if (!clientUser || clientUser.role !== "CLIENT") return res.status(404).json({ error: "Клиент не найден" });
+      if (!clientUser || !isClientRole(clientUser.role)) return res.status(404).json({ error: "Клиент не найден" });
 
       const messages = await (prisma as any).message.findMany({
         where: { nutritionistId, clientId },
@@ -691,7 +700,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       if (!content?.trim()) return res.status(400).json({ error: "Текст сообщения обязателен" });
 
       const clientUser = await prisma.user.findUnique({ where: { id: clientId } });
-      if (!clientUser || clientUser.role !== "CLIENT") return res.status(404).json({ error: "Клиент не найден" });
+      if (!clientUser || !isClientRole(clientUser.role)) return res.status(404).json({ error: "Клиент не найден" });
 
       const message = await (prisma as any).message.create({
         data: { nutritionistId, clientId, sender: "NUTRITIONIST", content: content.trim() },
@@ -866,7 +875,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       const { clientId } = req.params;
 
       const clientUser = await prisma.user.findUnique({ where: { id: clientId } });
-      if (!clientUser || clientUser.role !== "CLIENT") return res.status(404).json({ error: "Клиент не найден" });
+      if (!clientUser || !isClientRole(clientUser.role)) return res.status(404).json({ error: "Клиент не найден" });
 
       const {
         firstName, lastName, birthYear, sex, heightCm, weightKg,
