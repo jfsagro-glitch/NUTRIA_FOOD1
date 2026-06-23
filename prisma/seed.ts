@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { createHash } from 'node:crypto';
 
 const prisma = new PrismaClient();
 
@@ -2894,40 +2895,52 @@ async function main() {
   ];
 
   for (const product of products) {
-    const barcode = `seed-${Buffer.from(`${product.name}-${product.brand}`).toString('base64url').slice(0, 20)}`;
-    const existing = await prisma.product.findUnique({
-      where: { name_brand: { name: product.name, brand: product.brand } },
-      select: { micronutrients: true },
-    });
+    try {
+      // Хешируем полную строку (а не обрезаем raw base64 первой пары имени-бренда) —
+      // иначе продукты с общим префиксом (напр. "Куриное филе"/"Куриное бедро") получали
+      // одинаковый barcode, ловили unique constraint violation и валили весь сидинг,
+      // который гоняется при каждом старте сервера (см. scripts/start-server.mjs) —
+      // т.е. одна коллизия клала весь деплой.
+      const barcode = `seed-${createHash('sha256').update(`${product.name}-${product.brand}`).digest('base64url').slice(0, 20)}`;
+      const existing = await prisma.product.findUnique({
+        where: { name_brand: { name: product.name, brand: product.brand } },
+        select: { micronutrients: true },
+      });
 
-    // Сидинг гоняется на каждом старте сервера (см. scripts/start-server.mjs), поэтому
-    // микроэлементы нельзя слепо перезатирать — это стирало бы уже накопленные/уточнённые
-    // значения каждым деплоем. Берём ненулевое значение по каждому нутриенту, отдавая
-    // приоритет уже сохранённому в БД, и только подмешиваем то, чего там не было.
-    const mergedMicronutrients = JSON.stringify(
-      mergeMicronutrientsPreferExisting(parseMicronutrientsRaw(existing?.micronutrients), buildMicronutrientsFromJson(product.micronutrients))
-    );
+      // Сидинг гоняется на каждом старте сервера (см. scripts/start-server.mjs), поэтому
+      // микроэлементы нельзя слепо перезатирать — это стирало бы уже накопленные/уточнённые
+      // значения каждым деплоем. Берём ненулевое значение по каждому нутриенту, отдавая
+      // приоритет уже сохранённому в БД, и только подмешиваем то, чего там не было.
+      const mergedMicronutrients = JSON.stringify(
+        mergeMicronutrientsPreferExisting(parseMicronutrientsRaw(existing?.micronutrients), buildMicronutrientsFromJson(product.micronutrients))
+      );
 
-    await prisma.product.upsert({
-      where: {
-        name_brand: {
-          name: product.name,
-          brand: product.brand,
+      await prisma.product.upsert({
+        where: {
+          name_brand: {
+            name: product.name,
+            brand: product.brand,
+          },
         },
-      },
-      update: {
-        calories: product.calories,
-        protein: product.protein,
-        fat: product.fat,
-        carbs: product.carbs,
-        fiber: product.fiber,
-        micronutrients: mergedMicronutrients,
-      },
-      create: {
-        ...product,
-        barcode,
-      },
-    });
+        update: {
+          calories: product.calories,
+          protein: product.protein,
+          fat: product.fat,
+          carbs: product.carbs,
+          fiber: product.fiber,
+          micronutrients: mergedMicronutrients,
+        },
+        create: {
+          ...product,
+          barcode,
+        },
+      });
+    } catch (e) {
+      // Одна проблемная запись не должна валить весь старт сервера (сидинг — не часть
+      // пользовательского пути, но именно из-за того, что он гоняется на каждом деплое,
+      // необработанная ошибка здесь раньше приводила к падению всего процесса).
+      console.error(`[seed] Failed to upsert product "${product.name}" (${product.brand}):`, e);
+    }
   }
 
   console.log('Seed completed!');
