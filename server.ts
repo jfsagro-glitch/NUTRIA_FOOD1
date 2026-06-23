@@ -103,6 +103,7 @@ const BARCODE_PREFERRED_LANG = (process.env.BARCODE_PREFERRED_LANG || "ru").toLo
 const BARCODE_LOOKUP_TIMEOUT_MS = Number(process.env.BARCODE_LOOKUP_TIMEOUT_MS || 3500);
 const BARCODE_CACHE_TTL_MS = Number(process.env.BARCODE_CACHE_TTL_MS || 1000 * 60 * 60 * 6);
 const PRODUCT_SEARCH_CACHE_TTL_MS = Number(process.env.PRODUCT_SEARCH_CACHE_TTL_MS || 1000 * 60 * 10);
+const PRODUCT_SEARCH_CACHE_MAX_ENTRIES = Number(process.env.PRODUCT_SEARCH_CACHE_MAX_ENTRIES || 500);
 const RU_LOCALIZATION_CACHE_TTL_MS = Number(process.env.RU_LOCALIZATION_CACHE_TTL_MS || 1000 * 60 * 60 * 24 * 14);
 const ruLocalizationCache = new Map<string, { expiresAt: number; value: string }>();
 const CYRILLIC_RE = /[А-Яа-яЁё]/;
@@ -1239,6 +1240,9 @@ function cacheBarcodeProduct(candidates: string[], product: any) {
   }
 }
 
+// LRU + TTL: Map сохраняет порядок вставки, поэтому при каждом обращении
+// (чтении или записи) ключ удаляется и вставляется заново — он "уезжает" в
+// конец, а наименее свежий ключ всегда первый и его проще всего вытеснить.
 function getCachedProductSearch(query: string) {
   const key = String(query || "").trim().toLowerCase();
   if (!key) return null;
@@ -1248,16 +1252,24 @@ function getCachedProductSearch(query: string) {
     productSearchCache.delete(key);
     return null;
   }
+  productSearchCache.delete(key);
+  productSearchCache.set(key, cached);
   return cached.results;
 }
 
 function cacheProductSearch(query: string, results: any[]) {
   const key = String(query || "").trim().toLowerCase();
   if (!key) return;
+  productSearchCache.delete(key);
   productSearchCache.set(key, {
     expiresAt: Date.now() + PRODUCT_SEARCH_CACHE_TTL_MS,
     results,
   });
+  while (productSearchCache.size > PRODUCT_SEARCH_CACHE_MAX_ENTRIES) {
+    const oldestKey = productSearchCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    productSearchCache.delete(oldestKey);
+  }
 }
 
 function numberOrZero(value: any) {
