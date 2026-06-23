@@ -209,13 +209,28 @@
 
 ## Технический долг (параллельно с любым спринтом)
 
-| # | Задача | Сложность |
-|---|---|---|
-| T1 | Покрыть API тестами (Vitest + supertest) — сейчас тестов нет | Средняя |
-| T2 | Rate limiting на API (express-rate-limit) | Малая |
-| T3 | Валидация входящих данных (zod) вместо ручных проверок | Малая |
-| T4 | Логирование ошибок (Sentry free tier) — сейчас только console.error | Малая |
-| T5 | Кеширование поиска продуктов (Redis или in-memory LRU) | Средняя |
+| # | Задача | Сложность | Статус |
+|---|---|---|---|
+| T1 | Покрыть API тестами (Vitest + supertest) — сейчас тестов нет | Средняя | ✅ |
+| T2 | Rate limiting на API (express-rate-limit) | Малая | ⬜ |
+| T3 | Валидация входящих данных (zod) вместо ручных проверок | Малая | ⬜ |
+| T4 | Логирование ошибок (Sentry free tier) — сейчас только console.error | Малая | ⬜ |
+| T5 | Кеширование поиска продуктов (Redis или in-memory LRU) | Средняя | ⬜ |
+
+### T1 — Vitest + supertest ✅
+
+**Как реализовано:**
+- `server.ts` был структурно одной гигантской функцией `startServer()`, которая одновременно настраивала Express-приложение, регистрировала Vite middleware/статику и вызывала `app.listen()` — `app` никуда не экспортировался, поэтому импортировать его в тестах было невозможно. Разделил на:
+  - `export async function createApp(): Promise<express.Express>` — настраивает `app` (все маршруты, CRM, телеграм-бот, глобальный error handler) и возвращает его без вызова `.listen()`.
+  - `async function startServer()` — тонкая обёртка: `const app = await createApp(); app.listen(PORT, ...)`.
+  - Добавлена ветка `process.env.NODE_ENV === "test"` в блок Vite/статика — в тестах не нужны ни Vite middleware, ни раздача `dist/` (только `/api/*`).
+  - Автозапуск на верхнем уровне файла обёрнут в `if (process.env.NODE_ENV !== "test")`, чтобы импорт `createApp` в тестах не поднимал реальный сервер на порту.
+- Vitest сам устанавливает `NODE_ENV=test`, поэтому тесты автоматически попадают в in-memory режим (нет `DATABASE_URL` в среде разработки) — это совпадает с единственным режимом, который можно проверить без реальной БД.
+- `tests/api.test.ts`: 10 тестов на `/api/auth/login`+`/api/auth/me`, `/api/weight`+`/api/weight/history`, `/api/export` (включая проверку ZIP-сигнатуры `PK` в бинарном теле ответа) и синхронные пути `/api/recipes/import-url` (401/400, не требующие сети). Тесты CRM-эндпоинтов и AI-путей (фото/голос/поиск) не добавлены — они либо требуют реальной БД (CRM, по конвенции без in-memory фоллбэка), либо реальных AI-провайдеров.
+- **Особенность**: кука логина выставляется с `secure: true; sameSite: "none"` — cookie-jar supertest/superagent над обычным http не пересылает «secure»-куки автоматически, поэтому тесты вручную вытаскивают `Set-Cookie` из ответа логина и передают его явным заголовком `Cookie` в follow-up запросах (вместо `request.agent()`).
+- `package.json`: добавлен скрипт `"test": "vitest run"`, `vitest`/`supertest`/`@types/supertest` — dev dependencies.
+
+**Файлы:** `server.ts` (рефакторинг `startServer`→`createApp`+`startServer`), `tests/api.test.ts`, `package.json`
 
 ---
 

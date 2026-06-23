@@ -2096,10 +2096,9 @@ async function generateAI(prompt: string, responseMimeType: string = "applicatio
   throw new Error("All AI models failed or keys are missing.");
 }
 
-async function startServer() {
+export async function createApp(): Promise<express.Express> {
   // ... rest of setup ...
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json());
   app.use(cookieParser());
@@ -3675,7 +3674,9 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   registerTelegramBot(app, prisma);
 
   // --- Vite / Static ---
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV === "test") {
+    // В тестах нужны только API-маршруты, без Vite middleware и без раздачи статики.
+  } else if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -3696,10 +3697,6 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Nutria Server running on http://localhost:${PORT}`);
-  });
-
   // Global error handler
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error("Global Error Handler:", err);
@@ -3709,6 +3706,18 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       stack: process.env.NODE_ENV === "production" ? undefined : err.stack
     });
   });
+
+  return app;
 }
 
-startServer().catch(console.error);
+async function startServer() {
+  const app = await createApp();
+  const PORT = Number(process.env.PORT) || 3000;
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Nutria Server running on http://localhost:${PORT}`);
+  });
+}
+
+if (process.env.NODE_ENV !== "test") {
+  startServer().catch(console.error);
+}
