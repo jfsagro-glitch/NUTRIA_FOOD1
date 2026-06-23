@@ -11,6 +11,24 @@ import OpenAI from "openai";
 import { ProxyAgent } from "undici";
 import { ZipArchive } from "archiver";
 import { rateLimit } from "express-rate-limit";
+import {
+  validateBody,
+  aiGenerateSchema,
+  sendMessageSchema,
+  customProductSchema,
+  recipeSchema,
+  recipeImportUrlSchema,
+  photoRecognizeSchema,
+  photoCorrectionSchema,
+  diaryGoalsSchema,
+  diaryWaterSchema,
+  activitySchema,
+  weightSchema,
+  diaryAddSchema,
+  diaryItemAmountSchema,
+  quickAddSchema,
+  voiceParseSchema,
+} from "./validation.ts";
 import { registerCrmRoutes } from "./crm-routes.ts";
 import { registerTelegramBot } from "./telegram-bot.ts";
 
@@ -2132,9 +2150,8 @@ export async function createApp(): Promise<express.Express> {
   // --- API Routes ---
 
   // AI Proxy: Unified generation with fallback
-  app.post("/api/ai/generate", async (req, res) => {
+  app.post("/api/ai/generate", validateBody(aiGenerateSchema), async (req, res) => {
     const { prompt, responseMimeType, image } = req.body;
-    if (!prompt) return res.status(400).json({ error: "No prompt provided" });
 
     try {
       const text = await withTimeout(generateAI(prompt, responseMimeType, image), 20000, "AI proxy");
@@ -2278,13 +2295,12 @@ export async function createApp(): Promise<express.Express> {
   });
 
   // Сообщения от нутрициолога: отправить ответ (клиентская сторона)
-  app.post("/api/messages", async (req, res) => {
+  app.post("/api/messages", validateBody(sendMessageSchema), async (req, res) => {
     try {
       const userId = req.cookies.token;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
       const { content, nutritionistId } = req.body;
-      if (!content?.trim()) return res.status(400).json({ error: "Текст сообщения обязателен" });
 
       let targetNutritionistId = nutritionistId;
       if (!targetNutritionistId) {
@@ -2418,19 +2434,11 @@ export async function createApp(): Promise<express.Express> {
   });
 
   // "Мои" → добавить свой продукт (КБЖУ хранится на 100 г)
-  app.post("/api/products/custom", async (req, res) => {
+  app.post("/api/products/custom", validateBody(customProductSchema), async (req, res) => {
     const userId = req.cookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-    const name = String(req.body?.name || "").trim();
-    const brand = req.body?.brand ? String(req.body.brand).trim() : null;
-    const barcode = req.body?.barcode ? String(req.body.barcode).trim() : null;
-    const calories = numberOrZero(req.body?.calories);
-    const protein = numberOrZero(req.body?.protein);
-    const fat = numberOrZero(req.body?.fat);
-    const carbs = numberOrZero(req.body?.carbs);
-
-    if (!name) return res.status(400).json({ error: "Название обязательно" });
+    const { name, brand, barcode, calories, protein, fat, carbs } = req.body;
 
     if (!isDatabaseConfigured()) {
       const list = getOrCreateInMemoryCustomProducts(userId);
@@ -2481,16 +2489,13 @@ export async function createApp(): Promise<express.Express> {
   });
 
   // "Мои блюда" — создать блюдо из ингредиентов (вес ингредиентов + вес готового блюда → КБЖУ на 100 г)
-  app.post("/api/recipes", async (req, res) => {
+  app.post("/api/recipes", validateBody(recipeSchema), async (req, res) => {
     const userId = req.cookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-    const name = String(req.body?.name || "").trim();
-    const ingredientsInput = Array.isArray(req.body?.ingredients) ? req.body.ingredients : [];
-    const cookedWeightGrams = numberOrZero(req.body?.cookedWeightGrams);
-
-    if (!name) return res.status(400).json({ error: "Название блюда обязательно" });
-    if (ingredientsInput.length === 0) return res.status(400).json({ error: "Добавьте хотя бы один ингредиент" });
+    const name = req.body.name;
+    const ingredientsInput = req.body.ingredients;
+    const cookedWeightGrams = numberOrZero(req.body.cookedWeightGrams);
 
     if (!isDatabaseConfigured()) {
       let totalWeight = 0, totalCal = 0, totalProtein = 0, totalFat = 0, totalCarbs = 0;
@@ -2584,11 +2589,11 @@ export async function createApp(): Promise<express.Express> {
   // и матчим каждый через тот же поисковый движок, что и остальные фичи (без дублирования
   // логики матчинга). Ничего не сохраняет — отдаёт предпросмотр, сохранение идёт через
   // уже существующий POST /api/recipes тем же payload-форматом, что и ручное создание блюда.
-  app.post("/api/recipes/import-url", async (req, res) => {
+  app.post("/api/recipes/import-url", validateBody(recipeImportUrlSchema), async (req, res) => {
     const userId = req.cookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-    const rawUrl = String(req.body?.url || "").trim();
+    const rawUrl = req.body.url.trim();
     let parsedUrl: URL;
     try {
       parsedUrl = new URL(rawUrl);
@@ -2720,17 +2725,14 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   // Правка состава блюда (распознанного голосом/фото или созданного в "Мои") — добавить/убрать
   // ингредиент, поменять граммовку. Пересчитывает агрегированный снимок-продукт по той же
   // логике, что и создание блюда (POST /api/recipes).
-  app.patch("/api/recipes/:id", async (req, res) => {
+  app.patch("/api/recipes/:id", validateBody(recipeSchema), async (req, res) => {
     const userId = req.cookies.token;
     const { id } = req.params;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-    const name = String(req.body?.name || "").trim();
-    const ingredientsInput = Array.isArray(req.body?.ingredients) ? req.body.ingredients : [];
-    const cookedWeightGrams = numberOrZero(req.body?.cookedWeightGrams);
-
-    if (!name) return res.status(400).json({ error: "Название блюда обязательно" });
-    if (ingredientsInput.length === 0) return res.status(400).json({ error: "Добавьте хотя бы один ингредиент" });
+    const name = req.body.name;
+    const ingredientsInput = req.body.ingredients;
+    const cookedWeightGrams = numberOrZero(req.body.cookedWeightGrams);
 
     if (!isDatabaseConfigured()) {
       const list = getOrCreateInMemoryRecipes(userId);
@@ -2826,13 +2828,9 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
     }
   });
 
-  app.post("/api/photo/recognize", async (req, res) => {
+  app.post("/api/photo/recognize", validateBody(photoRecognizeSchema), async (req, res) => {
     try {
-      const image = req.body?.image;
-      const mode = req.body?.mode === "whole_dish" ? "whole_dish" : "ingredients";
-      if (!image?.data || !image?.mimeType) {
-        return res.status(400).json({ error: "Image payload is required" });
-      }
+      const { image, mode = "ingredients" } = req.body;
 
       const recognized = await recognizeProductsFromPhoto(image, {
         userId: req.cookies?.token || null,
@@ -2855,24 +2853,21 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
     }
   });
 
-  app.post("/api/photo/corrections", async (req, res) => {
+  app.post("/api/photo/corrections", validateBody(photoCorrectionSchema), async (req, res) => {
     const userId = req.cookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     try {
-      const sourceName = String(req.body?.sourceName || "").trim();
-      const correctedProductId = String(req.body?.correctedProductId || req.body?.correctedProduct?.id || "").trim();
-      if (!sourceName || !correctedProductId) {
-        return res.status(400).json({ error: "Correction payload is incomplete" });
-      }
+      const sourceName = req.body.sourceName;
+      const correctedProductId = String(req.body.correctedProductId || req.body.correctedProduct?.id || "").trim();
 
       const product = await saveRecognitionCorrection({
         userId,
         sourceName,
-        aliases: Array.isArray(req.body?.aliases) ? req.body.aliases : [],
-        visibleText: Array.isArray(req.body?.visibleText) ? req.body.visibleText : [],
+        aliases: req.body.aliases || [],
+        visibleText: req.body.visibleText || [],
         correctedProductId,
-        correctedProduct: req.body?.correctedProduct,
+        correctedProduct: req.body.correctedProduct,
       });
 
       return res.json({ success: true, product });
@@ -3057,22 +3052,10 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   });
 
   // Diary: Update nutrient goals
-  app.post("/api/diary/goals", async (req, res) => {
+  app.post("/api/diary/goals", validateBody(diaryGoalsSchema), async (req, res) => {
     const userId = req.cookies.token;
-    const { calories, protein, fat, carbs, fiber } = req.body || {};
+    const nextGoals = req.body;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
-
-    const nextGoals = {
-      calories: numberOrZero(calories),
-      protein: numberOrZero(protein),
-      fat: numberOrZero(fat),
-      carbs: numberOrZero(carbs),
-      fiber: numberOrZero(fiber),
-    };
-
-    if (!nextGoals.calories || !nextGoals.protein || !nextGoals.fat || !nextGoals.carbs) {
-      return res.status(400).json({ error: "Invalid goals payload" });
-    }
 
     if (!isDatabaseConfigured()) {
       const memoryDiary = getOrCreateInMemoryDiary(userId);
@@ -3114,14 +3097,14 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   });
 
   // Diary: Update water intake
-  app.post("/api/diary/water", async (req, res) => {
+  app.post("/api/diary/water", validateBody(diaryWaterSchema), async (req, res) => {
     const userId = req.cookies.token;
     const { amount, date } = req.body; // amount can be positive or negative
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const targetDate = dateFromQuery(date);
     const targetDateKey = toDateKey(targetDate);
-    const delta = Number(amount || 0);
+    const delta = amount;
 
     if (!isDatabaseConfigured()) {
       const memoryDiary = getOrCreateInMemoryDiary(userId);
@@ -3224,14 +3207,11 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   });
 
   // Activity: Log a new activity
-  app.post("/api/activities", async (req, res) => {
+  app.post("/api/activities", validateBody(activitySchema), async (req, res) => {
     const userId = req.cookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const { date, activityName, durationMinutes, caloriesBurned } = req.body;
-    if (!activityName || !Number.isFinite(durationMinutes) || !Number.isFinite(caloriesBurned)) {
-      return res.status(400).json({ error: "Invalid activity payload" });
-    }
 
     const targetDate = dateFromQuery(date);
     const targetDateKey = toDateKey(targetDate);
@@ -3284,14 +3264,11 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
   // Weight: Log today's (or a given date's) body weight — одна запись на день,
   // повторная запись в тот же день обновляет значение (upsert по [userId, date]).
-  app.post("/api/weight", async (req, res) => {
+  app.post("/api/weight", validateBody(weightSchema), async (req, res) => {
     const userId = req.cookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const { date, weightKg } = req.body;
-    if (!Number.isFinite(weightKg) || weightKg <= 0) {
-      return res.status(400).json({ error: "Invalid weight payload" });
-    }
 
     const targetDate = dateFromQuery(date);
     const targetDateKey = toDateKey(targetDate);
@@ -3403,7 +3380,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   });
 
   // Diary: Add meal item
-  app.post("/api/diary/add", async (req, res) => {
+  app.post("/api/diary/add", validateBody(diaryAddSchema), async (req, res) => {
     const userId = req.cookies.token;
     let { productId, amount, type, usdaData, date } = req.body;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -3486,14 +3463,11 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   });
 
   // Diary: Edit meal item weight (calories/macros recalculate on read from product x amount)
-  app.patch("/api/diary/item/:id", async (req, res) => {
+  app.patch("/api/diary/item/:id", validateBody(diaryItemAmountSchema), async (req, res) => {
     const userId = req.cookies.token;
     const { id } = req.params;
-    const amount = Number(req.body?.amount);
+    const { amount } = req.body;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return res.status(400).json({ error: "Invalid amount" });
-    }
 
     if (!isDatabaseConfigured()) {
       const memoryDiary = getOrCreateInMemoryDiary(userId);
@@ -3523,16 +3497,13 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   // Реализовано без новых полей в схеме: создаём обычный Product (source: "quickadd")
   // с введёнными значениями как "на 100г" и MealItem с amount: 100, чтобы они отражали
   // ровно ту порцию, которую пользователь указал.
-  app.post("/api/diary/quick-add", async (req, res) => {
+  app.post("/api/diary/quick-add", validateBody(quickAddSchema), async (req, res) => {
     const userId = req.cookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const { date, mealType, label, calories, protein, fat, carbs } = req.body;
-    const safeLabel = String(label || "").trim();
-    const safeCalories = Number(calories);
-    if (!safeLabel || !Number.isFinite(safeCalories) || safeCalories < 0) {
-      return res.status(400).json({ error: "Invalid quick-add payload" });
-    }
+    const safeLabel = label;
+    const safeCalories = calories;
 
     const type = mealType || "SNACK";
     const targetDate = dateFromQuery(date);
@@ -3586,9 +3557,8 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   });
 
   // Voice: Parse transcript into food items
-  app.post("/api/voice/parse", async (req, res) => {
+  app.post("/api/voice/parse", validateBody(voiceParseSchema), async (req, res) => {
     const { transcript } = req.body;
-    if (!transcript) return res.status(400).json({ error: "No transcript provided" });
 
     const buildDecompositionPrompt = (reinforce: boolean) => `Пользователь записал голосовую заметку о приёме пищи: "${transcript}".
 

@@ -12,6 +12,21 @@ import type { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import multer from "multer";
+import {
+  validateBody,
+  crmRegisterSchema,
+  crmLoginSchema,
+  crmCreateClientSchema,
+  crmUpdateClientSchema,
+  crmNoteSchema,
+  crmRecommendationSchema,
+  crmConsultationSchema,
+  crmMealPlanSchema,
+  crmClientMessageSchema,
+  crmClientProfilePatchSchema,
+  onboardLoginSchema,
+  onboardCompleteSchema,
+} from "./validation.ts";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -108,12 +123,9 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── AUTH: регистрация нутрициолога ─────────────────────────────────────────
 
-  app.post("/api/crm/auth/register", async (req: Request, res: Response) => {
+  app.post("/api/crm/auth/register", validateBody(crmRegisterSchema), async (req: Request, res: Response) => {
     try {
       const { email, password, firstName, lastName, specialization } = req.body;
-      if (!email || !password || !firstName || !lastName) {
-        return res.status(400).json({ error: "Обязательные поля: email, password, firstName, lastName" });
-      }
 
       const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
       if (existing) return res.status(409).json({ error: "Email уже зарегистрирован" });
@@ -145,10 +157,9 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── AUTH: вход нутрициолога ─────────────────────────────────────────────────
 
-  app.post("/api/crm/auth/login", async (req: Request, res: Response) => {
+  app.post("/api/crm/auth/login", validateBody(crmLoginSchema), async (req: Request, res: Response) => {
     try {
       const { email, password } = req.body;
-      if (!email || !password) return res.status(400).json({ error: "Email и пароль обязательны" });
 
       const user = await prisma.user.findUnique({
         where: { email: email.toLowerCase() },
@@ -258,20 +269,16 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── КЛИЕНТЫ: создать приглашение ──────────────────────────────────────────
 
-  app.post("/api/crm/clients", requireNutritionist, async (req: Request, res: Response) => {
+  app.post("/api/crm/clients", requireNutritionist, validateBody(crmCreateClientSchema), async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientName, secretPhrase, tags } = req.body;
 
-      if (!secretPhrase || secretPhrase.trim().length < 3) {
-        return res.status(400).json({ error: "Секретная фраза должна содержать минимум 3 символа" });
-      }
-
       const invite = await (prisma as any).clientInvite.create({
         data: {
           nutritionistId,
-          clientName: clientName?.trim() || null,
-          secretPhrase: secretPhrase.trim(),
+          clientName: clientName || null,
+          secretPhrase,
           tagsJson: JSON.stringify(tags || []),
           status: "PENDING",
         },
@@ -325,7 +332,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── КЛИЕНТ: обновить теги/статус/имя ─────────────────────────────────────
 
-  app.patch("/api/crm/clients/:clientId", requireNutritionist, async (req: Request, res: Response) => {
+  app.patch("/api/crm/clients/:clientId", requireNutritionist, validateBody(crmUpdateClientSchema), async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
@@ -508,19 +515,17 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── ЗАМЕТКИ: создать ───────────────────────────────────────────────────────
 
-  app.post("/api/crm/clients/:clientId/notes", requireNutritionist, async (req: Request, res: Response) => {
+  app.post("/api/crm/clients/:clientId/notes", requireNutritionist, validateBody(crmNoteSchema), async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
       const { content, context } = req.body;
 
-      if (!content?.trim()) return res.status(400).json({ error: "Текст заметки обязателен" });
-
       const note = await (prisma as any).clientNote.create({
         data: {
           nutritionistId,
           clientId,
-          content: content.trim(),
+          content,
           context: context || null,
         },
       });
@@ -673,16 +678,14 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── РЕКОМЕНДАЦИИ: создать ─────────────────────────────────────────────────
 
-  app.post("/api/crm/clients/:clientId/recommendations", requireNutritionist, async (req: Request, res: Response) => {
+  app.post("/api/crm/clients/:clientId/recommendations", requireNutritionist, validateBody(crmRecommendationSchema), async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
       const { content } = req.body;
 
-      if (!content?.trim()) return res.status(400).json({ error: "Текст рекомендации обязателен" });
-
       const rec = await (prisma as any).recommendation.create({
-        data: { nutritionistId, clientId, content: content.trim() },
+        data: { nutritionistId, clientId, content },
       });
 
       return res.json({ recommendation: rec });
@@ -729,19 +732,17 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── КОНСУЛЬТАЦИИ: добавить ────────────────────────────────────────────────
 
-  app.post("/api/crm/clients/:clientId/consultations", requireNutritionist, async (req: Request, res: Response) => {
+  app.post("/api/crm/clients/:clientId/consultations", requireNutritionist, validateBody(crmConsultationSchema), async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
       const { scheduledAt, note } = req.body;
 
-      if (!scheduledAt) return res.status(400).json({ error: "Дата обязательна" });
-
       const consultation = await (prisma as any).consultationDate.create({
         data: {
           nutritionistId,
           clientId,
-          scheduledAt: new Date(scheduledAt),
+          scheduledAt,
           note: note || null,
         },
       });
@@ -773,7 +774,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── ПЛАНЫ ПИТАНИЯ: создать ──────────────────────────────────────────────────
 
-  app.post("/api/crm/clients/:clientId/meal-plans", requireNutritionist, async (req: Request, res: Response) => {
+  app.post("/api/crm/clients/:clientId/meal-plans", requireNutritionist, validateBody(crmMealPlanSchema), async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
@@ -781,15 +782,13 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
       const clientUser = await prisma.user.findUnique({ where: { id: clientId } });
       if (!clientUser || !isClientRole(clientUser.role)) return res.status(404).json({ error: "Клиент не найден" });
-      if (!title || !weekStartDate) return res.status(400).json({ error: "Название и дата начала недели обязательны" });
-      if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "План должен содержать хотя бы один продукт" });
 
       const plan = await (prisma as any).mealPlan.create({
         data: {
           nutritionistId,
           clientId,
-          title: String(title).trim(),
-          weekStartDate: new Date(weekStartDate),
+          title,
+          weekStartDate,
           items: {
             create: items.map((it: any) => ({
               dayOfWeek: Math.min(6, Math.max(0, parseInt(it.dayOfWeek, 10) || 0)),
@@ -924,19 +923,17 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── СООБЩЕНИЯ: отправить клиенту ───────────────────────────────────────────
 
-  app.post("/api/crm/clients/:clientId/messages", requireNutritionist, async (req: Request, res: Response) => {
+  app.post("/api/crm/clients/:clientId/messages", requireNutritionist, validateBody(crmClientMessageSchema), async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
       const { content } = req.body;
 
-      if (!content?.trim()) return res.status(400).json({ error: "Текст сообщения обязателен" });
-
       const clientUser = await prisma.user.findUnique({ where: { id: clientId } });
       if (!clientUser || !isClientRole(clientUser.role)) return res.status(404).json({ error: "Клиент не найден" });
 
       const message = await (prisma as any).message.create({
-        data: { nutritionistId, clientId, sender: "NUTRITIONIST", content: content.trim() },
+        data: { nutritionistId, clientId, sender: "NUTRITIONIST", content },
       });
 
       return res.json({ message });
@@ -993,7 +990,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── ОНБОРДИНГ: вход существующего клиента ─────────────────────────────────
 
-  app.post("/api/onboard/:token/login", async (req: Request, res: Response) => {
+  app.post("/api/onboard/:token/login", validateBody(onboardLoginSchema), async (req: Request, res: Response) => {
     try {
       const { secretPhrase } = req.body;
 
@@ -1003,7 +1000,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       });
 
       if (!invite) return res.status(404).json({ error: "Приглашение не найдено" });
-      if (invite.secretPhrase !== secretPhrase?.trim()) {
+      if (invite.secretPhrase !== secretPhrase) {
         return res.status(401).json({ error: "Неверная секретная фраза" });
       }
       if (!invite.clientId || !invite.client) {
@@ -1023,7 +1020,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── ОНБОРДИНГ: завершить регистрацию клиента ──────────────────────────────
 
-  app.post("/api/onboard/:token", async (req: Request, res: Response) => {
+  app.post("/api/onboard/:token", validateBody(onboardCompleteSchema), async (req: Request, res: Response) => {
     try {
       const { secretPhrase, profile } = req.body;
       // profile: { firstName, lastName, birthYear, sex, heightCm, weightKg, goal, activity, dietRestrictions, allergies, complaints }
@@ -1034,7 +1031,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
       if (!invite) return res.status(404).json({ error: "Приглашение не найдено" });
       if (invite.status === "ARCHIVED") return res.status(410).json({ error: "Ссылка недействительна" });
-      if (invite.secretPhrase !== secretPhrase?.trim()) {
+      if (invite.secretPhrase !== secretPhrase) {
         return res.status(401).json({ error: "Неверная секретная фраза" });
       }
 
@@ -1102,7 +1099,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── АНКЕТА КЛИЕНТА: обновить ──────────────────────────────────────────────
 
-  app.patch("/api/crm/clients/:clientId/profile", requireNutritionist, async (req: Request, res: Response) => {
+  app.patch("/api/crm/clients/:clientId/profile", requireNutritionist, validateBody(crmClientProfilePatchSchema), async (req: Request, res: Response) => {
     try {
       const { clientId } = req.params;
 

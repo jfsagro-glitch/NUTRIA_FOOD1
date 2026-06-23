@@ -105,6 +105,29 @@ describe("recipes import", () => {
   });
 });
 
+describe("zod validation (T3)", () => {
+  it("POST /api/diary/goals с отрицательной калорийностью возвращает 400", async () => {
+    const cookie = await loginCookie();
+    const res = await request(app)
+      .post("/api/diary/goals")
+      .set("Cookie", cookie)
+      .send({ calories: -100, protein: 100, fat: 50, carbs: 200 });
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /api/voice/parse без transcript возвращает 400", async () => {
+    const cookie = await loginCookie();
+    const res = await request(app).post("/api/voice/parse").set("Cookie", cookie).send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /api/weight с некорректным типом веса возвращает 400", async () => {
+    const cookie = await loginCookie();
+    const res = await request(app).post("/api/weight").set("Cookie", cookie).send({ weightKg: "not-a-number" });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("rate limiting", () => {
   it("после 20 запросов к /api/auth/login отдаёт 429", async () => {
     // skip-функция лимитера читает NODE_ENV на каждый запрос — на время теста
