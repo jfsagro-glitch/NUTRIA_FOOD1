@@ -135,6 +135,7 @@ interface UserProfileSettings {
   age: number;
   activity: 'low' | 'moderate' | 'high' | 'very_high';
   goal: 'lose' | 'maintain' | 'gain' | 'recomposition';
+  mealDistribution: Record<'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK', number>;
 }
 
 interface MealItem {
@@ -825,6 +826,12 @@ const deriveProgramGoals = (
 const PROFILE_SETTINGS_STORAGE_KEY = 'nutria_profile_settings_v1';
 const GOAL_OVERRIDE_STORAGE_KEY = 'nutria_goal_override_v1';
 
+const MEAL_DISTRIBUTION_PRESETS: Record<string, { label: string; pct: Record<'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK', number> }> = {
+  standard: { label: 'Стандартный', pct: { BREAKFAST: 25, LUNCH: 35, DINNER: 30, SNACK: 10 } },
+  mediterranean: { label: 'Средиземноморский', pct: { BREAKFAST: 20, LUNCH: 40, DINNER: 30, SNACK: 10 } },
+  omad: { label: 'OMAD (1 приём)', pct: { BREAKFAST: 0, LUNCH: 0, DINNER: 100, SNACK: 0 } },
+};
+
 const DEFAULT_PROFILE_SETTINGS: UserProfileSettings = {
   sex: 'male',
   weightKg: 70,
@@ -832,6 +839,7 @@ const DEFAULT_PROFILE_SETTINGS: UserProfileSettings = {
   age: 30,
   activity: 'moderate',
   goal: 'maintain',
+  mealDistribution: MEAL_DISTRIBUTION_PRESETS.standard.pct,
 };
 
 type GoalEditorGroup = 'macros' | 'vitamins' | 'minerals' | 'fatty' | 'carbs' | 'amino';
@@ -1068,7 +1076,7 @@ const DiaryDateStrip = ({ selectedDate, onSelect }: { selectedDate: string; onSe
   );
 };
 
-const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, onHintClick, onDeleteItem, onEditItem, onOpenComposition, onUpdateWater, onUpdateGrams }: { data: any, selectedDate: string, onChangeDate: (dateKey: string) => void, onAddClick: (type: string) => void, hints: Hint[], onHintClick: (cta: string) => void, onDeleteItem: (id: string) => void, onEditItem: (item: any) => void, onOpenComposition: (item: any) => void, onUpdateWater: (amount: number) => void, onUpdateGrams: (itemId: string, amount: number) => Promise<boolean> }) => {
+const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, onHintClick, onDeleteItem, onEditItem, onOpenComposition, onUpdateWater, onUpdateGrams, mealDistribution }: { data: any, selectedDate: string, onChangeDate: (dateKey: string) => void, onAddClick: (type: string) => void, hints: Hint[], onHintClick: (cta: string) => void, onDeleteItem: (id: string) => void, onEditItem: (item: any) => void, onOpenComposition: (item: any) => void, onUpdateWater: (amount: number) => void, onUpdateGrams: (itemId: string, amount: number) => Promise<boolean>, mealDistribution: Record<'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK', number> }) => {
   const { meals = [], waterIntake = 0 } = data;
   const goals = mergeGoals(data.goals);
   const waterGoal = 2500; // 2.5L in ml
@@ -1369,6 +1377,8 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
           const totalP = items.reduce((s: number, item: any) => s + (item.product.protein * item.amount) / 100, 0);
           const totalF = items.reduce((s: number, item: any) => s + (item.product.fat * item.amount) / 100, 0);
           const totalC = items.reduce((s: number, item: any) => s + (item.product.carbs * item.amount) / 100, 0);
+          const mealTarget = Math.round(calorieGoal * (mealDistribution[type] || 0) / 100);
+          const mealPct = mealTarget > 0 ? Math.min(100, (mealTotal / mealTarget) * 100) : 0;
 
           return (
             <div key={type} style={{ background: PROTO.coolZone, borderRadius: 18 }} className="overflow-hidden">
@@ -1385,12 +1395,21 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
                     <span style={{ fontSize: 16, fontWeight: 700, color: PROTO.text }}>{mealLabels[type]}</span>
-                    {!isEmpty && <span style={{ fontSize: 13, fontWeight: 700, color: PROTO.primary }} className="flex-shrink-0">{Math.round(mealTotal)} ккал</span>}
+                    {!isEmpty && (
+                      <span style={{ fontSize: 13, fontWeight: 700, color: PROTO.primary }} className="flex-shrink-0">
+                        {Math.round(mealTotal)}{mealTarget > 0 ? ` / ${mealTarget}` : ''} ккал
+                      </span>
+                    )}
                   </div>
                   {isEmpty ? (
                     <p style={{ fontSize: 12, color: PROTO.textMid, marginTop: 2 }}>Нажмите, чтобы добавить</p>
                   ) : (
                     <p style={{ fontSize: 12, color: PROTO.textMid, marginTop: 2 }} className="truncate">{items.map((i: any) => i.product.name).join(' · ')}</p>
+                  )}
+                  {mealTarget > 0 && (
+                    <div style={{ height: 4, borderRadius: 9999, background: PROTO.softDivider, overflow: 'hidden', marginTop: 6 }}>
+                      <div className="h-full transition-all duration-500" style={{ borderRadius: 9999, width: `${mealPct}%`, background: PROTO.primary }} />
+                    </div>
                   )}
                 </div>
                 <ChevronRight
@@ -2575,6 +2594,51 @@ const SummaryScreen = ({
             >
               Пересчитать нормы автоматически
             </button>
+          </div>
+
+          <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+            <p className="text-sm font-semibold text-zinc-200 mb-3">Распределение калорий по приёмам пищи</p>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {Object.entries(MEAL_DISTRIBUTION_PRESETS).map(([id, preset]) => {
+                const isActive = JSON.stringify(settingsProfile.mealDistribution) === JSON.stringify(preset.pct);
+                return (
+                  <button
+                    key={id}
+                    onClick={() => setSettingsProfile((prev) => ({ ...prev, mealDistribution: preset.pct }))}
+                    className={cn(
+                      'py-2 px-2 rounded-lg text-xs font-medium border transition-colors',
+                      isActive ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' : 'bg-zinc-900 border-zinc-700 text-zinc-400'
+                    )}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {(['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'] as const).map((type) => (
+                <label key={type} className="text-[11px] text-zinc-400 text-center">
+                  {type === 'BREAKFAST' ? 'Завтрак' : type === 'LUNCH' ? 'Обед' : type === 'DINNER' ? 'Ужин' : 'Перекус'}
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={settingsProfile.mealDistribution[type]}
+                    onChange={(e) => {
+                      const num = Number(e.target.value);
+                      setSettingsProfile((prev) => ({
+                        ...prev,
+                        mealDistribution: { ...prev.mealDistribution, [type]: Number.isFinite(num) ? num : 0 },
+                      }));
+                    }}
+                    className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-1.5 px-1 text-zinc-100 text-center"
+                  />
+                </label>
+              ))}
+            </div>
+            <p className="text-[11px] text-zinc-500 mt-2">
+              Сумма: {Object.values(settingsProfile.mealDistribution).reduce((s: number, v: number) => s + v, 0)}%
+            </p>
           </div>
 
           <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
@@ -4327,6 +4391,7 @@ export default function App() {
               onOpenComposition={openMealItemComposition}
               onUpdateWater={updateWater}
               onUpdateGrams={updateMealItemAmountDirect}
+              mealDistribution={profileSettings.mealDistribution}
             />
           ) : (
             <SummaryScreen
