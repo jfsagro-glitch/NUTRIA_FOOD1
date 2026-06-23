@@ -199,12 +199,6 @@ async function internalApi(path: string, opts: { method?: string; body?: any; us
 
 // ─── Состояние диалога (TelegramAccount) ─────────────────────────────────────
 
-interface MealDraftItem {
-  name: string;
-  amount: number;
-  product: any;
-}
-
 interface Draft {
   name?: string;
   age?: number;
@@ -220,7 +214,6 @@ interface Draft {
   fat?: number;
   carbs?: number;
   fiber?: number;
-  pendingMealItems?: MealDraftItem[];
 }
 
 function getDraft(account: any): Draft {
@@ -633,13 +626,17 @@ async function handleAwaitMealText(prisma: PrismaClient, account: any, chatId: s
   }
 
   const userId = account.userId;
+  // /api/voice/parse — тот же движок распознавания, что и в веб-приложении
+  // (декомпозиция блюда на ингредиенты + поиск продукта в базе для каждого,
+  // с оценкой типичной порции на одного человека, если граммовка не названа).
+  // Отвечает голым массивом [{name, amount, product}], а не {items: [...]}.
   const result = await internalApi("/api/voice/parse", { method: "POST", userId, body: { transcript } });
 
-  if (!result.ok || !Array.isArray(result.data?.items) || result.data.items.length === 0) {
+  if (!result.ok || !Array.isArray(result.data)) {
     return sendMessage(chatId, "Не удалось распознать продукты в этом сообщении. Попробуй описать иначе, например: «гречка 150 грамм и куриная грудка 120 грамм».", MAIN_MENU_KEYBOARD);
   }
 
-  const items: MealDraftItem[] = result.data.items
+  const items = result.data
     .filter((it: any) => it.product)
     .map((it: any) => ({ name: it.name, amount: Number(it.amount) || 100, product: it.product }));
 
@@ -647,25 +644,7 @@ async function handleAwaitMealText(prisma: PrismaClient, account: any, chatId: s
     return sendMessage(chatId, "Распознал текст, но не нашёл подходящие продукты в базе. Попробуй описать иначе.", MAIN_MENU_KEYBOARD);
   }
 
-  const draft = getDraft(account);
-  draft.pendingMealItems = items;
-  await saveAccount(prisma, chatId, { state: "AWAIT_MEAL_TYPE", draft });
-
-  const itemsList = items.map((i) => `• ${i.name} — ${i.amount} г`).join("\n");
-  return sendMessage(
-    chatId,
-    `Распознал:\n${itemsList}\n\nК какому приёму пищи добавить?`,
-    inlineKeyboard([
-      [{ text: "🌅 Завтрак", data: "mealtype:BREAKFAST" }, { text: "☀️ Обед", data: "mealtype:LUNCH" }],
-      [{ text: "🌙 Ужин", data: "mealtype:DINNER" }, { text: "🍪 Перекус", data: "mealtype:SNACK" }],
-    ])
-  );
-}
-
-async function handleMealTypeCallback(prisma: PrismaClient, account: any, chatId: string, mealType: string) {
-  const draft = getDraft(account);
-  const items = draft.pendingMealItems || [];
-  const userId = account.userId;
+  const mealType = getCurrentMealType(BOT_TIMEZONE);
 
   let totalCalories = 0;
   let added = 0;
@@ -682,12 +661,12 @@ async function handleMealTypeCallback(prisma: PrismaClient, account: any, chatId
     }
   }
 
-  draft.pendingMealItems = undefined;
-  await saveAccount(prisma, chatId, { state: "DONE", draft });
+  await saveAccount(prisma, chatId, { state: "DONE" });
 
+  const itemsList = items.map((i: any) => `• ${i.name} — ${i.amount} г`).join("\n");
   return sendMessage(
     chatId,
-    `Добавлено в ${MEAL_TYPES[mealType] || mealType}: ${added} продукт(ов), ≈${Math.round(totalCalories)} ккал ✅`,
+    `Записал в ${MEAL_TYPES[mealType] || mealType} (${added} продукт${added === 1 ? "" : "ов"}, ≈${Math.round(totalCalories)} ккал) ✅\n${itemsList}\n\nЕсли что-то не так — поправь в приложении, в дневнике за сегодня.`,
     MAIN_MENU_KEYBOARD
   );
 }
@@ -829,9 +808,6 @@ async function handleUpdate(prisma: PrismaClient, update: any) {
     await answerCallback(cq.id);
 
     const data: string = cq.data || "";
-    if (data.startsWith("mealtype:")) {
-      return handleMealTypeCallback(prisma, account, chatId, data.split(":")[1]);
-    }
     if (data.startsWith("stats:")) {
       return handleStatsCallback(chatId, account, Number(data.split(":")[1]) || 7);
     }
@@ -909,6 +885,18 @@ function formatInTimezone(date: Date, tz: string) {
   }).formatToParts(date);
   const get = (t: string) => parts.find((p) => p.type === t)?.value || "";
   return { dateKey: `${get("year")}-${get("month")}-${get("day")}`, hm: `${get("hour")}:${get("minute")}` };
+}
+
+// Тот же временной разбор по приёмам пищи, что и в веб-дневнике (см.
+// getCurrentMealType в ClientApp.tsx), чтобы голосовая запись из бота
+// сразу попадала в ожидаемый приём пищи без лишнего вопроса пользователю.
+function getCurrentMealType(tz: string): string {
+  const { hm } = nowInTimezone(tz);
+  const hour = Number(hm.split(":")[0]);
+  if (hour >= 5 && hour < 11) return "BREAKFAST";
+  if (hour >= 11 && hour < 16) return "LUNCH";
+  if (hour >= 16 && hour < 22) return "DINNER";
+  return "SNACK";
 }
 
 function nowInTimezone(tz: string) {
