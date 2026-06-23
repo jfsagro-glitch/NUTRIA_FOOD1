@@ -2494,6 +2494,30 @@ async function startServer() {
     }
   });
 
+  // Состав блюда для правки (кнопка "Состав" у уже сохранённой записи в дневнике) —
+  // отдаёт ингредиенты с подгруженным продуктом, чтобы показать название/КБЖУ без
+  // дополнительных запросов к поиску.
+  app.get("/api/recipes/:id", async (req, res) => {
+    const userId = req.cookies.token;
+    const { id } = req.params;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    if (!isDatabaseConfigured()) {
+      const recipe = getOrCreateInMemoryRecipes(userId).find((r: any) => r.id === id);
+      if (!recipe) return res.status(404).json({ error: "Not found" });
+      return res.json(recipe);
+    }
+
+    const recipe = await prisma.recipe.findUnique({
+      where: { id },
+      include: { ingredients: { include: { product: true } }, product: true },
+    });
+    if (!recipe || recipe.userId !== userId) {
+      return res.status(403).json({ error: "Forbidden or not found" });
+    }
+    res.json(recipe);
+  });
+
   app.delete("/api/recipes/:id", async (req, res) => {
     const userId = req.cookies.token;
     const { id } = req.params;

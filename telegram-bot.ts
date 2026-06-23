@@ -645,6 +645,53 @@ async function handleAwaitMealText(prisma: PrismaClient, account: any, chatId: s
   }
 
   const mealType = getCurrentMealType(BOT_TIMEZONE);
+  const itemsList = items.map((i: any) => `• ${i.name} — ${i.amount} г`).join("\n");
+
+  // Несколько ингредиентов одного блюда (как в "Создать блюдо" в приложении) —
+  // собираем их в один Recipe + продукт-снимок, чтобы в дневник попала одна
+  // запись с названием блюда, а не отдельная строка на каждый ингредиент.
+  // Состав можно поправить позже в приложении кнопкой "Состав".
+  if (items.length > 1) {
+    const dishName = transcript.trim().replace(/^./, (c) => c.toUpperCase());
+    const totalWeight = items.reduce((sum: number, it: any) => sum + it.amount, 0);
+    const recipeRes = await internalApi("/api/recipes", {
+      method: "POST",
+      userId,
+      body: {
+        name: dishName,
+        cookedWeightGrams: totalWeight,
+        ingredients: items.map((it: any) => ({
+          productId: it.product.id,
+          name: it.name,
+          weightGrams: it.amount,
+          calories: it.product.calories,
+          protein: it.product.protein,
+          fat: it.product.fat,
+          carbs: it.product.carbs,
+        })),
+      },
+    });
+
+    if (recipeRes.ok && recipeRes.data?.product?.id) {
+      const dishProduct = recipeRes.data.product;
+      const addRes = await internalApi("/api/diary/add", {
+        method: "POST",
+        userId,
+        body: { productId: dishProduct.id, amount: totalWeight, type: mealType, usdaData: dishProduct },
+      });
+      if (addRes.ok) {
+        await saveAccount(prisma, chatId, { state: "DONE" });
+        const totalCalories = (Number(dishProduct.calories) || 0) * (totalWeight / 100);
+        return sendMessage(
+          chatId,
+          `Записал «${dishName}» в ${MEAL_TYPES[mealType] || mealType} (≈${Math.round(totalCalories)} ккал) ✅\n${itemsList}\n\nСостав и вес можно поправить в приложении — кнопка «Состав» у записи.`,
+          MAIN_MENU_KEYBOARD
+        );
+      }
+    }
+    // Не удалось собрать блюдо одной позицией — не теряем распознанное,
+    // добавляем ингредиенты по отдельности, как раньше.
+  }
 
   let totalCalories = 0;
   let added = 0;
@@ -663,7 +710,6 @@ async function handleAwaitMealText(prisma: PrismaClient, account: any, chatId: s
 
   await saveAccount(prisma, chatId, { state: "DONE" });
 
-  const itemsList = items.map((i: any) => `• ${i.name} — ${i.amount} г`).join("\n");
   return sendMessage(
     chatId,
     `Записал в ${MEAL_TYPES[mealType] || mealType} (${added} продукт${added === 1 ? "" : "ов"}, ≈${Math.round(totalCalories)} ккал) ✅\n${itemsList}\n\nЕсли что-то не так — поправь в приложении, в дневнике за сегодня.`,

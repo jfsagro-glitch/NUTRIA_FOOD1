@@ -1068,7 +1068,7 @@ const DiaryDateStrip = ({ selectedDate, onSelect }: { selectedDate: string; onSe
   );
 };
 
-const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, onHintClick, onDeleteItem, onEditItem, onUpdateWater, onUpdateGrams }: { data: any, selectedDate: string, onChangeDate: (dateKey: string) => void, onAddClick: (type: string) => void, hints: Hint[], onHintClick: (cta: string) => void, onDeleteItem: (id: string) => void, onEditItem: (item: any) => void, onUpdateWater: (amount: number) => void, onUpdateGrams: (itemId: string, amount: number) => Promise<boolean> }) => {
+const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, onHintClick, onDeleteItem, onEditItem, onOpenComposition, onUpdateWater, onUpdateGrams }: { data: any, selectedDate: string, onChangeDate: (dateKey: string) => void, onAddClick: (type: string) => void, hints: Hint[], onHintClick: (cta: string) => void, onDeleteItem: (id: string) => void, onEditItem: (item: any) => void, onOpenComposition: (item: any) => void, onUpdateWater: (amount: number) => void, onUpdateGrams: (itemId: string, amount: number) => Promise<boolean> }) => {
   const { meals = [], waterIntake = 0 } = data;
   const goals = mergeGoals(data.goals);
   const waterGoal = 2500; // 2.5L in ml
@@ -1433,6 +1433,11 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
                               </p>
                             </div>
                             <span style={{ fontSize: 12, color: PROTO.textMid }} className="flex-shrink-0">{Math.round((item.product.calories * item.amount) / 100)} ккал</span>
+                            {item.product.recipeId && (
+                              <button onClick={() => onOpenComposition(item)} className="p-1.5 hover:text-emerald-500 transition-colors flex-shrink-0" style={{ color: PROTO.textLt }} title="Состав">
+                                <ListChecks size={14} />
+                              </button>
+                            )}
                             <button onClick={() => onEditItem(item)} className="p-1.5 hover:text-emerald-500 transition-colors flex-shrink-0" style={{ color: PROTO.textLt }}>
                               <Pencil size={14} />
                             </button>
@@ -2811,6 +2816,10 @@ export default function App() {
   // Правка состава блюда прямо в черновике «Проверьте результат» — переиспользует
   // состояние dishName/dishIngredients/dishCookedWeight выше (создание и правка не идут одновременно)
   const [editDishReviewTempId, setEditDishReviewTempId] = useState<string | null>(null);
+  // Правка состава уже сохранённой записи дневника (кнопка "Состав" у блюда,
+  // занесённого из бота/голоса/фото) — тоже переиспользует dishName/dishIngredients/dishCookedWeight.
+  const [editDishMealItemId, setEditDishMealItemId] = useState<string | null>(null);
+  const [editDishMealItemRecipeId, setEditDishMealItemRecipeId] = useState<string | null>(null);
   const [editingMealItem, setEditingMealItem] = useState<{ id: string; amount: number; name: string } | null>(null);
   const [editAmountValue, setEditAmountValue] = useState('');
   const [selectedDiaryDate, setSelectedDiaryDate] = useState<string>(toDateKey(new Date()));
@@ -3700,6 +3709,45 @@ export default function App() {
     setIsReviewSheetOpen(true);
   };
 
+  // Открыть правку состава уже сохранённой записи дневника (кнопка "Состав" —
+  // продукты, занесённые из бота/голоса/фото одним блюдом из нескольких ингредиентов)
+  const openMealItemComposition = async (item: any) => {
+    const recipeId = item.product?.recipeId;
+    if (!recipeId) return;
+    try {
+      const res = await fetch(`/api/recipes/${recipeId}`);
+      if (!res.ok) return;
+      const recipe = await res.json();
+      setEditDishMealItemId(item.id);
+      setEditDishMealItemRecipeId(recipeId);
+      setDishName(recipe.name);
+      setDishCookedWeight(String(Math.round(item.amount)));
+      setDishIngredients((recipe.ingredients || []).map((ing: any) => ({
+        productId: ing.productId,
+        name: ing.product?.name || ing.name || '',
+        weightGrams: String(Math.round(ing.weightGrams)),
+        calories: ing.product?.calories ?? 0,
+        protein: ing.product?.protein ?? 0,
+        fat: ing.product?.fat ?? 0,
+        carbs: ing.product?.carbs ?? 0,
+      })));
+      setDishIngredientQuery('');
+      setDishIngredientResults([]);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const closeMealItemComposition = () => {
+    setEditDishMealItemId(null);
+    setEditDishMealItemRecipeId(null);
+    setDishName('');
+    setDishCookedWeight('');
+    setDishIngredients([]);
+    setDishIngredientQuery('');
+    setDishIngredientResults([]);
+  };
+
   const submitDish = async () => {
     if (!dishName.trim() || dishIngredients.length === 0) return;
     setIsSavingDish(true);
@@ -3717,6 +3765,18 @@ export default function App() {
       }))
     };
     try {
+      if (editDishMealItemId && editDishMealItemRecipeId) {
+        const res = await fetch(`/api/recipes/${editDishMealItemRecipeId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          await updateMealItemAmountDirect(editDishMealItemId, payload.cookedWeightGrams);
+          closeMealItemComposition();
+        }
+        return;
+      }
       if (editDishReviewTempId) {
         const recipeId = reviewItems.find((it) => it.tempId === editDishReviewTempId)?.product.recipeId;
         if (!recipeId) { closeEditDishIngredients(); return; }
@@ -4255,6 +4315,7 @@ export default function App() {
                 setEditingMealItem({ id: item.id, amount: item.amount, name: item.product?.name || 'Изменить вес' });
                 setEditAmountValue(String(Math.round(item.amount)));
               }}
+              onOpenComposition={openMealItemComposition}
               onUpdateWater={updateWater}
               onUpdateGrams={updateMealItemAmountDirect}
             />
@@ -4714,7 +4775,11 @@ export default function App() {
       </BottomSheet>
 
       {/* «Проверьте результат» → правка состава блюда, собранного из ингредиентов (голос/фото) */}
-      <BottomSheet isOpen={editDishReviewTempId !== null} onClose={closeEditDishIngredients} title="Состав блюда">
+      <BottomSheet
+        isOpen={editDishReviewTempId !== null || editDishMealItemId !== null}
+        onClose={editDishMealItemId !== null ? closeMealItemComposition : closeEditDishIngredients}
+        title="Состав блюда"
+      >
         <div className="space-y-3">
           <input
             type="text" placeholder="Название блюда"
