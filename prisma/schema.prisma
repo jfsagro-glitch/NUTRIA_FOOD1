@@ -38,6 +38,7 @@ model User {
 
   // Связь с Telegram-ботом (новое)
   telegramAccount     TelegramAccount?
+  telegramLinkCodes   TelegramLinkCode[]
 
   // Связи "Мои" / Недавние (новое, v0.3)
   customProducts      Product[]            @relation("UserProducts")
@@ -237,6 +238,17 @@ model TelegramAccount {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Одноразовый код для привязки уже существующего веб-аккаунта к Telegram-чату
+// (Профиль → Настройки → Telegram-уведомления → код/диплинк → /start <code> в боте).
+model TelegramLinkCode {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }
 
 // ─── Существующие модели (без изменений) ─────────────────────────────────────

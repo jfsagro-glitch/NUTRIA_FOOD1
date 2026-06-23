@@ -1767,6 +1767,66 @@ const SummaryScreen = ({
     return raw === null ? true : raw === 'true';
   });
   const [isSettingsCollapsed, setIsSettingsCollapsed] = useState(() => localStorage.getItem('collapse_summary_settings') === 'true');
+  const [telegramAvailable, setTelegramAvailable] = useState(true);
+  const [telegramStatus, setTelegramStatus] = useState<{ linked: boolean; username: string | null; firstName: string | null } | null>(null);
+  const [telegramLinkCode, setTelegramLinkCode] = useState<{ code: string; deepLink: string | null; expiresInMinutes: number } | null>(null);
+  const [isLoadingTelegram, setIsLoadingTelegram] = useState(false);
+
+  useEffect(() => {
+    if (view !== 'profile') return;
+    fetch('/api/telegram/link-status')
+      .then((res) => {
+        if (!res.ok) { setTelegramAvailable(false); return null; }
+        return res.json();
+      })
+      .then((data) => { if (data) setTelegramStatus(data); })
+      .catch(() => setTelegramAvailable(false));
+  }, [view]);
+
+  useEffect(() => {
+    if (!telegramLinkCode) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/telegram/link-status');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.linked) {
+          setTelegramStatus(data);
+          setTelegramLinkCode(null);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [telegramLinkCode]);
+
+  const requestTelegramLinkCode = async () => {
+    setIsLoadingTelegram(true);
+    try {
+      const res = await fetch('/api/telegram/link-code', { method: 'POST' });
+      if (res.ok) setTelegramLinkCode(await res.json());
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoadingTelegram(false);
+    }
+  };
+
+  const unlinkTelegram = async () => {
+    setIsLoadingTelegram(true);
+    try {
+      const res = await fetch('/api/telegram/unlink', { method: 'POST' });
+      if (res.ok) {
+        setTelegramStatus({ linked: false, username: null, firstName: null });
+        setTelegramLinkCode(null);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoadingTelegram(false);
+    }
+  };
 
   const dayLabel = (dateKey: string) => {
     const date = new Date(`${dateKey}T12:00:00`);
@@ -2199,6 +2259,55 @@ const SummaryScreen = ({
                   >
                     Изменить (MVP)
                   </button>
+                </div>
+
+                <div className="mt-4 bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+                  <p className="text-base font-semibold text-zinc-100 mb-3">Telegram-уведомления</p>
+                  {!telegramAvailable ? (
+                    <p className="text-sm text-zinc-400">Telegram-бот не настроен в этом окружении.</p>
+                  ) : telegramStatus?.linked ? (
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm text-zinc-300">
+                        Привязан{telegramStatus.username ? <> как <span className="text-zinc-100">@{telegramStatus.username}</span></> : telegramStatus.firstName ? <> ({telegramStatus.firstName})</> : ''}
+                      </p>
+                      <button
+                        onClick={unlinkTelegram}
+                        disabled={isLoadingTelegram}
+                        className="px-3 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-sm disabled:opacity-50 flex-shrink-0"
+                      >
+                        Отвязать
+                      </button>
+                    </div>
+                  ) : telegramLinkCode ? (
+                    <div className="space-y-2">
+                      <p className="text-sm text-zinc-300">Откройте бота — он сам подтвердит привязку:</p>
+                      {telegramLinkCode.deepLink && (
+                        <a
+                          href={telegramLinkCode.deepLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block text-center px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-sm font-medium transition-colors"
+                        >
+                          Открыть бота в Telegram
+                        </a>
+                      )}
+                      <p className="text-xs text-zinc-500">
+                        Или отправьте боту команду: <span className="text-zinc-300 font-mono">/link {telegramLinkCode.code}</span> (код активен {telegramLinkCode.expiresInMinutes} мин)
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm text-zinc-400">Получайте напоминания о приёмах пищи в Telegram.</p>
+                      <button
+                        onClick={requestTelegramLinkCode}
+                        disabled={isLoadingTelegram}
+                        className="px-3 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-sm disabled:opacity-50 flex-shrink-0 flex items-center gap-2"
+                      >
+                        {isLoadingTelegram && <Loader2 size={14} className="animate-spin" />}
+                        Привязать
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </motion.div>

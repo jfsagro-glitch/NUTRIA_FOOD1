@@ -64,6 +64,33 @@ const MEAL_REMINDER_ORDER = ["BREAKFAST", "LUNCH", "DINNER"];
 const MEAL_REMINDER_DELAY_HOURS = 3;
 const SMART_REMINDER_MAX_OPTIONS = [1, 2, 3, 4, 5];
 
+// ─── Привязка существующего веб-аккаунта к Telegram-чату ─────────────────────
+// Без символов 0/O и 1/I — чтобы код было легко набрать вручную, если диплинк
+// (t.me/<bot>?start=<code>) по какой-то причине не сработал.
+const LINK_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const LINK_CODE_LENGTH = 6;
+const LINK_CODE_TTL_MS = 15 * 60 * 1000;
+
+function generateLinkCode(): string {
+  let code = "";
+  for (let i = 0; i < LINK_CODE_LENGTH; i++) {
+    code += LINK_CODE_CHARS[crypto.randomInt(LINK_CODE_CHARS.length)];
+  }
+  return code;
+}
+
+let cachedBotUsername: string | null = null;
+async function getBotUsername(): Promise<string | null> {
+  if (cachedBotUsername) return cachedBotUsername;
+  try {
+    const me = await tg("getMe", {});
+    cachedBotUsername = me?.username || null;
+  } catch (e) {
+    console.error("[telegram-bot] getMe failed:", e);
+  }
+  return cachedBotUsername;
+}
+
 // ─── Telegram Bot API helpers ────────────────────────────────────────────────
 
 async function tg(method: string, params: Record<string, any>) {
@@ -761,6 +788,37 @@ async function handleSmartReminderCallback(prisma: PrismaClient, account: any, c
   return null;
 }
 
+async function handleLinkCode(prisma: PrismaClient, chatId: string, from: any, codeRaw: string) {
+  const code = codeRaw.trim().toUpperCase();
+  const row = await (prisma as any).telegramLinkCode.findUnique({ where: { code } });
+  if (row) {
+    await (prisma as any).telegramLinkCode.delete({ where: { code } }).catch(() => {});
+  }
+  if (!row || row.expiresAt < new Date()) {
+    return sendMessage(
+      chatId,
+      "Код недействителен или истёк. Сформируйте новый в приложении (Профиль → Настройки → Telegram-уведомления) и отправьте его сюда ещё раз."
+    );
+  }
+
+  // На один веб-аккаунт — один активный чат: отвязываем прежний, если был.
+  await (prisma as any).telegramAccount.updateMany({
+    where: { userId: row.userId, chatId: { not: chatId } },
+    data: { userId: null },
+  });
+  await (prisma as any).telegramAccount.upsert({
+    where: { chatId },
+    update: { userId: row.userId, state: "DONE", username: from?.username || null, firstNameTg: from?.first_name || null },
+    create: { chatId, userId: row.userId, state: "DONE", username: from?.username || null, firstNameTg: from?.first_name || null },
+  });
+
+  return sendMessage(
+    chatId,
+    "Аккаунт привязан ✅ Теперь сюда будут приходить напоминания о приёмах пищи из приложения NÜTRIA.",
+    MAIN_MENU_KEYBOARD
+  );
+}
+
 // ─── Диспетчер апдейтов ──────────────────────────────────────────────────────
 
 async function handleUpdate(prisma: PrismaClient, update: any) {
@@ -793,7 +851,19 @@ async function handleUpdate(prisma: PrismaClient, update: any) {
   const account = await getOrCreateAccount(prisma, chatId, message.from);
   const text = typeof message.text === "string" ? message.text.trim() : "";
 
-  if (text === "/start" || account.state === "NEW") {
+  // Диплинк из приложения: t.me/<bot>?start=<code> приходит как текст "/start <code>".
+  // Проверяем раньше состояния NEW, иначе свежий чат всегда уходил бы в онбординг.
+  const startParamMatch = text.match(/^\/start(?:\s+(\S+))?$/);
+  if (startParamMatch) {
+    if (startParamMatch[1]) return handleLinkCode(prisma, chatId, message.from, startParamMatch[1]);
+    return startOnboarding(prisma, chatId);
+  }
+  const linkMatch = text.match(/^\/link\s+(\S+)/i);
+  if (linkMatch) {
+    return handleLinkCode(prisma, chatId, message.from, linkMatch[1]);
+  }
+
+  if (account.state === "NEW") {
     return startOnboarding(prisma, chatId);
   }
 
@@ -961,6 +1031,36 @@ export function registerTelegramBot(app: Express, prisma: PrismaClient) {
     handleUpdate(prisma, req.body).catch((e) => {
       console.error("[telegram-bot] Update handling error:", e);
     });
+  });
+
+  // Привязка существующего веб-аккаунта к Telegram-чату (Профиль → Настройки).
+  app.post("/api/telegram/link-code", async (req: Request, res: Response) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    await (prisma as any).telegramLinkCode.deleteMany({ where: { userId } });
+    const code = generateLinkCode();
+    const expiresAt = new Date(Date.now() + LINK_CODE_TTL_MS);
+    await (prisma as any).telegramLinkCode.create({ data: { code, userId, expiresAt } });
+    const username = await getBotUsername();
+    res.json({
+      code,
+      expiresInMinutes: LINK_CODE_TTL_MS / 60000,
+      deepLink: username ? `https://t.me/${username}?start=${code}` : null,
+    });
+  });
+
+  app.get("/api/telegram/link-status", async (req: Request, res: Response) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    const account = await (prisma as any).telegramAccount.findUnique({ where: { userId } });
+    res.json({ linked: !!account, username: account?.username || null, firstName: account?.firstNameTg || null });
+  });
+
+  app.post("/api/telegram/unlink", async (req: Request, res: Response) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    await (prisma as any).telegramAccount.updateMany({ where: { userId }, data: { userId: null } });
+    res.json({ ok: true });
   });
 
   if (PUBLIC_URL) {
