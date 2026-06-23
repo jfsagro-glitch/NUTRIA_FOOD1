@@ -22,7 +22,7 @@ interface NutritionistUser {
 }
 
 type ClientStatus = 'PENDING' | 'ACTIVE' | 'ARCHIVED';
-type ClientTab = 'questionnaire' | 'diary' | 'analyses' | 'notes' | 'recommendations' | 'messages';
+type ClientTab = 'questionnaire' | 'diary' | 'weight' | 'analyses' | 'notes' | 'recommendations' | 'messages';
 type ClientSource = 'invite' | 'telegram' | 'self';
 
 interface Client {
@@ -521,6 +521,63 @@ function AnalysesTab({ clientId }: { clientId: string }) {
   );
 }
 
+// ─── Вкладка: Вес ──────────────────────────────────────────────────────────
+
+function WeightTab({ clientId }: { clientId: string }) {
+  const api = useApi();
+  const [history, setHistory] = useState<{ date: string; weightKg: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { const d = await api.get(`/api/crm/clients/${clientId}/weight-history?days=90`); setHistory(d.history || []); }
+    catch {} finally { setLoading(false); }
+  }, [clientId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-zinc-500"/></div>;
+  if (history.length === 0) return <EmptyState icon={<Scale size={36}/>} text="Клиент пока не записывал вес"/>;
+
+  const values = history.map(p => p.weightKg);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(0.5, max - min);
+  const width = 600, height = 120;
+  const points = history.map((p, i) => {
+    const x = (i / Math.max(1, history.length - 1)) * width;
+    const y = height - ((p.weightKg - min) / range) * height;
+    return `${x},${y}`;
+  }).join(' ');
+
+  return (
+    <div>
+      <div className="bg-zinc-800/40 rounded-xl p-4 border border-zinc-700/50 mb-4">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-zinc-400 text-xs">Динамика веса за 90 дней</p>
+          <p className="text-white text-sm font-medium">{values[values.length - 1]} кг</p>
+        </div>
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-28">
+          <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-400"/>
+        </svg>
+        <div className="flex justify-between text-[11px] text-zinc-500 mt-1">
+          <span>{min} кг</span>
+          <span>{max} кг</span>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {history.slice().reverse().map(h => (
+          <div key={h.date} className="flex items-center justify-between bg-zinc-800/40 rounded-xl px-4 py-3 border border-zinc-700/50">
+            <span className="text-zinc-400 text-sm">{new Date(h.date).toLocaleDateString('ru-RU')}</span>
+            <span className="text-white text-sm font-medium">{h.weightKg} кг</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Вкладка: Заметки ─────────────────────────────────────────────────────
 
 function NotesTab({ clientId }: { clientId: string }) {
@@ -770,6 +827,7 @@ function ClientCard({ clientId, inviteToken, onBack }: { clientId: string | null
   const TABS: { id: ClientTab; label: string; icon: React.ReactNode }[] = [
     { id: 'questionnaire', label: 'Анкета', icon: <User size={14}/> },
     { id: 'diary', label: 'Дневник', icon: <Clipboard size={14}/> },
+    { id: 'weight', label: 'Вес', icon: <Scale size={14}/> },
     { id: 'analyses', label: 'Анализы', icon: <FileText size={14}/> },
     { id: 'notes', label: 'Заметки', icon: <MessageSquare size={14}/> },
     { id: 'recommendations', label: 'Рекомендации', icon: <Star size={14}/> },
@@ -830,6 +888,7 @@ function ClientCard({ clientId, inviteToken, onBack }: { clientId: string | null
               <QuestionnaireTab clientId={clientId || ''} detail={detail} onUpdated={loadDetail} />
             )}
             {activeTab === 'diary' && clientId && <DiaryTab clientId={clientId}/>}
+            {activeTab === 'weight' && clientId && <WeightTab clientId={clientId}/>}
             {activeTab === 'analyses' && clientId && <AnalysesTab clientId={clientId}/>}
             {activeTab === 'notes' && clientId && <NotesTab clientId={clientId}/>}
             {activeTab === 'recommendations' && clientId && <RecommendationsTab clientId={clientId}/>}

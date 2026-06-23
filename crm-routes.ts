@@ -398,6 +398,30 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
     }
   });
 
+  // ── ВЕС КЛИЕНТА (просмотр для нутрициолога) ───────────────────────────────
+
+  app.get("/api/crm/clients/:clientId/weight-history", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const { clientId } = req.params;
+      const { days = "90" } = req.query;
+
+      const clientUser = await prisma.user.findUnique({ where: { id: clientId } });
+      if (!clientUser || !isClientRole(clientUser.role)) return res.status(404).json({ error: "Клиент не найден" });
+
+      const since = new Date();
+      since.setDate(since.getDate() - Number(days));
+
+      const logs = await (prisma as any).weightLog.findMany({
+        where: { userId: clientId, date: { gte: since } },
+        orderBy: { date: "asc" },
+      });
+
+      return res.json({ history: logs.map((l: any) => ({ date: l.date, weightKg: l.weightKg })) });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
   // ── ЗАМЕТКИ: список ────────────────────────────────────────────────────────
 
   app.get("/api/crm/clients/:clientId/notes", requireNutritionist, async (req: Request, res: Response) => {

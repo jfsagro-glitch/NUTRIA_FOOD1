@@ -1932,6 +1932,9 @@ const SummaryScreen = ({
   const [telegramLinkCode, setTelegramLinkCode] = useState<{ code: string; deepLink: string | null; expiresInMinutes: number } | null>(null);
   const [isLoadingTelegram, setIsLoadingTelegram] = useState(false);
   const [isSavingSmartReminders, setIsSavingSmartReminders] = useState(false);
+  const [weightHistory, setWeightHistory] = useState<{ date: string; weightKg: number }[]>([]);
+  const [weightInput, setWeightInput] = useState(() => (profile.weightKg ? String(Math.round(profile.weightKg * 10) / 10) : ''));
+  const [isSavingWeight, setIsSavingWeight] = useState(false);
 
   useEffect(() => {
     if (view !== 'profile') return;
@@ -2005,6 +2008,40 @@ const SummaryScreen = ({
       console.error(e);
     } finally {
       setIsSavingSmartReminders(false);
+    }
+  };
+
+  useEffect(() => {
+    if (view !== 'profile') return;
+    fetch('/api/weight/history?days=90')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (data) setWeightHistory(data.history); })
+      .catch(() => {});
+  }, [view]);
+
+  const saveWeight = async () => {
+    const weightKg = Number(weightInput.replace(',', '.'));
+    if (!Number.isFinite(weightKg) || weightKg <= 0) return;
+    setIsSavingWeight(true);
+    try {
+      const todayKey = toDateKey(new Date());
+      const res = await fetch('/api/weight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: todayKey, weightKg }),
+      });
+      if (res.ok) {
+        setWeightHistory((prev) => {
+          const next = prev.filter((p) => p.date !== todayKey);
+          next.push({ date: todayKey, weightKg });
+          return next.sort((a, b) => a.date.localeCompare(b.date));
+        });
+        await onSaveProfileGoals({ ...profile, weightKg }, goals);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSavingWeight(false);
     }
   };
 
@@ -2331,6 +2368,64 @@ const SummaryScreen = ({
       {view === 'profile' && (
       <>
       <MessagesCard onMessagesRead={onMessagesRead} />
+
+      <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-bold">Вес</h3>
+          {weightHistory.length > 0 && (
+            <span className="text-sm text-zinc-400">
+              {Math.round(weightHistory[weightHistory.length - 1].weightKg * 10) / 10} кг
+            </span>
+          )}
+        </div>
+
+        {weightHistory.length >= 2 && (() => {
+          const values = weightHistory.map((p) => p.weightKg);
+          const min = Math.min(...values);
+          const max = Math.max(...values);
+          const range = Math.max(0.5, max - min);
+          const width = 280;
+          const height = 56;
+          const points = weightHistory
+            .map((p, i) => {
+              const x = (i / (weightHistory.length - 1)) * width;
+              const y = height - ((p.weightKg - min) / range) * height;
+              return `${x},${y}`;
+            })
+            .join(' ');
+          return (
+            <div className="mb-3">
+              <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-14">
+                <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-400" />
+              </svg>
+              <div className="flex justify-between text-[11px] text-zinc-500 mt-1">
+                <span>{Math.round(min * 10) / 10} кг</span>
+                <span>{weightHistory.length} {weightHistory.length === 1 ? 'запись' : 'записей'} за 90 дн.</span>
+                <span>{Math.round(max * 10) / 10} кг</span>
+              </div>
+            </div>
+          );
+        })()}
+
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            step="0.1"
+            inputMode="decimal"
+            value={weightInput}
+            onChange={(e) => setWeightInput(e.target.value)}
+            placeholder="Вес, кг"
+            className="flex-1 bg-zinc-800/50 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100"
+          />
+          <button
+            onClick={saveWeight}
+            disabled={isSavingWeight || !weightInput}
+            className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white text-sm font-medium transition-colors"
+          >
+            {isSavingWeight ? '...' : 'Записать'}
+          </button>
+        </div>
+      </div>
 
       <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
         <button

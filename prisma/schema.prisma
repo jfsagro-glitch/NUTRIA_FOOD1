@@ -51,6 +51,7 @@ model User {
 
   // Трекер активности (новое, Sprint 2)
   activityLogs ActivityLog[]
+  weightLogs   WeightLog[]
 }
 
 // ─── Профиль нутрициолога ────────────────────────────────────────────────────
@@ -385,6 +386,21 @@ model ActivityLog {
   caloriesBurned   Float
   createdAt        DateTime @default(now())
 
+  @@index([userId, date])
+}
+
+// ─── Трекер веса тела (новое, Sprint 2) ──────────────────────────────────────
+// Одна запись на день: повторная запись в тот же день обновляет значение (upsert),
+// а не плодит дубликаты — см. @@unique([userId, date]).
+model WeightLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime
+  weightKg  Float
+  createdAt DateTime @default(now())
+
+  @@unique([userId, date])
   @@index([userId, date])
 }
 

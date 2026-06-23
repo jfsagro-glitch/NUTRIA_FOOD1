@@ -75,6 +75,7 @@ const inMemoryRecent = new Map<string, any[]>();
 const inMemoryCustomProducts = new Map<string, any[]>();
 const inMemoryRecipes = new Map<string, any[]>();
 const inMemoryActivities = new Map<string, any[]>();
+const inMemoryWeightLogs = new Map<string, Map<string, number>>();
 
 const BARCODE_PREFERRED_COUNTRY = (process.env.BARCODE_PREFERRED_COUNTRY || "ru").toLowerCase();
 const BARCODE_PREFERRED_LANG = (process.env.BARCODE_PREFERRED_LANG || "ru").toLowerCase();
@@ -119,6 +120,11 @@ function getOrCreateInMemoryRecipes(userId: string) {
 function getOrCreateInMemoryActivities(userId: string) {
   if (!inMemoryActivities.has(userId)) inMemoryActivities.set(userId, []);
   return inMemoryActivities.get(userId)!;
+}
+
+function getOrCreateInMemoryWeightLogs(userId: string) {
+  if (!inMemoryWeightLogs.has(userId)) inMemoryWeightLogs.set(userId, new Map());
+  return inMemoryWeightLogs.get(userId)!;
 }
 
 // Запомнить продукт как "недавний" (используется после успешного /api/diary/add)
@@ -3123,6 +3129,71 @@ async function startServer() {
 
     await prisma.activityLog.delete({ where: { id } });
     res.json({ success: true });
+  });
+
+  // Weight: Log today's (or a given date's) body weight — одна запись на день,
+  // повторная запись в тот же день обновляет значение (upsert по [userId, date]).
+  app.post("/api/weight", async (req, res) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const { date, weightKg } = req.body;
+    if (!Number.isFinite(weightKg) || weightKg <= 0) {
+      return res.status(400).json({ error: "Invalid weight payload" });
+    }
+
+    const targetDate = dateFromQuery(date);
+    const targetDateKey = toDateKey(targetDate);
+
+    if (!isDatabaseConfigured()) {
+      const log = getOrCreateInMemoryWeightLogs(userId);
+      log.set(targetDateKey, weightKg);
+      return res.json({ weightLog: { date: targetDateKey, weightKg }, mode: "memory" });
+    }
+
+    try {
+      const { start } = dayRangeFromDate(targetDate);
+      const weightLog = await prisma.weightLog.upsert({
+        where: { userId_date: { userId, date: start } },
+        update: { weightKg },
+        create: { userId, date: start, weightKg },
+      });
+      res.json({ weightLog });
+    } catch (e: any) {
+      console.error("Weight Log Create Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
+  });
+
+  // Weight: History for the last N days
+  app.get("/api/weight/history", async (req, res) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const days = Math.min(365, Math.max(1, parseInt(String(req.query.days ?? "30"), 10) || 30));
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    if (!isDatabaseConfigured()) {
+      const log = getOrCreateInMemoryWeightLogs(userId);
+      const history = Array.from(log.entries())
+        .map(([date, weightKg]) => ({ date, weightKg }))
+        .filter((entry) => new Date(entry.date) >= since)
+        .sort((a, b) => a.date.localeCompare(b.date));
+      return res.json({ history, mode: "memory" });
+    }
+
+    try {
+      const logs = await prisma.weightLog.findMany({
+        where: { userId, date: { gte: since } },
+        orderBy: { date: "asc" },
+      });
+      const history = logs.map((l) => ({ date: toDateKey(l.date), weightKg: l.weightKg }));
+      res.json({ history });
+    } catch (e: any) {
+      console.error("Weight History Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
   });
 
   // Diary: Add meal item
