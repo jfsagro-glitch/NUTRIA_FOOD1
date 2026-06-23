@@ -1043,6 +1043,7 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
 
   const mealTypes = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
   const mealLabels: any = { BREAKFAST: 'Завтрак', LUNCH: 'Обед', DINNER: 'Ужин', SNACK: 'Перекус' };
+  const mealIconSrc: any = { BREAKFAST: '/meal-icons/breakfast.png', LUNCH: '/meal-icons/lunch.png', DINNER: '/meal-icons/dinner.jpg', SNACK: '/meal-icons/snack.jpg' };
 
   const [allNutrientsOpen, setAllNutrientsOpen] = useState(false);
   const [mealExpanded, setMealExpanded] = useState<Record<string, boolean>>({
@@ -1292,10 +1293,10 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
                 className="flex items-center gap-3 p-4 cursor-pointer active:opacity-80 transition-opacity"
               >
                 <div
-                  className="flex items-center justify-center flex-shrink-0"
-                  style={{ width: 48, height: 48, borderRadius: '50%', background: PROTO.coolBlock, color: PROTO.primary }}
+                  className="flex items-center justify-center flex-shrink-0 overflow-hidden"
+                  style={{ width: 58, height: 58, borderRadius: 14, background: PROTO.coolBlock }}
                 >
-                  <Utensils size={20} />
+                  <img src={mealIconSrc[type]} alt={mealLabels[type]} className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
@@ -1385,10 +1386,10 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
             </p>
           </div>
           <div
-            className="flex items-center justify-center flex-shrink-0"
-            style={{ width: 48, height: 48, borderRadius: '50%', background: PROTO.coolBlock, color: PROTO.primary }}
+            className="flex items-center justify-center flex-shrink-0 overflow-hidden"
+            style={{ width: 48, height: 48, borderRadius: 14, background: PROTO.coolBlock }}
           >
-            <Droplet size={22} />
+            <img src="/meal-icons/water.jpg" alt="Вода" className="w-full h-full object-cover" />
           </div>
         </div>
         <p style={{ fontSize: 10, color: PROTO.textLt, marginBottom: 8 }}>Нажимайте на капли, чтобы отметить выпитое</p>
