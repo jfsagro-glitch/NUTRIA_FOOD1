@@ -97,8 +97,9 @@
 
 .theme-light [class*="text-zinc-100"],
 .theme-light [class*="text-zinc-200"],
-.theme-light [class*="text-zinc-300"] {
-  color: oklch(0.20 0.025 230) !important; /* T.text */
+.theme-light [class*="text-zinc-300"],
+.theme-light [class*="text-white"]:not([class*="bg-emerald"]) {
+  color: oklch(0.20 0.025 230) !important; /* T.text; text-white исключаем только на bg-emerald-* — там фон цветной */
 }
 
 .theme-light [class*="text-zinc-400"],
