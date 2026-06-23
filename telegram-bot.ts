@@ -31,6 +31,7 @@
 import type { Express, Request, Response } from "express";
 import type { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
+import { logError } from "./logging.ts";
 
 // ─── Конфигурация ────────────────────────────────────────────────────────────
 
@@ -86,7 +87,7 @@ async function getBotUsername(): Promise<string | null> {
     const me = await tg("getMe", {});
     cachedBotUsername = me?.username || null;
   } catch (e) {
-    console.error("[telegram-bot] getMe failed:", e);
+    logError("[telegram-bot] getMe failed:", e);
   }
   return cachedBotUsername;
 }
@@ -102,7 +103,7 @@ async function tg(method: string, params: Record<string, any>) {
   });
   const data: any = await res.json();
   if (!data.ok) {
-    console.error(`[telegram-bot] ${method} failed:`, data.description || data);
+    logError(`[telegram-bot] ${method} failed:`, data.description || data);
   }
   return data.result;
 }
@@ -612,7 +613,7 @@ async function handleAwaitMealText(prisma: PrismaClient, account: any, chatId: s
       const buffer = await downloadTelegramFile(message.voice.file_id);
       transcript = await transcribeVoice(buffer);
     } catch (e: any) {
-      console.error("[telegram-bot] Voice transcription error:", e);
+      logError("[telegram-bot] Voice transcription error:", e);
       return sendMessage(chatId, "Не получилось распознать голосовое сообщение. Попробуй текстом.");
     }
     if (!transcript) {
@@ -1020,11 +1021,11 @@ function startSmartReminderScheduler(prisma: PrismaClient) {
             });
           }
         } catch (e) {
-          console.error(`[telegram-bot] Smart reminder error for chat ${account.chatId}:`, e);
+          logError(`[telegram-bot] Smart reminder error for chat ${account.chatId}:`, e);
         }
       }
     } catch (e) {
-      console.error("[telegram-bot] Smart reminder scheduler error:", e);
+      logError("[telegram-bot] Smart reminder scheduler error:", e);
     }
   }, 60_000);
 }
@@ -1045,7 +1046,7 @@ function startReminderScheduler(prisma: PrismaClient) {
         await sendMessage(account.chatId, "Не забудь записать сегодняшние приёмы пищи в дневник 🍽", MAIN_MENU_KEYBOARD);
       }
     } catch (e) {
-      console.error("[telegram-bot] Reminder scheduler error:", e);
+      logError("[telegram-bot] Reminder scheduler error:", e);
     }
   }, 60_000);
 }
@@ -1063,7 +1064,7 @@ export function registerTelegramBot(app: Express, prisma: PrismaClient) {
     // чтобы Telegram не повторял запрос из-за тайм-аута.
     res.sendStatus(200);
     handleUpdate(prisma, req.body).catch((e) => {
-      console.error("[telegram-bot] Update handling error:", e);
+      logError("[telegram-bot] Update handling error:", e);
     });
   });
 
@@ -1129,7 +1130,7 @@ export function registerTelegramBot(app: Express, prisma: PrismaClient) {
   if (PUBLIC_URL) {
     tg("setWebhook", { url: `${PUBLIC_URL.replace(/\/$/, "")}/api/telegram/webhook` })
       .then(() => console.log("[telegram-bot] webhook установлен на", PUBLIC_URL))
-      .catch((e) => console.error("[telegram-bot] Не удалось установить webhook:", e));
+      .catch((e) => logError("[telegram-bot] Не удалось установить webhook:", e));
   } else {
     console.warn(
       "[telegram-bot] PUBLIC_URL не задан — webhook нужно установить вручную (см. INTEGRATION.md)"

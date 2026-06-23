@@ -214,7 +214,7 @@
 | T1 | Покрыть API тестами (Vitest + supertest) — сейчас тестов нет | Средняя | ✅ |
 | T2 | Rate limiting на API (express-rate-limit) | Малая | ✅ |
 | T3 | Валидация входящих данных (zod) вместо ручных проверок | Малая | ✅ |
-| T4 | Логирование ошибок (Sentry free tier) — сейчас только console.error | Малая | ⬜ |
+| T4 | Логирование ошибок (Sentry free tier) — сейчас только console.error | Малая | ✅ |
 | T5 | Кеширование поиска продуктов (Redis или in-memory LRU) | Средняя | ⬜ |
 
 ### T1 — Vitest + supertest ✅
@@ -262,6 +262,18 @@
 - Проверено: `tsc --noEmit` без ошибок, `vitest run` — 14/14, `vite build` — собирается, живой смоук (`tsx server.ts` + `curl`) на `/api/diary/goals` подтвердил и 400 на невалидных данных, и 200 с корректным сохранением на валидных.
 
 **Файлы:** `validation.ts` (новый), `server.ts`, `crm-routes.ts`, `tests/api.test.ts`
+
+### T4 — Логирование ошибок (Sentry free tier) ✅
+
+**Как реализовано:**
+- Новый модуль `logging.ts`: `logError(label, error)` — всегда делает `console.error(label, error)` (то же поведение, что и раньше, для локальной разработки/логов хостинга), и дополнительно отправляет ошибку в Sentry через `Sentry.captureException(...)`, но **только если задана переменная окружения `SENTRY_DSN`** — без неё (по умолчанию, как сейчас в dev/CI) `logError` — это просто `console.error` без какого-либо обращения к сети, поэтому ничего не нужно настраивать, чтобы тесты/`npm run dev` продолжали работать как раньше.
+- `Sentry.init({ dsn, environment, tracesSampleRate: 0 })` вызывается один раз при импорте `logging.ts` (на верхнем уровне модуля) — `tracesSampleRate: 0`, т.к. нужен только error-логинг, не APM/трейсинг (укладывается в бесплатный тир по объёму событий).
+- Все 53 вызова `console.error(...)` в трёх backend-файлах (`server.ts` — 42, `crm-routes.ts` — 3, `telegram-bot.ts` — 8) заменены на `logError(...)` с тем же набором аргументов (`label, error`) — место и формулировка каждого сообщения не изменились, изменился только канал доставки.
+- Глобальный Express error-handler в `server.ts` (`app.use((err, req, res, next) => ...)`) тоже теперь зовёт `logError`, то есть необработанные исключения в любом маршруте автоматически попадают в Sentry, а не только явно обёрнутые в `try/catch`.
+- **Сознательно ограничено серверным кодом** (Node-процесс `server.ts`/`crm-routes.ts`/`telegram-bot.ts`) — клиентские ошибки React (`src/*.tsx`) не охвачены, так как это отдельный SDK (`@sentry/react`/`@sentry/browser`) и отдельная задача со своим source-map upload, не упомянутая явно в формулировке задачи ("сейчас только console.error" — про backend-логи).
+- Проверено: `tsc --noEmit` без ошибок, `vitest run` — 14/14 (без `SENTRY_DSN` в тестовой среде `logError` ведёт себя как обычный `console.error`, поведение тестов не изменилось), `vite build` — собирается, живой смоук (`tsx server.ts` без `SENTRY_DSN`) подтвердил, что сервер поднимается и обрабатывает запросы без ошибок инициализации Sentry.
+
+**Файлы:** `logging.ts` (новый), `server.ts`, `crm-routes.ts`, `telegram-bot.ts`, `package.json` (`@sentry/node`)
 
 ---
 

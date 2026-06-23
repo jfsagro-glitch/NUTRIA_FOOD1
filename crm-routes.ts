@@ -27,6 +27,7 @@ import {
   onboardLoginSchema,
   onboardCompleteSchema,
 } from "./validation.ts";
+import { logError } from "./logging.ts";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -150,7 +151,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
         token,
       });
     } catch (e: any) {
-      console.error("Register error:", e);
+      logError("Register error:", e);
       return res.status(500).json({ error: "Ошибка сервера", message: e.message });
     }
   });
@@ -179,7 +180,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
         token,
       });
     } catch (e: any) {
-      console.error("Login error:", e);
+      logError("Login error:", e);
       return res.status(500).json({ error: "Ошибка сервера", message: e.message });
     }
   });
@@ -1092,7 +1093,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
       return res.json({ user: { id: clientUser.id, email: clientUser.email, role: clientUser.role }, token: jwtToken });
     } catch (e: any) {
-      console.error("Onboard error:", e);
+      logError("Onboard error:", e);
       return res.status(500).json({ error: e.message });
     }
   });

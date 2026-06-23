@@ -31,6 +31,7 @@ import {
 } from "./validation.ts";
 import { registerCrmRoutes } from "./crm-routes.ts";
 import { registerTelegramBot } from "./telegram-bot.ts";
+import { logError } from "./logging.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -776,7 +777,7 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
         ...(Array.isArray(normData?.search_terms) ? normData.search_terms : []),
       ], 2);
     } catch (e) {
-      console.error("Normalization error:", e);
+      logError("Normalization error:", e);
     }
   }
 
@@ -850,7 +851,7 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
         });
       }
     } catch (e) {
-      console.error("USDA Search Error:", e);
+      logError("USDA Search Error:", e);
     }
   }
 
@@ -912,7 +913,7 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
         });
       }
     } catch (e) {
-      console.error("AI Estimation error:", e);
+      logError("AI Estimation error:", e);
     }
   }
 
@@ -937,7 +938,7 @@ ${finalResults.map((candidate, index) => `${index}: ${candidate.name} (${candida
         finalResults = indices.map((index: number) => finalResults[index]).filter(Boolean);
       }
     } catch (e) {
-      console.error("Re-ranking error:", e);
+      logError("Re-ranking error:", e);
     }
   }
 
@@ -1025,7 +1026,7 @@ async function findBestPhotoRecognitionMatch(item: PhotoRecognitionItem, userId?
       );
       bestMatch = scoreCandidates(item.name, fallbackCandidates, bestMatch);
     } catch (e) {
-      console.error(`Photo fallback match failed for "${item.name}":`, e);
+      logError(`Photo fallback match failed for "${item.name}":`, e);
     }
   }
 
@@ -1602,7 +1603,7 @@ async function enrichProductMicronutrientsInBackground(product: { id: string; na
       data: { micronutrients: JSON.stringify(completeMicro) },
     });
   } catch (e) {
-    console.error("Background micronutrient enrichment error:", e);
+    logError("Background micronutrient enrichment error:", e);
   } finally {
     micronutrientEnrichmentInFlight.delete(product.id);
   }
@@ -2108,7 +2109,7 @@ async function generateAI(prompt: string, responseMimeType: string = "applicatio
       });
       return response.choices[0].message.content;
     } catch (e) {
-      console.error("OpenAI Error:", e);
+      logError("OpenAI Error:", e);
     }
   }
 
@@ -2157,7 +2158,7 @@ export async function createApp(): Promise<express.Express> {
       const text = await withTimeout(generateAI(prompt, responseMimeType, image), 20000, "AI proxy");
       res.json({ text });
     } catch (e: any) {
-      console.error("AI Proxy Error:", e);
+      logError("AI Proxy Error:", e);
       res.status(500).json({ error: e.message });
     }
   });
@@ -2168,7 +2169,7 @@ export async function createApp(): Promise<express.Express> {
       await prisma.$queryRaw`SELECT 1`;
       res.json({ status: "ok", database: "connected", version: "1.0.0" });
     } catch (e: any) {
-      console.error("Health check database error:", e);
+      logError("Health check database error:", e);
       res.status(500).json({ status: "error", database: "disconnected", error: e.message });
     }
   });
@@ -2185,7 +2186,7 @@ export async function createApp(): Promise<express.Express> {
 
       return res.status(404).json({ error: "Not found" });
     } catch (e: any) {
-      console.error("Barcode lookup error:", e);
+      logError("Barcode lookup error:", e);
       return res.status(500).json({ error: "Barcode lookup failed", message: e?.message || "Unknown error" });
     }
   });
@@ -2220,7 +2221,7 @@ export async function createApp(): Promise<express.Express> {
       res.cookie("token", user.id, { httpOnly: true, secure: true, sameSite: "none" });
       res.json({ success: true, user: { email: user.email, role: user.role } });
     } catch (e: any) {
-      console.error("Auth Login Error:", e);
+      logError("Auth Login Error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
   });
@@ -2238,7 +2239,7 @@ export async function createApp(): Promise<express.Express> {
       const user = await prisma.user.findUnique({ where: { id: userId } });
       res.json({ user });
     } catch (e: any) {
-      console.error("Auth Me Error:", e);
+      logError("Auth Me Error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
   });
@@ -2273,7 +2274,7 @@ export async function createApp(): Promise<express.Express> {
 
       res.json({ messages: result });
     } catch (e: any) {
-      console.error("Messages list error:", e);
+      logError("Messages list error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
   });
@@ -2289,7 +2290,7 @@ export async function createApp(): Promise<express.Express> {
       });
       res.json({ count });
     } catch (e: any) {
-      console.error("Messages unread-count error:", e);
+      logError("Messages unread-count error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
   });
@@ -2332,7 +2333,7 @@ export async function createApp(): Promise<express.Express> {
 
       res.json({ message });
     } catch (e: any) {
-      console.error("Messages send error:", e);
+      logError("Messages send error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
   });
@@ -2351,7 +2352,7 @@ export async function createApp(): Promise<express.Express> {
       });
       res.json(responseResults);
     } catch (e: any) {
-      console.error("Products Search Error:", e);
+      logError("Products Search Error:", e);
       res.status(500).json({ error: "Products search failed", message: e.message });
     }
   });
@@ -2397,7 +2398,7 @@ export async function createApp(): Promise<express.Express> {
         useCount: r.useCount
       })));
     } catch (e: any) {
-      console.error("Recent Foods Error:", e);
+      logError("Recent Foods Error:", e);
       res.status(500).json({ error: "Failed to load recent foods", message: e.message });
     }
   });
@@ -2428,7 +2429,7 @@ export async function createApp(): Promise<express.Express> {
       ]);
       res.json({ products, recipes });
     } catch (e: any) {
-      console.error("Mine Error:", e);
+      logError("Mine Error:", e);
       res.status(500).json({ error: "Failed to load 'Мои'", message: e.message });
     }
   });
@@ -2457,7 +2458,7 @@ export async function createApp(): Promise<express.Express> {
       });
       res.json(product);
     } catch (e: any) {
-      console.error("Create Custom Product Error:", e);
+      logError("Create Custom Product Error:", e);
       res.status(500).json({ error: "Failed to create product", message: e.message });
     }
   });
@@ -2483,7 +2484,7 @@ export async function createApp(): Promise<express.Express> {
       await prisma.product.delete({ where: { id } });
       res.json({ success: true });
     } catch (e: any) {
-      console.error("Delete Custom Product Error:", e);
+      logError("Delete Custom Product Error:", e);
       res.status(409).json({ error: "Продукт уже используется в дневнике, удаление невозможно" });
     }
   });
@@ -2579,7 +2580,7 @@ export async function createApp(): Promise<express.Express> {
 
       res.json(recipe);
     } catch (e: any) {
-      console.error("Create Recipe Error:", e);
+      logError("Create Recipe Error:", e);
       res.status(500).json({ error: "Failed to create recipe", message: e.message });
     }
   });
@@ -2613,7 +2614,7 @@ export async function createApp(): Promise<express.Express> {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       html = await response.text();
     } catch (e: any) {
-      console.error("Recipe import fetch error:", e);
+      logError("Recipe import fetch error:", e);
       return res.status(502).json({ error: "Не удалось загрузить страницу по ссылке" });
     } finally {
       clearTimeout(timer);
@@ -2647,7 +2648,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       const responseText = await withTimeout(generateAI(decompositionPrompt), 15000, "Recipe ingredient decomposition");
       items = unwrapAiItemsArray(parseAiJsonPayload(responseText || "{}"));
     } catch (e) {
-      console.error("Recipe import decomposition error:", e);
+      logError("Recipe import decomposition error:", e);
       return res.status(500).json({ error: "Не удалось разобрать состав рецепта" });
     }
 
@@ -2664,7 +2665,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
         );
         return { rawName, weightGrams, product: candidates[0] || null };
       } catch (e) {
-        console.error(`Recipe import ingredient match failed for "${rawName}":`, e);
+        logError(`Recipe import ingredient match failed for "${rawName}":`, e);
         return { rawName, weightGrams, product: null };
       }
     }));
@@ -2717,7 +2718,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       await prisma.recipe.delete({ where: { id } }); // cascade удалит связанный Product и RecipeIngredient
       res.json({ success: true });
     } catch (e: any) {
-      console.error("Delete Recipe Error:", e);
+      logError("Delete Recipe Error:", e);
       res.status(409).json({ error: "Блюдо уже используется в дневнике, удаление невозможно" });
     }
   });
@@ -2823,7 +2824,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
       res.json(recipe);
     } catch (e: any) {
-      console.error("Update Recipe Error:", e);
+      logError("Update Recipe Error:", e);
       res.status(500).json({ error: "Failed to update recipe", message: e.message });
     }
   });
@@ -2845,7 +2846,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
           : undefined,
       });
     } catch (e: any) {
-      console.error("Photo recognition error:", e);
+      logError("Photo recognition error:", e);
       return res.status(500).json({
         error: "Photo recognition failed",
         message: e?.message || "Unknown error",
@@ -2872,7 +2873,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
       return res.json({ success: true, product });
     } catch (e: any) {
-      console.error("Photo correction save error:", e);
+      logError("Photo correction save error:", e);
       return res.status(500).json({ error: "Failed to save correction", message: e?.message || "Unknown error" });
     }
   });
@@ -2933,7 +2934,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
       res.json({ meals: parsedMeals, goals, waterIntake, date: targetDateKey });
     } catch (e: any) {
-      console.error("Diary Get Error:", e);
+      logError("Diary Get Error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
   });
@@ -3046,7 +3047,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
         history: dayKeys.map((key) => ({ date: key, ...bucket.get(key)! }))
       });
     } catch (e: any) {
-      console.error("Diary History Error:", e);
+      logError("Diary History Error:", e);
       return res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
   });
@@ -3091,7 +3092,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
       return res.json({ success: true, goals });
     } catch (e: any) {
-      console.error("Diary Goals Update Error:", e);
+      logError("Diary Goals Update Error:", e);
       return res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
   });
@@ -3143,7 +3144,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
       res.json({ success: true, date: targetDateKey });
     } catch (e: any) {
-      console.error("Diary Water Error:", e);
+      logError("Diary Water Error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
   });
@@ -3201,7 +3202,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       const totalBurned = activities.reduce((s, a) => s + a.caloriesBurned, 0);
       res.json({ activities, totalBurned });
     } catch (e: any) {
-      console.error("Activities Get Error:", e);
+      logError("Activities Get Error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
   });
@@ -3236,7 +3237,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       });
       res.json({ activity });
     } catch (e: any) {
-      console.error("Activities Create Error:", e);
+      logError("Activities Create Error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
   });
@@ -3288,7 +3289,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       });
       res.json({ weightLog });
     } catch (e: any) {
-      console.error("Weight Log Create Error:", e);
+      logError("Weight Log Create Error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
   });
@@ -3319,7 +3320,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       const history = logs.map((l) => ({ date: toDateKey(l.date), weightKg: l.weightKg }));
       res.json({ history });
     } catch (e: any) {
-      console.error("Weight History Error:", e);
+      logError("Weight History Error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
   });
@@ -3357,7 +3358,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
         weightHistory = weightLogs.map((l) => ({ date: toDateKey(l.date), weightKg: l.weightKg }));
         activityHistory = activities;
       } catch (e: any) {
-        console.error("Export Error:", e);
+        logError("Export Error:", e);
         return res.status(500).json({ error: "Internal Server Error", message: e.message });
       }
     }
@@ -3367,7 +3368,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
     const archive = new ZipArchive({ zlib: { level: 9 } });
     archive.on("error", (err) => {
-      console.error("Export archive error:", err);
+      logError("Export archive error:", err);
       if (!res.headersSent) res.status(500).json({ error: "Internal Server Error" });
       else res.end();
     });
@@ -3456,7 +3457,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
     try {
       await touchRecentFood(userId, productId, Number(amount));
     } catch (e) {
-      console.error("touchRecentFood error:", e);
+      logError("touchRecentFood error:", e);
     }
 
     res.json(mealItem);
@@ -3607,7 +3608,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
         items = unwrapAiItemsArray(parseAiJsonPayload(retryText || "{}"));
       }
     } catch (e) {
-      console.error("Voice decomposition error:", e);
+      logError("Voice decomposition error:", e);
       return res.status(500).json({ error: "Failed to parse voice input" });
     }
 
@@ -3633,7 +3634,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
         );
         return { name: itemName, amount, product: candidates[0] || null };
       } catch (e) {
-        console.error(`Voice item match failed for "${itemName}":`, e);
+        logError(`Voice item match failed for "${itemName}":`, e);
         return { name: itemName, amount, product: null };
       }
     }));
@@ -3695,7 +3696,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
   // Global error handler
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    console.error("Global Error Handler:", err);
+    logError("Global Error Handler:", err);
     res.status(500).json({
       error: "Internal Server Error",
       message: err.message,
