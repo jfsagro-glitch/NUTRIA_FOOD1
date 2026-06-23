@@ -254,6 +254,43 @@ function parseAiJsonPayload(text: string) {
   }
 }
 
+// Ищет JSON-LD блок schema.org/Recipe на странице рецепта (большинство крупных
+// кулинарных сайтов размечают рецепты именно так — AllRecipes, BBC GoodFood и т.д.).
+// Поддерживает как одиночный объект/массив, так и обёртку @graph.
+function extractRecipeJsonLd(html: string): any | null {
+  const scriptRegex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  const candidates: any[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = scriptRegex.exec(html))) {
+    const raw = match[1].trim();
+    if (!raw) continue;
+    try {
+      candidates.push(JSON.parse(raw));
+    } catch {
+      // пропускаем некорректный JSON-LD блок
+    }
+  }
+
+  const flatten = (node: any): any[] => {
+    if (!node) return [];
+    if (Array.isArray(node)) return node.flatMap(flatten);
+    if (Array.isArray(node["@graph"])) return node["@graph"].flatMap(flatten);
+    return [node];
+  };
+
+  const isRecipeType = (node: any) => {
+    const type = node?.["@type"];
+    if (!type) return false;
+    return Array.isArray(type) ? type.includes("Recipe") : type === "Recipe";
+  };
+
+  for (const candidate of candidates) {
+    const recipe = flatten(candidate).find(isRecipeType);
+    if (recipe) return recipe;
+  }
+  return null;
+}
+
 function unwrapAiItemsArray(payload: any): any[] {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== "object") return [];
@@ -2514,6 +2551,94 @@ async function startServer() {
       console.error("Create Recipe Error:", e);
       res.status(500).json({ error: "Failed to create recipe", message: e.message });
     }
+  });
+
+  // Импорт рецепта по ссылке: ищем schema.org/Recipe JSON-LD на странице, разбираем
+  // строки ингредиентов через AI (произвольные единицы — стаканы, унции и т.п. — в граммы)
+  // и матчим каждый через тот же поисковый движок, что и остальные фичи (без дублирования
+  // логики матчинга). Ничего не сохраняет — отдаёт предпросмотр, сохранение идёт через
+  // уже существующий POST /api/recipes тем же payload-форматом, что и ручное создание блюда.
+  app.post("/api/recipes/import-url", async (req, res) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const rawUrl = String(req.body?.url || "").trim();
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(rawUrl);
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) throw new Error("bad protocol");
+    } catch {
+      return res.status(400).json({ error: "Некорректная ссылка" });
+    }
+
+    let html = "";
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(parsedUrl.toString(), {
+        signal: controller.signal,
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; NutriaBot/1.0; +https://nutria.one)" },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      html = await response.text();
+    } catch (e: any) {
+      console.error("Recipe import fetch error:", e);
+      return res.status(502).json({ error: "Не удалось загрузить страницу по ссылке" });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const recipeData = extractRecipeJsonLd(html);
+    if (!recipeData) {
+      return res.status(422).json({ error: "На странице не найдена разметка рецепта (schema.org/Recipe)" });
+    }
+
+    const name = String(recipeData.name || "Импортированный рецепт").trim();
+    const rawIngredients: string[] = Array.isArray(recipeData.recipeIngredient)
+      ? recipeData.recipeIngredient.map((s: any) => String(s)).filter(Boolean)
+      : [];
+
+    if (rawIngredients.length === 0) {
+      return res.status(422).json({ error: "В разметке рецепта не найден список ингредиентов" });
+    }
+
+    const decompositionPrompt = `Список ингредиентов рецепта "${name}", взятый со страницы сайта (строки на любом языке, в произвольных единицах — стаканы, ложки, унции, штуки и т.п.):
+${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
+
+Для каждой строки определи:
+- name: название продукта на русском в словарной форме для поиска в базе питания (например "Мука пшеничная", "Сахар", "Яйцо куриное"), без указания количества
+- weightGrams: вес в граммах. Если в строке указан вес в граммах/кг — используй его. Если указан объём (стакан, ложка, унция, мл) или штуки — переведи в граммы по типичному весу/плотности этого продукта.
+
+Верни только JSON-объект вида: {"items": [{"name": "...", "weightGrams": число}]}`;
+
+    let items: any[] = [];
+    try {
+      const responseText = await withTimeout(generateAI(decompositionPrompt), 15000, "Recipe ingredient decomposition");
+      items = unwrapAiItemsArray(parseAiJsonPayload(responseText || "{}"));
+    } catch (e) {
+      console.error("Recipe import decomposition error:", e);
+      return res.status(500).json({ error: "Не удалось разобрать состав рецепта" });
+    }
+
+    // Каждый ингредиент матчим независимо — сбой одного не должен валить весь импорт.
+    const matchedIngredients = await Promise.all(items.map(async (item: any) => {
+      const rawName = String(item?.name || "").trim();
+      const weightGrams = clampNumber(item?.weightGrams, 1, 5000, 100);
+      if (!rawName) return { rawName, weightGrams, product: null };
+      try {
+        const candidates = await withTimeout(
+          searchProductsEngine(rawName, { limit: 1, cache: true, localize: true, allowAiEstimate: true, fast: true }),
+          15000,
+          `Match "${rawName}"`
+        );
+        return { rawName, weightGrams, product: candidates[0] || null };
+      } catch (e) {
+        console.error(`Recipe import ingredient match failed for "${rawName}":`, e);
+        return { rawName, weightGrams, product: null };
+      }
+    }));
+
+    res.json({ name, sourceUrl: parsedUrl.toString(), ingredients: matchedIngredients });
   });
 
   // Состав блюда для правки (кнопка "Состав" у уже сохранённой записи в дневнике) —

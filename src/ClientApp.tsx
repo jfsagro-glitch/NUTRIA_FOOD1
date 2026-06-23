@@ -32,7 +32,8 @@ import {
   ListChecks,
   MessageCircle,
   Send,
-  Flame
+  Flame,
+  Link2
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -3108,6 +3109,10 @@ export default function App() {
   const [dishIngredientResults, setDishIngredientResults] = useState<Product[]>([]);
   const [isAutoFillingDish, setIsAutoFillingDish] = useState(false);
   const [isSavingDish, setIsSavingDish] = useState(false);
+  const [isImportRecipeOpen, setIsImportRecipeOpen] = useState(false);
+  const [importRecipeUrl, setImportRecipeUrl] = useState('');
+  const [isImportingRecipe, setIsImportingRecipe] = useState(false);
+  const [importRecipeError, setImportRecipeError] = useState('');
   // Правка состава блюда прямо в черновике «Проверьте результат» — переиспользует
   // состояние dishName/dishIngredients/dishCookedWeight выше (создание и правка не идут одновременно)
   const [editDishReviewTempId, setEditDishReviewTempId] = useState<string | null>(null);
@@ -3999,6 +4004,53 @@ export default function App() {
       console.error(e);
     } finally {
       setIsAutoFillingDish(false);
+    }
+  };
+
+  // Импорт рецепта по ссылке (schema.org/Recipe на странице сайта) — после успешного
+  // разбора открываем тот же экран "Создать блюдо" с предзаполненным составом, чтобы
+  // пользователь проверил/поправил ингредиенты перед сохранением (без отдельной формы).
+  const importRecipeFromUrl = async () => {
+    if (!importRecipeUrl.trim()) return;
+    setIsImportingRecipe(true);
+    setImportRecipeError('');
+    try {
+      const res = await fetch('/api/recipes/import-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: importRecipeUrl.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setImportRecipeError(data?.error || 'Не удалось импортировать рецепт');
+        return;
+      }
+      const matched: DishIngredientDraft[] = (data.ingredients || [])
+        .filter((it: any) => it.product)
+        .map((it: any) => ({
+          productId: it.product.id,
+          name: it.product.name,
+          weightGrams: String(Math.max(1, Math.round(it.weightGrams))),
+          calories: it.product.calories,
+          protein: it.product.protein,
+          fat: it.product.fat,
+          carbs: it.product.carbs,
+        }));
+      if (matched.length === 0) {
+        setImportRecipeError('Не удалось сопоставить ингредиенты с базой продуктов');
+        return;
+      }
+      setDishName(data.name || '');
+      setDishIngredients(matched);
+      setDishCookedWeight('');
+      setIsImportRecipeOpen(false);
+      setImportRecipeUrl('');
+      setIsCreateDishOpen(true);
+    } catch (e) {
+      console.error(e);
+      setImportRecipeError('Не удалось импортировать рецепт');
+    } finally {
+      setIsImportingRecipe(false);
     }
   };
 
@@ -4899,6 +4951,12 @@ export default function App() {
                 + Свой продукт
               </button>
             </div>
+            <button
+              onClick={() => { setImportRecipeError(''); setIsImportRecipeOpen(true); }}
+              className="w-full py-3 rounded-xl bg-zinc-800/50 border border-zinc-700 text-zinc-300 text-sm font-medium active:bg-zinc-800 transition-colors mb-2 flex items-center justify-center gap-2"
+            >
+              <Link2 size={16} /> Импортировать рецепт по ссылке
+            </button>
 
             {isLoadingMine ? (
               <div className="py-12 text-center"><Loader2 className="mx-auto animate-spin text-emerald-500" size={32} /></div>
@@ -5014,6 +5072,37 @@ export default function App() {
             className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform disabled:opacity-40"
           >
             {isSavingCustomProduct ? 'Сохранение...' : 'Сохранить в Мои'}
+          </button>
+        </div>
+      </BottomSheet>
+
+      {/* "Мои" → Импорт рецепта по ссылке */}
+      <BottomSheet
+        isOpen={isImportRecipeOpen}
+        onClose={() => { setIsImportRecipeOpen(false); setImportRecipeUrl(''); setImportRecipeError(''); }}
+        title="Импорт рецепта по ссылке"
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-zinc-400">
+            Вставьте ссылку на рецепт с кулинарного сайта — состав и КБЖУ будут разобраны автоматически.
+          </p>
+          <input
+            type="url" placeholder="https://..."
+            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            value={importRecipeUrl}
+            onChange={(e) => setImportRecipeUrl(e.target.value)}
+            autoFocus
+          />
+          {importRecipeError && (
+            <p className="text-sm text-red-400">{importRecipeError}</p>
+          )}
+          <button
+            onClick={() => { void importRecipeFromUrl(); }}
+            disabled={!importRecipeUrl.trim() || isImportingRecipe}
+            className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform disabled:opacity-40 flex items-center justify-center gap-2"
+          >
+            {isImportingRecipe ? <Loader2 size={18} className="animate-spin" /> : null}
+            {isImportingRecipe ? 'Импортируем...' : 'Импортировать'}
           </button>
         </div>
       </BottomSheet>
