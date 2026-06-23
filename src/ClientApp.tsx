@@ -1589,6 +1589,7 @@ function MessagesCard({ onMessagesRead }: { onMessagesRead?: () => void }) {
   const [loading, setLoading] = useState(true);
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
@@ -1617,6 +1618,7 @@ function MessagesCard({ onMessagesRead }: { onMessagesRead?: () => void }) {
     const text = content.trim();
     if (!text || sending) return;
     setSending(true);
+    setSendError(null);
     try {
       const res = await fetch('/api/messages', {
         method: 'POST',
@@ -1626,9 +1628,13 @@ function MessagesCard({ onMessagesRead }: { onMessagesRead?: () => void }) {
       if (res.ok) {
         setContent('');
         await load();
+      } else {
+        const err = await res.json().catch(() => null);
+        setSendError(err?.error || 'Не удалось отправить сообщение');
       }
     } catch (e) {
       console.error(e);
+      setSendError('Не удалось отправить сообщение');
     } finally {
       setSending(false);
     }
@@ -1688,6 +1694,9 @@ function MessagesCard({ onMessagesRead }: { onMessagesRead?: () => void }) {
                 </div>
               )}
 
+              {sendError && (
+                <p className="text-xs text-red-400 mt-2">{sendError}</p>
+              )}
               <div className="mt-3 flex items-end gap-2">
                 <textarea
                   value={content}

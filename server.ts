@@ -2222,6 +2222,16 @@ async function startServer() {
           const invite = await (prisma as any).clientInvite.findFirst({ where: { clientId: userId } });
           targetNutritionistId = invite?.nutritionistId;
         }
+        if (!targetNutritionistId) {
+          // Нет привязки к конкретному нутрициологу (клиент пришёл не по инвайт-ссылке,
+          // например через Telegram-бота или общий веб-вход) — пишем первому
+          // зарегистрированному нутрициологу, чтобы сообщение не терялось.
+          const anyNutritionist = await prisma.user.findFirst({
+            where: { role: "NUTRITIONIST" },
+            orderBy: { createdAt: "asc" },
+          });
+          targetNutritionistId = anyNutritionist?.id;
+        }
       }
       if (!targetNutritionistId) return res.status(400).json({ error: "Нутрициолог не найден" });
 
