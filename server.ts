@@ -74,6 +74,7 @@ const productSearchCache = new Map<string, { expiresAt: number; results: any[] }
 const inMemoryRecent = new Map<string, any[]>();
 const inMemoryCustomProducts = new Map<string, any[]>();
 const inMemoryRecipes = new Map<string, any[]>();
+const inMemoryActivities = new Map<string, any[]>();
 
 const BARCODE_PREFERRED_COUNTRY = (process.env.BARCODE_PREFERRED_COUNTRY || "ru").toLowerCase();
 const BARCODE_PREFERRED_LANG = (process.env.BARCODE_PREFERRED_LANG || "ru").toLowerCase();
@@ -113,6 +114,11 @@ function getOrCreateInMemoryCustomProducts(userId: string) {
 function getOrCreateInMemoryRecipes(userId: string) {
   if (!inMemoryRecipes.has(userId)) inMemoryRecipes.set(userId, []);
   return inMemoryRecipes.get(userId)!;
+}
+
+function getOrCreateInMemoryActivities(userId: string) {
+  if (!inMemoryActivities.has(userId)) inMemoryActivities.set(userId, []);
+  return inMemoryActivities.get(userId)!;
 }
 
 // Запомнить продукт как "недавний" (используется после успешного /api/diary/add)
@@ -3027,6 +3033,95 @@ async function startServer() {
     }
 
     await prisma.mealItem.delete({ where: { id } });
+    res.json({ success: true });
+  });
+
+  // Activity: List logged activities for a date
+  // caloriesBurned приходит уже посчитанным с клиента (MET × вес × часы из профиля
+  // в localStorage) — сервер не знает вес пользователя, только хранит результат.
+  app.get("/api/activities/:date", async (req, res) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const targetDate = dateFromQuery(req.params.date);
+    const targetDateKey = toDateKey(targetDate);
+
+    if (!isDatabaseConfigured()) {
+      const list = getOrCreateInMemoryActivities(userId).filter((a: any) => a.dateKey === targetDateKey);
+      const totalBurned = list.reduce((s: number, a: any) => s + a.caloriesBurned, 0);
+      return res.json({ activities: list, totalBurned, mode: "memory" });
+    }
+
+    try {
+      const { start, end } = dayRangeFromDate(targetDate);
+      const activities = await prisma.activityLog.findMany({
+        where: { userId, date: { gte: start, lte: end } },
+        orderBy: { createdAt: "asc" },
+      });
+      const totalBurned = activities.reduce((s, a) => s + a.caloriesBurned, 0);
+      res.json({ activities, totalBurned });
+    } catch (e: any) {
+      console.error("Activities Get Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
+  });
+
+  // Activity: Log a new activity
+  app.post("/api/activities", async (req, res) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const { date, activityName, durationMinutes, caloriesBurned } = req.body;
+    if (!activityName || !Number.isFinite(durationMinutes) || !Number.isFinite(caloriesBurned)) {
+      return res.status(400).json({ error: "Invalid activity payload" });
+    }
+
+    const targetDate = dateFromQuery(date);
+    const targetDateKey = toDateKey(targetDate);
+
+    if (!isDatabaseConfigured()) {
+      const list = getOrCreateInMemoryActivities(userId);
+      const entry = {
+        id: `activity-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        dateKey: targetDateKey,
+        activityName,
+        durationMinutes,
+        caloriesBurned,
+        createdAt: new Date().toISOString(),
+      };
+      list.push(entry);
+      return res.json({ activity: entry, mode: "memory" });
+    }
+
+    try {
+      const activity = await prisma.activityLog.create({
+        data: { userId, date: targetDate, activityName, durationMinutes, caloriesBurned },
+      });
+      res.json({ activity });
+    } catch (e: any) {
+      console.error("Activities Create Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
+  });
+
+  // Activity: Delete a logged activity
+  app.delete("/api/activities/:id", async (req, res) => {
+    const userId = req.cookies.token;
+    const { id } = req.params;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    if (!isDatabaseConfigured()) {
+      const list = getOrCreateInMemoryActivities(userId);
+      inMemoryActivities.set(userId, list.filter((a: any) => a.id !== id));
+      return res.json({ success: true, mode: "memory" });
+    }
+
+    const activity = await prisma.activityLog.findUnique({ where: { id } });
+    if (!activity || activity.userId !== userId) {
+      return res.status(403).json({ error: "Forbidden or not found" });
+    }
+
+    await prisma.activityLog.delete({ where: { id } });
     res.json({ success: true });
   });
 

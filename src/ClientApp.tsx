@@ -31,7 +31,8 @@ import {
   Sparkles,
   ListChecks,
   MessageCircle,
-  Send
+  Send,
+  Flame
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -826,6 +827,41 @@ const deriveProgramGoals = (
 const PROFILE_SETTINGS_STORAGE_KEY = 'nutria_profile_settings_v1';
 const GOAL_OVERRIDE_STORAGE_KEY = 'nutria_goal_override_v1';
 
+// MET (Metabolic Equivalent of Task) — расход = MET × вес(кг) × часы. Источник: Compendium of Physical Activities.
+const ACTIVITY_MET_TABLE: { name: string; met: number }[] = [
+  { name: 'Ходьба (медленная)', met: 2.8 },
+  { name: 'Ходьба (быстрая)', met: 4.3 },
+  { name: 'Скандинавская ходьба', met: 6.3 },
+  { name: 'Бег (лёгкий)', met: 7.0 },
+  { name: 'Бег (быстрый)', met: 11.0 },
+  { name: 'Велосипед (умеренно)', met: 6.8 },
+  { name: 'Велосипед (быстро)', met: 10.0 },
+  { name: 'Плавание', met: 7.0 },
+  { name: 'Йога', met: 2.5 },
+  { name: 'Пилатес', met: 3.0 },
+  { name: 'Растяжка', met: 2.3 },
+  { name: 'Силовая тренировка', met: 5.0 },
+  { name: 'Кроссфит', met: 8.0 },
+  { name: 'Танцы', met: 4.8 },
+  { name: 'Аэробика', met: 6.0 },
+  { name: 'Футбол', met: 7.0 },
+  { name: 'Баскетбол', met: 6.5 },
+  { name: 'Волейбол', met: 4.0 },
+  { name: 'Теннис', met: 7.3 },
+  { name: 'Бадминтон', met: 5.5 },
+  { name: 'Прыжки на скакалке', met: 10.0 },
+  { name: 'Гребля', met: 7.0 },
+  { name: 'Эллипс / орбитрек', met: 5.0 },
+  { name: 'Боевые искусства', met: 10.3 },
+  { name: 'Подъём по лестнице', met: 8.8 },
+  { name: 'Уборка по дому', met: 3.3 },
+  { name: 'Садоводство', met: 4.0 },
+  { name: 'Другая нагрузка (умеренная)', met: 5.0 },
+];
+
+const calcCaloriesBurned = (met: number, weightKg: number, durationMinutes: number) =>
+  Math.round(met * weightKg * (durationMinutes / 60));
+
 const MEAL_DISTRIBUTION_PRESETS: Record<string, { label: string; pct: Record<'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK', number> }> = {
   standard: { label: 'Стандартный', pct: { BREAKFAST: 25, LUNCH: 35, DINNER: 30, SNACK: 10 } },
   mediterranean: { label: 'Средиземноморский', pct: { BREAKFAST: 20, LUNCH: 40, DINNER: 30, SNACK: 10 } },
@@ -1076,7 +1112,7 @@ const DiaryDateStrip = ({ selectedDate, onSelect }: { selectedDate: string; onSe
   );
 };
 
-const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, onHintClick, onDeleteItem, onEditItem, onOpenComposition, onUpdateWater, onUpdateGrams, mealDistribution }: { data: any, selectedDate: string, onChangeDate: (dateKey: string) => void, onAddClick: (type: string) => void, hints: Hint[], onHintClick: (cta: string) => void, onDeleteItem: (id: string) => void, onEditItem: (item: any) => void, onOpenComposition: (item: any) => void, onUpdateWater: (amount: number) => void, onUpdateGrams: (itemId: string, amount: number) => Promise<boolean>, mealDistribution: Record<'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK', number> }) => {
+const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, onHintClick, onDeleteItem, onEditItem, onOpenComposition, onUpdateWater, onUpdateGrams, mealDistribution, activities, weightKg, onAddActivity, onDeleteActivity }: { data: any, selectedDate: string, onChangeDate: (dateKey: string) => void, onAddClick: (type: string) => void, hints: Hint[], onHintClick: (cta: string) => void, onDeleteItem: (id: string) => void, onEditItem: (item: any) => void, onOpenComposition: (item: any) => void, onUpdateWater: (amount: number) => void, onUpdateGrams: (itemId: string, amount: number) => Promise<boolean>, mealDistribution: Record<'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK', number>, activities: any[], weightKg: number, onAddActivity: (activityName: string, durationMinutes: number, caloriesBurned: number) => Promise<void>, onDeleteActivity: (id: string) => Promise<void> }) => {
   const { meals = [], waterIntake = 0 } = data;
   const goals = mergeGoals(data.goals);
   const waterGoal = 2500; // 2.5L in ml
@@ -1143,12 +1179,19 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
   });
   const toggleMeal = (type: string) => setMealExpanded((m) => ({ ...m, [type]: !m[type] }));
   const dateInputRef = useRef<HTMLInputElement>(null);
+  const [isActivitySheetOpen, setIsActivitySheetOpen] = useState(false);
+  const [activityMetIndex, setActivityMetIndex] = useState(0);
+  const [activityDuration, setActivityDuration] = useState(30);
+
+  const totalBurned = useMemo(() => activities.reduce((s: number, a: any) => s + (a.caloriesBurned || 0), 0), [activities]);
 
   const eaten = Math.round(totals.calories);
   const calorieGoal = Math.max(1, Math.round(goals.calories));
-  const remaining = Math.max(0, calorieGoal - eaten);
-  const over = Math.max(0, eaten - calorieGoal);
-  const ringPct = Math.min(1, eaten / calorieGoal);
+  // Сожжённые на тренировках калории увеличивают доступный бюджет — как в большинстве трекеров питания.
+  const adjustedGoal = calorieGoal + Math.round(totalBurned);
+  const remaining = Math.max(0, adjustedGoal - eaten);
+  const over = Math.max(0, eaten - adjustedGoal);
+  const ringPct = Math.min(1, eaten / adjustedGoal);
   const r = 64, circ = 2 * Math.PI * r;
   const arcLen = circ * 0.75;
   const fillLen = arcLen * ringPct;
@@ -1207,7 +1250,9 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
             <div className="absolute flex flex-col items-center text-center">
               <span style={{ fontSize: 11, color: PROTO.textLt }}>{ringLabel}</span>
               <span className="font-display" style={{ fontSize: 30, fontWeight: 600, lineHeight: 1.2, color: over > 0 ? PROTO.terra : goalJustAchieved ? PROTO.goalAchieved : PROTO.text }}>{ringValue}</span>
-              <span style={{ fontSize: 11, color: PROTO.textLt, marginTop: 2 }}>Цель: {calorieGoal} ккал</span>
+              <span style={{ fontSize: 11, color: PROTO.textLt, marginTop: 2 }}>
+                Цель: {calorieGoal} ккал{totalBurned > 0 ? ` +${Math.round(totalBurned)} от тренировок` : ''}
+              </span>
             </div>
           </div>
 
@@ -1532,6 +1577,88 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
           })}
         </div>
       </div>
+
+      {/* Активность */}
+      <div style={{ background: PROTO.coolZone, borderRadius: 18, padding: '12px 14px' }} className="mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: PROTO.text }}>Активность</h3>
+            <p style={{ fontSize: 12, color: PROTO.textMid, marginTop: 2 }}>
+              {activities.length > 0 ? `Сожжено ${Math.round(totalBurned)} ккал` : 'Тренировок пока нет'}
+            </p>
+          </div>
+          <div
+            className="flex items-center justify-center flex-shrink-0"
+            style={{ width: 48, height: 48, borderRadius: 14, background: PROTO.coolBlock, color: PROTO.terra }}
+          >
+            <Flame size={22} />
+          </div>
+        </div>
+
+        {activities.length > 0 && (
+          <div className="space-y-1.5 mb-3">
+            {activities.map((a: any) => (
+              <div key={a.id} className="flex items-center justify-between gap-2" style={{ fontSize: 12, color: PROTO.textMid }}>
+                <span className="truncate flex-1">{a.activityName} · {Math.round(a.durationMinutes)} мин</span>
+                <span className="flex-shrink-0" style={{ color: PROTO.text, fontWeight: 600 }}>{Math.round(a.caloriesBurned)} ккал</span>
+                <button onClick={() => onDeleteActivity(a.id)} className="flex-shrink-0 p-1" style={{ color: PROTO.textLt }}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button
+          onClick={() => setIsActivitySheetOpen(true)}
+          className="w-full text-sm font-semibold active:scale-[0.98] transition-transform"
+          style={{ height: 44, borderRadius: 14, background: PROTO.btnAddMore, color: PROTO.primaryDk, boxShadow: PROTO.tactileRaise }}
+        >
+          + Тренировка
+        </button>
+      </div>
+
+      <BottomSheet isOpen={isActivitySheetOpen} onClose={() => setIsActivitySheetOpen(false)} title="Добавить тренировку">
+        <div className="space-y-4">
+          <label className="text-xs text-zinc-400 block">
+            Вид активности
+            <select
+              value={activityMetIndex}
+              onChange={(e) => setActivityMetIndex(Number(e.target.value))}
+              className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
+            >
+              {ACTIVITY_MET_TABLE.map((a, idx) => (
+                <option key={a.name} value={idx}>{a.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs text-zinc-400 block">
+            Длительность (мин)
+            <input
+              type="number"
+              min={1}
+              max={600}
+              value={activityDuration}
+              onChange={(e) => setActivityDuration(Number(e.target.value) || 0)}
+              className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded-lg py-2 px-3 text-zinc-100"
+            />
+          </label>
+          <p className="text-sm text-zinc-300">
+            Расход: <span className="font-bold text-emerald-400">{calcCaloriesBurned(ACTIVITY_MET_TABLE[activityMetIndex].met, weightKg, activityDuration)} ккал</span>
+          </p>
+          <button
+            onClick={async () => {
+              const burned = calcCaloriesBurned(ACTIVITY_MET_TABLE[activityMetIndex].met, weightKg, activityDuration);
+              await onAddActivity(ACTIVITY_MET_TABLE[activityMetIndex].name, activityDuration, burned);
+              setIsActivitySheetOpen(false);
+            }}
+            disabled={activityDuration <= 0}
+            className="w-full py-3 rounded-xl font-semibold bg-emerald-500 text-white disabled:opacity-50"
+          >
+            Сохранить
+          </button>
+        </div>
+      </BottomSheet>
 
       {/* Качество питания / AI Hints */}
       <CollapsibleCard 
@@ -2897,6 +3024,7 @@ export default function App() {
   const [editAmountValue, setEditAmountValue] = useState('');
   const [selectedDiaryDate, setSelectedDiaryDate] = useState<string>(toDateKey(new Date()));
   const [diaryData, setDiaryData] = useState<DiaryData>({ meals: [], goals: null, waterIntake: 0, date: selectedDiaryDate });
+  const [activities, setActivities] = useState<any[]>([]);
   const [weeklyHistory, setWeeklyHistory] = useState<DiaryHistoryPoint[]>([]);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
     try {
@@ -3313,6 +3441,40 @@ export default function App() {
         const err = await res.json().catch(() => ({}));
         console.warn('Diary fetch error:', err);
       }
+    } catch (e) {
+      console.error(e);
+    }
+    fetchActivities(targetDate);
+  };
+
+  const fetchActivities = async (targetDate = selectedDiaryDate) => {
+    try {
+      const res = await fetch(`/api/activities/${encodeURIComponent(targetDate)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setActivities(Array.isArray(data.activities) ? data.activities : []);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const addActivity = async (activityName: string, durationMinutes: number, caloriesBurned: number) => {
+    try {
+      const res = await fetch('/api/activities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: selectedDiaryDate, activityName, durationMinutes, caloriesBurned }),
+      });
+      if (res.ok) await fetchActivities(selectedDiaryDate);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const deleteActivity = async (id: string) => {
+    try {
+      await fetch(`/api/activities/${id}`, { method: 'DELETE' });
+      await fetchActivities(selectedDiaryDate);
     } catch (e) {
       console.error(e);
     }
@@ -4392,6 +4554,10 @@ export default function App() {
               onUpdateWater={updateWater}
               onUpdateGrams={updateMealItemAmountDirect}
               mealDistribution={profileSettings.mealDistribution}
+              activities={activities}
+              weightKg={profileSettings.weightKg}
+              onAddActivity={addActivity}
+              onDeleteActivity={deleteActivity}
             />
           ) : (
             <SummaryScreen

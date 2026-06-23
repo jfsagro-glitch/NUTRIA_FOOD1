@@ -48,6 +48,9 @@ model User {
   // Сообщения нутрициолог ↔ клиент (новое)
   messagesAsNutritionist Message[] @relation("NutritionistMessages")
   messagesAsClient       Message[] @relation("ClientMessages")
+
+  // Трекер активности (новое, Sprint 2)
+  activityLogs ActivityLog[]
 }
 
 // ─── Профиль нутрициолога ────────────────────────────────────────────────────
@@ -367,6 +370,22 @@ model MealItem {
   productId String
   product   Product @relation(fields: [productId], references: [id])
   amount    Float
+}
+
+// ─── Трекер физической активности (новое, Sprint 2) ─────────────────────────
+// caloriesBurned считается на клиенте (MET × вес × часы) из профиля в localStorage,
+// сервер только хранит готовое значение — по той же схеме, что и NutrientGoal.
+model ActivityLog {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date             DateTime
+  activityName     String
+  durationMinutes  Float
+  caloriesBurned   Float
+  createdAt        DateTime @default(now())
+
+  @@index([userId, date])
 }
 
 model NutrientGoal {
