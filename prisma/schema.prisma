@@ -43,6 +43,10 @@ model User {
   customProducts      Product[]            @relation("UserProducts")
   recipes             Recipe[]
   recentFoods         RecentFood[]
+
+  // Сообщения нутрициолог ↔ клиент (новое)
+  messagesAsNutritionist Message[] @relation("NutritionistMessages")
+  messagesAsClient       Message[] @relation("ClientMessages")
 }
 
 // ─── Профиль нутрициолога ────────────────────────────────────────────────────
@@ -184,6 +188,23 @@ model ConsultationDate {
   createdAt      DateTime @default(now())
 
   @@index([nutritionistId])
+}
+
+// ─── Сообщения нутрициолог ↔ клиент (новое) ─────────────────────────────────
+
+model Message {
+  id             String    @id @default(cuid())
+  nutritionistId String
+  nutritionist   User      @relation("NutritionistMessages", fields: [nutritionistId], references: [id], onDelete: Cascade)
+  clientId       String
+  client         User      @relation("ClientMessages", fields: [clientId], references: [id], onDelete: Cascade)
+  sender         String    // "NUTRITIONIST" | "CLIENT"
+  content        String
+  readAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([nutritionistId, clientId])
+  @@index([clientId])
 }
 
 // ─── Telegram-бот (новое) ────────────────────────────────────────────────────

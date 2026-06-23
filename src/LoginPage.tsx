@@ -58,7 +58,7 @@ export function LoginPage({ onAuth }: Props) {
           <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center">
             <Leaf size={20} className="text-white" />
           </div>
-          <span className="text-2xl font-bold text-white tracking-tight">Nütria</span>
+          <span className="font-display text-2xl font-bold text-white tracking-tight">Nütria</span>
         </div>
 
         <div className="bg-zinc-900 rounded-2xl p-8 border border-zinc-800">

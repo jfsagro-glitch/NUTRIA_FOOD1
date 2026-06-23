@@ -23,6 +23,11 @@ export default function AppWithCrm() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // CRM всегда отображается в светлой палитре прототипа (см. .theme-light в index.css)
+  useEffect(() => {
+    document.documentElement.classList.add('theme-light');
+  }, []);
+
   // Проверяем текущую сессию при старте
   useEffect(() => {
     fetch('/api/crm/auth/me', { credentials: 'include' })

@@ -2059,6 +2059,75 @@ async function startServer() {
     }
   });
 
+  // Сообщения от нутрициолога: список переписки (клиентская сторона)
+  app.get("/api/messages", async (req, res) => {
+    try {
+      const userId = req.cookies.token;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const messages = await (prisma as any).message.findMany({
+        where: { clientId: userId },
+        orderBy: { createdAt: "asc" },
+        include: { nutritionist: { include: { nutritionistProfile: true } } },
+      });
+
+      await (prisma as any).message.updateMany({
+        where: { clientId: userId, sender: "NUTRITIONIST", readAt: null },
+        data: { readAt: new Date() },
+      });
+
+      const result = messages.map((m: any) => ({
+        id: m.id,
+        sender: m.sender,
+        content: m.content,
+        createdAt: m.createdAt,
+        readAt: m.readAt,
+        nutritionistName: m.nutritionist?.nutritionistProfile
+          ? `${m.nutritionist.nutritionistProfile.firstName} ${m.nutritionist.nutritionistProfile.lastName}`.trim()
+          : "Нутрициолог",
+      }));
+
+      res.json({ messages: result });
+    } catch (e: any) {
+      console.error("Messages list error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
+  });
+
+  // Сообщения от нутрициолога: отправить ответ (клиентская сторона)
+  app.post("/api/messages", async (req, res) => {
+    try {
+      const userId = req.cookies.token;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { content, nutritionistId } = req.body;
+      if (!content?.trim()) return res.status(400).json({ error: "Текст сообщения обязателен" });
+
+      let targetNutritionistId = nutritionistId;
+      if (!targetNutritionistId) {
+        const lastMessage = await (prisma as any).message.findFirst({
+          where: { clientId: userId },
+          orderBy: { createdAt: "desc" },
+        });
+        targetNutritionistId = lastMessage?.nutritionistId;
+        if (!targetNutritionistId) {
+          const invite = await (prisma as any).clientInvite.findFirst({ where: { clientId: userId } });
+          targetNutritionistId = invite?.nutritionistId;
+        }
+      }
+      if (!targetNutritionistId) return res.status(400).json({ error: "Нутрициолог не найден" });
+
+      const message = await (prisma as any).message.create({
+        data: { nutritionistId: targetNutritionistId, clientId: userId, sender: "CLIENT", content: content.trim() },
+      });
+
+      res.json({ message });
+    } catch (e: any) {
+      console.error("Messages send error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
+  });
+
   // Food Match Engine: Search products
   app.get("/api/products/search", async (req, res) => {
     try {

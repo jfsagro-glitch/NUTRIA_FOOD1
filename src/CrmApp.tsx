@@ -5,7 +5,7 @@ import {
   Calendar, Loader2, Upload, Trash2, Edit3, Check,
   AlertCircle, RefreshCw, Leaf, ChevronLeft, Tag,
   User, Activity, Scale, Ruler, Target, Zap, Flame,
-  Download, Copy, ExternalLink
+  Download, Copy, ExternalLink, Send, Smartphone
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -22,17 +22,22 @@ interface NutritionistUser {
 }
 
 type ClientStatus = 'PENDING' | 'ACTIVE' | 'ARCHIVED';
-type ClientTab = 'questionnaire' | 'diary' | 'analyses' | 'notes' | 'recommendations';
+type ClientTab = 'questionnaire' | 'diary' | 'analyses' | 'notes' | 'recommendations' | 'messages';
+type ClientSource = 'invite' | 'telegram' | 'self';
 
 interface Client {
-  inviteId: string;
-  token: string;
+  inviteId: string | null;
+  token: string | null;
   clientId: string | null;
   clientName: string;
   status: ClientStatus;
   tagsJson: string;
   createdAt: string;
   usedAt?: string;
+  source: ClientSource;
+  nutritionistName?: string | null;
+  isOwnInvite?: boolean;
+  lastActivityAt?: string | null;
   profile?: { sex: string; weightKg: number; heightCm: number; goal: string } | null;
 }
 
@@ -674,16 +679,80 @@ function RecommendationsTab({ clientId }: { clientId: string }) {
   );
 }
 
+// ─── Вкладка: Сообщения ───────────────────────────────────────────────────
+
+function MessagesTab({ clientId }: { clientId: string }) {
+  const api = useApi();
+  const [messages, setMessages] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [content, setContent] = useState('');
+  const [sending, setSending] = useState(false);
+  const bottomRef = React.useRef<HTMLDivElement>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { const d = await api.get(`/api/crm/clients/${clientId}/messages`); setMessages(d.messages || []); }
+    catch {} finally { setLoading(false); }
+  }, [clientId]);
+
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages.length]);
+
+  async function send() {
+    if (!content.trim()) return;
+    setSending(true);
+    try { await api.post(`/api/crm/clients/${clientId}/messages`, { content }); setContent(''); await load(); }
+    catch (e: any) { alert(e.message); }
+    finally { setSending(false); }
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {loading ? (
+        <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-zinc-500"/></div>
+      ) : messages.length === 0 ? (
+        <EmptyState icon={<Send size={36}/>} text="Сообщений пока нет — напишите клиенту первым"/>
+      ) : (
+        <div className="flex-1 space-y-3 overflow-y-auto pr-1">
+          {messages.map((m: any) => (
+            <div key={m.id} className={cn("flex", m.sender === 'NUTRITIONIST' ? 'justify-end' : 'justify-start')}>
+              <div className={cn("max-w-[75%] rounded-2xl px-4 py-2.5",
+                m.sender === 'NUTRITIONIST' ? 'bg-emerald-500 text-white' : 'bg-zinc-800/60 border border-zinc-700/50 text-white')}>
+                <p className="text-sm whitespace-pre-wrap">{m.content}</p>
+                <p className={cn("text-xs mt-1", m.sender === 'NUTRITIONIST' ? 'text-emerald-50/70' : 'text-zinc-500')}>
+                  {new Date(m.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
+            </div>
+          ))}
+          <div ref={bottomRef}/>
+        </div>
+      )}
+
+      <div className="flex items-end gap-2 mt-4 bg-zinc-800/40 rounded-xl p-2 border border-zinc-700/50">
+        <textarea value={content} onChange={e => setContent(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+          placeholder="Написать клиенту…" rows={1}
+          className="flex-1 bg-transparent text-white placeholder-zinc-500 text-sm focus:outline-none resize-none px-2 py-2"/>
+        <button onClick={send} disabled={sending || !content.trim()}
+          className="flex items-center justify-center bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white w-9 h-9 rounded-lg shrink-0">
+          {sending ? <Loader2 size={16} className="animate-spin"/> : <Send size={16}/>}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Карточка клиента ──────────────────────────────────────────────────────
 
-function ClientCard({ clientId, inviteToken, onBack }: { clientId: string | null; inviteToken: string; onBack: () => void }) {
+function ClientCard({ clientId, inviteToken, onBack }: { clientId: string | null; inviteToken: string | null; onBack: () => void }) {
   const api = useApi();
   const [detail, setDetail] = useState<ClientDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ClientTab>('questionnaire');
   const [copied, setCopied] = useState(false);
 
-  const inviteUrl = `${window.location.origin}/onboard/${inviteToken}`;
+  const inviteUrl = inviteToken ? `${window.location.origin}/onboard/${inviteToken}` : '';
 
   const loadDetail = useCallback(async () => {
     if (!clientId) { setLoading(false); return; }
@@ -704,6 +773,7 @@ function ClientCard({ clientId, inviteToken, onBack }: { clientId: string | null
     { id: 'analyses', label: 'Анализы', icon: <FileText size={14}/> },
     { id: 'notes', label: 'Заметки', icon: <MessageSquare size={14}/> },
     { id: 'recommendations', label: 'Рекомендации', icon: <Star size={14}/> },
+    { id: 'messages', label: 'Сообщения', icon: <Send size={14}/> },
   ];
 
   const clientName = detail?.invite?.clientName || (detail?.profile
@@ -716,7 +786,7 @@ function ClientCard({ clientId, inviteToken, onBack }: { clientId: string | null
       <div className="border-b border-zinc-800 px-6 py-4 flex items-center gap-4">
         <button onClick={onBack} className="text-zinc-400 hover:text-white"><ChevronLeft size={20}/></button>
         <div className="flex-1">
-          <h2 className="text-white font-semibold">{clientName || 'Без имени'}</h2>
+          <h2 className="text-white font-display text-lg font-semibold">{clientName || 'Без имени'}</h2>
           <p className="text-zinc-500 text-xs">
             {!clientId
               ? 'Ожидает регистрации'
@@ -763,6 +833,7 @@ function ClientCard({ clientId, inviteToken, onBack }: { clientId: string | null
             {activeTab === 'analyses' && clientId && <AnalysesTab clientId={clientId}/>}
             {activeTab === 'notes' && clientId && <NotesTab clientId={clientId}/>}
             {activeTab === 'recommendations' && clientId && <RecommendationsTab clientId={clientId}/>}
+            {activeTab === 'messages' && clientId && <MessagesTab clientId={clientId}/>}
           </>
         )}
       </div>
@@ -897,6 +968,12 @@ function Dashboard({ user, onSelectClient }: { user: NutritionistUser; onSelectC
   const STATUS_COLOR: Record<ClientStatus, string> = {
     PENDING: 'text-yellow-400 bg-yellow-400/10', ACTIVE: 'text-emerald-400 bg-emerald-400/10', ARCHIVED: 'text-zinc-500 bg-zinc-800'
   };
+  const SOURCE_LABEL: Record<ClientSource, string> = {
+    invite: 'Приглашение', telegram: 'Telegram', self: 'Самостоятельно'
+  };
+  const SOURCE_ICON: Record<ClientSource, React.ReactNode> = {
+    invite: <ExternalLink size={11}/>, telegram: <Smartphone size={11}/>, self: <User size={11}/>
+  };
 
   return (
     <>
@@ -906,7 +983,7 @@ function Dashboard({ user, onSelectClient }: { user: NutritionistUser; onSelectC
         {/* Заголовок */}
         <div className="border-b border-zinc-800 px-6 py-4 flex items-center gap-4">
           <div>
-            <h1 className="text-white font-semibold">Клиенты</h1>
+            <h1 className="text-white font-display text-xl font-semibold">Клиенты</h1>
             <p className="text-zinc-500 text-xs">{clients.filter(c => c.status === 'ACTIVE').length} активных из {clients.length}</p>
           </div>
           <div className="flex-1 relative">
@@ -947,14 +1024,15 @@ function Dashboard({ user, onSelectClient }: { user: NutritionistUser; onSelectC
                 <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
                   <th className="text-left px-6 py-3 font-medium">Клиент</th>
                   <th className="text-left px-4 py-3 font-medium">Статус</th>
+                  <th className="text-left px-4 py-3 font-medium">Источник</th>
                   <th className="text-left px-4 py-3 font-medium">Теги</th>
-                  <th className="text-left px-4 py-3 font-medium">Добавлен</th>
+                  <th className="text-left px-4 py-3 font-medium">Активность</th>
                   <th className="px-4 py-3"/>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/50">
                 {filtered.map(c => (
-                  <tr key={c.inviteId} onClick={() => onSelectClient(c)}
+                  <tr key={c.clientId || c.inviteId} onClick={() => onSelectClient(c)}
                     className="hover:bg-zinc-800/30 cursor-pointer transition-colors">
                     <td className="px-6 py-4">
                       <div className="font-medium text-white">{c.clientName}</div>
@@ -971,6 +1049,11 @@ function Dashboard({ user, onSelectClient }: { user: NutritionistUser; onSelectC
                       </span>
                     </td>
                     <td className="px-4 py-4">
+                      <span className="inline-flex items-center gap-1 text-zinc-400 text-xs" title={c.nutritionistName ? `Пригласил: ${c.nutritionistName}` : undefined}>
+                        {SOURCE_ICON[c.source]}{SOURCE_LABEL[c.source]}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
                       <div className="flex flex-wrap gap-1">
                         {JSON.parse(c.tagsJson || '[]').slice(0, 3).map((t: string) => (
                           <span key={t} className="px-2 py-0.5 rounded-full text-xs bg-zinc-800 text-zinc-400 border border-zinc-700">{t}</span>
@@ -978,7 +1061,7 @@ function Dashboard({ user, onSelectClient }: { user: NutritionistUser; onSelectC
                       </div>
                     </td>
                     <td className="px-4 py-4 text-zinc-500 text-xs">
-                      {new Date(c.createdAt).toLocaleDateString('ru-RU')}
+                      {c.lastActivityAt ? new Date(c.lastActivityAt).toLocaleDateString('ru-RU') : '—'}
                     </td>
                     <td className="px-4 py-4 text-right">
                       <ChevronRight size={16} className="text-zinc-600 ml-auto"/>
