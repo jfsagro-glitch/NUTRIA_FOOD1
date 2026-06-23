@@ -29,7 +29,9 @@ import {
   ArrowRight,
   UserRound,
   Sparkles,
-  ListChecks
+  ListChecks,
+  MessageCircle,
+  Send
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -320,7 +322,7 @@ const parseAiJsonPayload = (text: string) => {
 
 // --- Components ---
 
-const BottomNav = ({ activeTab, onTabChange }: { activeTab: string, onTabChange: (tab: string) => void }) => {
+const BottomNav = ({ activeTab, onTabChange, unreadMessages = 0 }: { activeTab: string, onTabChange: (tab: string) => void, unreadMessages?: number }) => {
   const tabs = [
     { id: 'nutrition', label: 'Дневник', icon: Utensils },
     { id: 'stats', label: 'Статистика', icon: BarChart3 },
@@ -338,10 +340,16 @@ const BottomNav = ({ activeTab, onTabChange }: { activeTab: string, onTabChange:
           <button
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
-            className="flex flex-col items-center gap-1 transition-colors px-6 py-1"
+            className="relative flex flex-col items-center gap-1 transition-colors px-6 py-1"
             style={{ color: isActive ? PROTO.primary : PROTO.textLt }}
           >
             <Icon size={22} strokeWidth={isActive ? 2.2 : 1.8} />
+            {tab.id === 'profile' && unreadMessages > 0 && (
+              <span
+                className="absolute top-0 right-3 w-2 h-2 rounded-full"
+                style={{ background: PROTO.terra }}
+              />
+            )}
             <span className="text-[10px] uppercase tracking-wider" style={{ fontWeight: isActive ? 700 : 400 }}>{tab.label}</span>
           </button>
         );
@@ -1488,6 +1496,141 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
   );
 };
 
+function MessagesCard({ onMessagesRead }: { onMessagesRead?: () => void }) {
+  const [isCollapsed, setIsCollapsed] = useState(() => localStorage.getItem('collapse_summary_messages') === 'true');
+  const [messages, setMessages] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [content, setContent] = useState('');
+  const [sending, setSending] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const load = async () => {
+    try {
+      const res = await fetch('/api/messages');
+      if (!res.ok) return;
+      const data = await res.json();
+      setMessages(data.messages || []);
+      onMessagesRead?.();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isCollapsed) load();
+  }, [isCollapsed]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages.length]);
+
+  async function send() {
+    const text = content.trim();
+    if (!text || sending) return;
+    setSending(true);
+    try {
+      const res = await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: text }),
+      });
+      if (res.ok) {
+        setContent('');
+        await load();
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+      <button
+        onClick={() => {
+          const next = !isCollapsed;
+          setIsCollapsed(next);
+          localStorage.setItem('collapse_summary_messages', String(next));
+        }}
+        className="w-full px-4 py-3 flex items-center justify-between active:bg-zinc-800/50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-bold">Сообщения нутрициологу</h3>
+          <MessageCircle size={16} className="text-zinc-500" />
+        </div>
+        {isCollapsed ? <ChevronDown size={20} className="text-zinc-500" /> : <ChevronUp size={20} className="text-zinc-500" />}
+      </button>
+
+      <AnimatePresence initial={false}>
+        {!isCollapsed && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: 'easeInOut' }}
+          >
+            <div className="px-4 pb-4 border-t border-zinc-800/60 pt-4">
+              {loading ? (
+                <div className="flex items-center justify-center py-6 text-zinc-500">
+                  <Loader2 className="animate-spin" size={18} />
+                </div>
+              ) : messages.length === 0 ? (
+                <p className="text-sm text-zinc-500 text-center py-4">Пока нет сообщений</p>
+              ) : (
+                <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {messages.map((m) => (
+                    <div key={m.id} className={`flex ${m.sender === 'CLIENT' ? 'justify-end' : 'justify-start'}`}>
+                      <div
+                        className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${
+                          m.sender === 'CLIENT'
+                            ? 'bg-emerald-500 text-white'
+                            : 'bg-zinc-800 text-zinc-100'
+                        }`}
+                      >
+                        {m.sender !== 'CLIENT' && m.nutritionistName && (
+                          <p className="text-[10px] uppercase tracking-widest opacity-60 mb-0.5">{m.nutritionistName}</p>
+                        )}
+                        <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                      </div>
+                    </div>
+                  ))}
+                  <div ref={bottomRef} />
+                </div>
+              )}
+
+              <div className="mt-3 flex items-end gap-2">
+                <textarea
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      send();
+                    }
+                  }}
+                  placeholder="Написать сообщение..."
+                  rows={1}
+                  className="flex-1 resize-none bg-zinc-800/50 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-emerald-500"
+                />
+                <button
+                  onClick={send}
+                  disabled={sending || !content.trim()}
+                  className="p-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white transition-colors"
+                >
+                  {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 const SummaryScreen = ({
   view,
   goals,
@@ -1505,6 +1648,7 @@ const SummaryScreen = ({
   onStop,
   onSaveProfileGoals,
   onToggleTheme,
+  onMessagesRead,
 }: {
   view: 'stats' | 'profile';
   goals: NutrientGoalSet;
@@ -1522,6 +1666,7 @@ const SummaryScreen = ({
   onStop: () => void;
   onSaveProfileGoals: (profile: UserProfileSettings, goals: NutrientGoalSet) => Promise<void>;
   onToggleTheme: () => void;
+  onMessagesRead?: () => void;
 }) => {
   const fastingHours = fastingMode === 'CUSTOM' ? customFastingHours : FASTING_PRESETS[fastingMode].fastingHours;
   const eatingHours = Math.max(0, 24 - fastingHours);
@@ -1863,6 +2008,8 @@ const SummaryScreen = ({
 
       {view === 'profile' && (
       <>
+      <MessagesCard onMessagesRead={onMessagesRead} />
+
       <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
         <button
           onClick={() => {
@@ -2424,6 +2571,7 @@ export default function App() {
   const [hints, setHints] = useState<Hint[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [recognizedItems, setRecognizedItems] = useState<RecognizedPhotoItem[]>([]);
   const [photoDishEstimate, setPhotoDishEstimate] = useState<PhotoDishEstimate | null>(null);
@@ -2497,6 +2645,12 @@ export default function App() {
   useEffect(() => {
     checkAuth();
   }, []);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const interval = setInterval(fetchUnreadMessages, 60000);
+    return () => clearInterval(interval);
+  }, [isLoggedIn]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -2746,6 +2900,17 @@ export default function App() {
     setIsBarcodeScanning(false);
   };
 
+  const fetchUnreadMessages = async () => {
+    try {
+      const res = await fetch('/api/messages/unread-count');
+      if (!res.ok) return;
+      const data = await res.json();
+      setUnreadMessages(data.count || 0);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const checkAuth = async () => {
     try {
       const res = await fetch('/api/auth/me');
@@ -2754,6 +2919,7 @@ export default function App() {
         if (data.user) {
           setIsLoggedIn(true);
           fetchDiary();
+          fetchUnreadMessages();
         }
       }
     } catch (e) {
@@ -2773,6 +2939,7 @@ export default function App() {
       }
       setIsLoggedIn(true);
       fetchDiary();
+      fetchUnreadMessages();
     } catch (e) {
       console.error(e);
       alert('Сервер недоступен. Попробуйте позже.');
@@ -3812,6 +3979,7 @@ export default function App() {
               onStop={handleStopFasting}
               onSaveProfileGoals={saveProfileAndGoals}
               onToggleTheme={() => setThemeMode((prev) => (prev === 'light' ? 'dark' : 'light'))}
+              onMessagesRead={fetchUnreadMessages}
             />
           )}
         </motion.div>
@@ -3823,7 +3991,7 @@ export default function App() {
           setIsActionSheetOpen(true);
         }} />
       )}
-      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} unreadMessages={unreadMessages} />
 
       <input 
         type="file" 

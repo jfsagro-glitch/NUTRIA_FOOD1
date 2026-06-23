@@ -2094,6 +2094,22 @@ async function startServer() {
     }
   });
 
+  // Сообщения от нутрициолога: счётчик непрочитанных (для бейджа, не помечает прочитанным)
+  app.get("/api/messages/unread-count", async (req, res) => {
+    try {
+      const userId = req.cookies.token;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const count = await (prisma as any).message.count({
+        where: { clientId: userId, sender: "NUTRITIONIST", readAt: null },
+      });
+      res.json({ count });
+    } catch (e: any) {
+      console.error("Messages unread-count error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
+  });
+
   // Сообщения от нутрициолога: отправить ответ (клиентская сторона)
   app.post("/api/messages", async (req, res) => {
     try {
