@@ -2099,6 +2099,769 @@ async function main() {
         carbohydrateTypes: { Sucrose: 7, Lactose: 2, Fiber: 0.5 }
       }))
     },
+    {
+      name: 'Тесто для пирога готовое',
+      brand: 'Базовый продукт',
+      calories: 310,
+      protein: 7.5,
+      fat: 12,
+      carbs: 43,
+      fiber: 1.5,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B1: 0.15, E: 1.2 },
+        minerals: { Potassium: 100, Phosphorus: 70, Iron: 1 },
+        carbohydrateTypes: { Starch: 40, Fiber: 1.5 }
+      }))
+    },
+    {
+      name: 'Тесто слоёное готовое',
+      brand: 'Базовый продукт',
+      calories: 350,
+      protein: 6,
+      fat: 20,
+      carbs: 38,
+      fiber: 1.2,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { E: 2 },
+        minerals: { Potassium: 90, Phosphorus: 60 },
+        fattyAcids: { TransFats: 1.5 },
+        carbohydrateTypes: { Starch: 36, Fiber: 1.2 }
+      }))
+    },
+    {
+      name: 'Тесто дрожжевое готовое',
+      brand: 'Базовый продукт',
+      calories: 260,
+      protein: 7.8,
+      fat: 4.5,
+      carbs: 48,
+      fiber: 1.8,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B1: 0.2, B2: 0.1 },
+        minerals: { Potassium: 110, Phosphorus: 80, Iron: 1.3 },
+        carbohydrateTypes: { Starch: 45, Fiber: 1.8 }
+      }))
+    },
+    {
+      name: 'Тесто песочное готовое',
+      brand: 'Базовый продукт',
+      calories: 430,
+      protein: 6.5,
+      fat: 22,
+      carbs: 52,
+      fiber: 1,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { E: 2.2, A: 30 },
+        minerals: { Potassium: 80, Calcium: 30 },
+        carbohydrateTypes: { Starch: 48, Sucrose: 3, Fiber: 1 }
+      }))
+    },
+    {
+      name: 'Пельмени',
+      brand: 'Базовый продукт',
+      calories: 220,
+      protein: 11,
+      fat: 9,
+      carbs: 24,
+      fiber: 1,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B1: 0.15, B12: 1 },
+        minerals: { Iron: 1.5, Zinc: 1.8, Phosphorus: 110 },
+        carbohydrateTypes: { Starch: 22, Fiber: 1 }
+      }))
+    },
+    {
+      name: 'Вареники',
+      brand: 'Базовый продукт',
+      calories: 195,
+      protein: 7,
+      fat: 4,
+      carbs: 34,
+      fiber: 1.5,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B1: 0.12 },
+        minerals: { Potassium: 150, Phosphorus: 70 },
+        carbohydrateTypes: { Starch: 30, Fiber: 1.5 }
+      }))
+    },
+    {
+      name: 'Блины готовые',
+      brand: 'Базовый продукт',
+      calories: 235,
+      protein: 6.5,
+      fat: 9,
+      carbs: 31,
+      fiber: 0.8,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B2: 0.15, A: 60 },
+        minerals: { Calcium: 70, Phosphorus: 100 },
+        carbohydrateTypes: { Starch: 27, Lactose: 2, Fiber: 0.8 }
+      }))
+    },
+    {
+      name: 'Минтай',
+      brand: 'Базовый продукт',
+      calories: 72,
+      protein: 15.9,
+      fat: 0.9,
+      carbs: 0,
+      fiber: 0,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B12: 3.6, D: 1.2 },
+        minerals: { Phosphorus: 240, Selenium: 32, Iodine: 110 },
+        fattyAcids: { Omega3: 0.4 }
+      }))
+    },
+    {
+      name: 'Хек',
+      brand: 'Базовый продукт',
+      calories: 86,
+      protein: 16.6,
+      fat: 2.2,
+      carbs: 0,
+      fiber: 0,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B12: 1.6, B3: 2.5 },
+        minerals: { Phosphorus: 220, Potassium: 330 },
+        fattyAcids: { Omega3: 0.5 }
+      }))
+    },
+    {
+      name: 'Морской окунь',
+      brand: 'Базовый продукт',
+      calories: 103,
+      protein: 18.2,
+      fat: 3.3,
+      carbs: 0,
+      fiber: 0,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B12: 2.4, D: 2 },
+        minerals: { Phosphorus: 210, Selenium: 36 },
+        fattyAcids: { Omega3: 0.6 }
+      }))
+    },
+    {
+      name: 'Дорадо',
+      brand: 'Базовый продукт',
+      calories: 96,
+      protein: 18,
+      fat: 2,
+      carbs: 0,
+      fiber: 0,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B12: 2, D: 3 },
+        minerals: { Phosphorus: 200, Potassium: 350 },
+        fattyAcids: { Omega3: 0.5 }
+      }))
+    },
+    {
+      name: 'Утка',
+      brand: 'Базовый продукт',
+      calories: 308,
+      protein: 16,
+      fat: 28,
+      carbs: 0,
+      fiber: 0,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B3: 4.5, B12: 0.4 },
+        minerals: { Iron: 2.7, Zinc: 1.9, Phosphorus: 200 },
+        fattyAcids: { Omega6: 3.5, Cholesterol: 76 }
+      }))
+    },
+    {
+      name: 'Кролик',
+      brand: 'Базовый продукт',
+      calories: 156,
+      protein: 21,
+      fat: 7.7,
+      carbs: 0,
+      fiber: 0,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B12: 4.3, B3: 11.6 },
+        minerals: { Iron: 3.3, Phosphorus: 190, Potassium: 335 }
+      }))
+    },
+    {
+      name: 'Сыр фета',
+      brand: 'Базовый продукт',
+      calories: 264,
+      protein: 14,
+      fat: 21,
+      carbs: 4,
+      fiber: 0,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B2: 0.24, A: 120 },
+        minerals: { Calcium: 490, Sodium: 920, Phosphorus: 340 },
+        carbohydrateTypes: { Lactose: 4 }
+      }))
+    },
+    {
+      name: 'Сыр пармезан',
+      brand: 'Базовый продукт',
+      calories: 392,
+      protein: 33,
+      fat: 28,
+      carbs: 3.2,
+      fiber: 0,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B2: 0.3, A: 270 },
+        minerals: { Calcium: 1180, Phosphorus: 700, Sodium: 1530 },
+        carbohydrateTypes: { Lactose: 3.2 }
+      }))
+    },
+    {
+      name: 'Сливочный сыр',
+      brand: 'Базовый продукт',
+      calories: 342,
+      protein: 6,
+      fat: 34,
+      carbs: 4,
+      fiber: 0,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { A: 308, B2: 0.15 },
+        minerals: { Calcium: 100, Phosphorus: 100 },
+        carbohydrateTypes: { Lactose: 4 }
+      }))
+    },
+    {
+      name: 'Маскарпоне',
+      brand: 'Базовый продукт',
+      calories: 412,
+      protein: 4.8,
+      fat: 42,
+      carbs: 4.8,
+      fiber: 0,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { A: 350, B2: 0.13 },
+        minerals: { Calcium: 90, Phosphorus: 90 },
+        carbohydrateTypes: { Lactose: 4.8 }
+      }))
+    },
+    {
+      name: 'Творог обезжиренный',
+      brand: 'Базовый продукт',
+      calories: 71,
+      protein: 18,
+      fat: 0.6,
+      carbs: 1.8,
+      fiber: 0,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B2: 0.21, B12: 1 },
+        minerals: { Calcium: 120, Phosphorus: 220 },
+        carbohydrateTypes: { Lactose: 1.8 }
+      }))
+    },
+    {
+      name: 'Сельдерей',
+      brand: 'Базовый продукт',
+      calories: 16,
+      protein: 0.9,
+      fat: 0.1,
+      carbs: 2.1,
+      fiber: 1.6,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { C: 8, K: 29, B9: 36 },
+        minerals: { Potassium: 260, Sodium: 80 },
+        carbohydrateTypes: { Fiber: 1.6 }
+      }))
+    },
+    {
+      name: 'Спаржа',
+      brand: 'Базовый продукт',
+      calories: 20,
+      protein: 2.2,
+      fat: 0.1,
+      carbs: 3.1,
+      fiber: 2.1,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { K: 41, C: 5.6, B9: 52 },
+        minerals: { Potassium: 202, Phosphorus: 52 },
+        carbohydrateTypes: { Fiber: 2.1 }
+      }))
+    },
+    {
+      name: 'Цукини',
+      brand: 'Базовый продукт',
+      calories: 24,
+      protein: 1.2,
+      fat: 0.3,
+      carbs: 4.6,
+      fiber: 1,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { C: 17, B6: 0.16, B9: 24 },
+        minerals: { Potassium: 261, Magnesium: 18 },
+        carbohydrateTypes: { Glucose: 1.4, Fructose: 1.2, Fiber: 1 }
+      }))
+    },
+    {
+      name: 'Перец чили',
+      brand: 'Базовый продукт',
+      calories: 40,
+      protein: 1.9,
+      fat: 0.4,
+      carbs: 8.8,
+      fiber: 1.5,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { C: 144, A: 48, B6: 0.5 },
+        minerals: { Potassium: 322, Magnesium: 23 },
+        carbohydrateTypes: { Fiber: 1.5 }
+      }))
+    },
+    {
+      name: 'Квашеная капуста',
+      brand: 'Базовый продукт',
+      calories: 19,
+      protein: 0.9,
+      fat: 0.1,
+      carbs: 3,
+      fiber: 2.2,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { C: 15, K: 13 },
+        minerals: { Sodium: 660, Potassium: 170 },
+        carbohydrateTypes: { Fiber: 2.2 }
+      }))
+    },
+    {
+      name: 'Маринованный огурец',
+      brand: 'Базовый продукт',
+      calories: 16,
+      protein: 0.7,
+      fat: 0.1,
+      carbs: 2.5,
+      fiber: 1,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { C: 4, K: 8 },
+        minerals: { Sodium: 800, Potassium: 130 },
+        carbohydrateTypes: { Fiber: 1 }
+      }))
+    },
+    {
+      name: 'Ананас',
+      brand: 'Базовый продукт',
+      calories: 50,
+      protein: 0.5,
+      fat: 0.1,
+      carbs: 13,
+      fiber: 1.4,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { C: 48, B6: 0.1, B9: 18 },
+        minerals: { Potassium: 109, Manganese: 0.9 },
+        carbohydrateTypes: { Sucrose: 6, Glucose: 2, Fructose: 2, Fiber: 1.4 }
+      }))
+    },
+    {
+      name: 'Манго',
+      brand: 'Базовый продукт',
+      calories: 60,
+      protein: 0.8,
+      fat: 0.4,
+      carbs: 15,
+      fiber: 1.6,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { C: 36, A: 54, B9: 43 },
+        minerals: { Potassium: 168 },
+        carbohydrateTypes: { Sucrose: 8, Glucose: 2, Fructose: 4, Fiber: 1.6 }
+      }))
+    },
+    {
+      name: 'Хурма',
+      brand: 'Базовый продукт',
+      calories: 67,
+      protein: 0.6,
+      fat: 0.3,
+      carbs: 15.3,
+      fiber: 2.5,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { C: 7.5, A: 81, B6: 0.1 },
+        minerals: { Potassium: 161, Manganese: 0.4 },
+        carbohydrateTypes: { Glucose: 6, Fructose: 7, Fiber: 2.5 }
+      }))
+    },
+    {
+      name: 'Инжир',
+      brand: 'Базовый продукт',
+      calories: 74,
+      protein: 0.8,
+      fat: 0.3,
+      carbs: 19.2,
+      fiber: 2.9,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { K: 4.7, B6: 0.1 },
+        minerals: { Potassium: 232, Calcium: 35 },
+        carbohydrateTypes: { Glucose: 8, Fructose: 9, Fiber: 2.9 }
+      }))
+    },
+    {
+      name: 'Киноа отварная',
+      brand: 'Базовый продукт',
+      calories: 120,
+      protein: 4.4,
+      fat: 1.9,
+      carbs: 21.3,
+      fiber: 2.8,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B9: 42, B6: 0.1 },
+        minerals: { Magnesium: 64, Iron: 1.5, Zinc: 1.1, Phosphorus: 152 },
+        carbohydrateTypes: { Starch: 18, Fiber: 2.8 }
+      }))
+    },
+    {
+      name: 'Овсяные хлопья сырые',
+      brand: 'Базовый продукт',
+      calories: 366,
+      protein: 12.3,
+      fat: 6.9,
+      carbs: 61.8,
+      fiber: 6,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B1: 0.5, B5: 1.3, E: 1.1 },
+        minerals: { Magnesium: 138, Phosphorus: 410, Iron: 4.7, Manganese: 4 },
+        carbohydrateTypes: { Starch: 55, Fiber: 6 }
+      }))
+    },
+    {
+      name: 'Мюсли',
+      brand: 'Базовый продукт',
+      calories: 360,
+      protein: 9,
+      fat: 6,
+      carbs: 68,
+      fiber: 7,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B1: 0.4, E: 1.5 },
+        minerals: { Magnesium: 100, Iron: 3 },
+        carbohydrateTypes: { Starch: 40, Sucrose: 18, Fiber: 7 }
+      }))
+    },
+    {
+      name: 'Гречневая лапша соба',
+      brand: 'Базовый продукт',
+      calories: 99,
+      protein: 5.1,
+      fat: 0.1,
+      carbs: 21,
+      fiber: 1.5,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B1: 0.1, B2: 0.05 },
+        minerals: { Magnesium: 38, Phosphorus: 90 },
+        carbohydrateTypes: { Starch: 19, Fiber: 1.5 }
+      }))
+    },
+    {
+      name: 'Рисовая лапша',
+      brand: 'Базовый продукт',
+      calories: 109,
+      protein: 1.8,
+      fat: 0.2,
+      carbs: 25,
+      fiber: 0.9,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B1: 0.03 },
+        minerals: { Phosphorus: 30, Potassium: 30 },
+        carbohydrateTypes: { Starch: 24, Fiber: 0.9 }
+      }))
+    },
+    {
+      name: 'Тортилья пшеничная',
+      brand: 'Базовый продукт',
+      calories: 290,
+      protein: 8,
+      fat: 7,
+      carbs: 48,
+      fiber: 2.5,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B1: 0.2, B3: 1.8 },
+        minerals: { Calcium: 60, Iron: 1.5 },
+        carbohydrateTypes: { Starch: 44, Fiber: 2.5 }
+      }))
+    },
+    {
+      name: 'Сдобная булочка',
+      brand: 'Базовый продукт',
+      calories: 300,
+      protein: 7.5,
+      fat: 6.5,
+      carbs: 54,
+      fiber: 1.5,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B1: 0.2, B2: 0.1 },
+        minerals: { Calcium: 30, Iron: 1.2 },
+        carbohydrateTypes: { Starch: 44, Sucrose: 8, Fiber: 1.5 }
+      }))
+    },
+    {
+      name: 'Круассан',
+      brand: 'Базовый продукт',
+      calories: 406,
+      protein: 8.2,
+      fat: 21,
+      carbs: 46,
+      fiber: 1.6,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { A: 130, E: 2 },
+        minerals: { Calcium: 40, Iron: 1.5 },
+        fattyAcids: { TransFats: 1 },
+        carbohydrateTypes: { Starch: 38, Sucrose: 6, Fiber: 1.6 }
+      }))
+    },
+    {
+      name: 'Соус терияки',
+      brand: 'Базовый продукт',
+      calories: 89,
+      protein: 5.9,
+      fat: 0,
+      carbs: 16,
+      fiber: 0,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        minerals: { Sodium: 3500, Potassium: 180 },
+        carbohydrateTypes: { Sucrose: 14, Fiber: 0 }
+      }))
+    },
+    {
+      name: 'Соус барбекю',
+      brand: 'Базовый продукт',
+      calories: 172,
+      protein: 1.2,
+      fat: 0.6,
+      carbs: 39,
+      fiber: 0.6,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        minerals: { Sodium: 1000, Potassium: 240 },
+        carbohydrateTypes: { Sucrose: 30, Fiber: 0.6 }
+      }))
+    },
+    {
+      name: 'Бальзамический уксус',
+      brand: 'Базовый продукт',
+      calories: 88,
+      protein: 0.5,
+      fat: 0,
+      carbs: 17,
+      fiber: 0,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        minerals: { Potassium: 112, Calcium: 27 },
+        carbohydrateTypes: { Sucrose: 15 }
+      }))
+    },
+    {
+      name: 'Песто',
+      brand: 'Базовый продукт',
+      calories: 303,
+      protein: 4.5,
+      fat: 30,
+      carbs: 4.5,
+      fiber: 1.2,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { E: 5, A: 140 },
+        minerals: { Calcium: 130, Phosphorus: 100 },
+        fattyAcids: { Omega9: 18 }
+      }))
+    },
+    {
+      name: 'Хумус',
+      brand: 'Базовый продукт',
+      calories: 166,
+      protein: 7.9,
+      fat: 9.6,
+      carbs: 14.3,
+      fiber: 6,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B9: 49, B6: 0.14 },
+        minerals: { Iron: 1.9, Magnesium: 39, Phosphorus: 146 },
+        carbohydrateTypes: { Starch: 8, Fiber: 6 }
+      }))
+    },
+    {
+      name: 'Тахини',
+      brand: 'Базовый продукт',
+      calories: 595,
+      protein: 17,
+      fat: 53,
+      carbs: 21,
+      fiber: 9,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B1: 0.5, E: 2 },
+        minerals: { Calcium: 420, Iron: 9, Magnesium: 95 },
+        carbohydrateTypes: { Fiber: 9 }
+      }))
+    },
+    {
+      name: 'Кокосовое молоко',
+      brand: 'Базовый продукт',
+      calories: 230,
+      protein: 2.3,
+      fat: 24,
+      carbs: 5.5,
+      fiber: 2.2,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { C: 2.8, B9: 16 },
+        minerals: { Potassium: 263, Magnesium: 37 },
+        fattyAcids: { Omega9: 1.4 },
+        carbohydrateTypes: { Fiber: 2.2 }
+      }))
+    },
+    {
+      name: 'Кокосовая стружка',
+      brand: 'Базовый продукт',
+      calories: 660,
+      protein: 6.9,
+      fat: 64.5,
+      carbs: 23,
+      fiber: 16,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { E: 0.5 },
+        minerals: { Iron: 3.3, Magnesium: 90 },
+        carbohydrateTypes: { Fiber: 16 }
+      }))
+    },
+    {
+      name: 'Тофу',
+      brand: 'Базовый продукт',
+      calories: 76,
+      protein: 8,
+      fat: 4.8,
+      carbs: 1.9,
+      fiber: 0.3,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B1: 0.16 },
+        minerals: { Calcium: 350, Iron: 5.4, Magnesium: 30 },
+        carbohydrateTypes: { Fiber: 0.3 }
+      }))
+    },
+    {
+      name: 'Горох сухой',
+      brand: 'Базовый продукт',
+      calories: 298,
+      protein: 20.5,
+      fat: 1.6,
+      carbs: 49.5,
+      fiber: 11.2,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B1: 0.81, B9: 274 },
+        minerals: { Iron: 4.7, Magnesium: 33, Potassium: 990 },
+        carbohydrateTypes: { Starch: 35, Fiber: 11.2 }
+      }))
+    },
+    {
+      name: 'Маш отварной',
+      brand: 'Базовый продукт',
+      calories: 105,
+      protein: 7,
+      fat: 0.4,
+      carbs: 19,
+      fiber: 7.6,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { B9: 159, B1: 0.16 },
+        minerals: { Iron: 1.4, Magnesium: 48, Potassium: 266 },
+        carbohydrateTypes: { Starch: 11, Fiber: 7.6 }
+      }))
+    },
+    {
+      name: 'Яйцо перепелиное',
+      brand: 'Базовый продукт',
+      calories: 158,
+      protein: 11.9,
+      fat: 13.1,
+      carbs: 0.6,
+      fiber: 0,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { A: 480, B12: 1.6, B2: 0.65 },
+        minerals: { Iron: 3.7, Phosphorus: 218, Selenium: 32 },
+        fattyAcids: { Cholesterol: 844 }
+      }))
+    },
+    {
+      name: 'Чай чёрный',
+      brand: 'Базовый продукт',
+      calories: 1,
+      protein: 0,
+      fat: 0,
+      carbs: 0.3,
+      fiber: 0,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        minerals: { Manganese: 0.3, Potassium: 9 }
+      }))
+    },
+    {
+      name: 'Кофе чёрный',
+      brand: 'Базовый продукт',
+      calories: 2,
+      protein: 0.1,
+      fat: 0,
+      carbs: 0,
+      fiber: 0,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        minerals: { Potassium: 49, Magnesium: 2 }
+      }))
+    },
+    {
+      name: 'Компот',
+      brand: 'Базовый продукт',
+      calories: 60,
+      protein: 0.2,
+      fat: 0,
+      carbs: 15,
+      fiber: 0.3,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { C: 8 },
+        minerals: { Potassium: 90 },
+        carbohydrateTypes: { Sucrose: 12, Fiber: 0.3 }
+      }))
+    },
+    {
+      name: 'Морс',
+      brand: 'Базовый продукт',
+      calories: 48,
+      protein: 0.1,
+      fat: 0,
+      carbs: 12,
+      fiber: 0.1,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { C: 10 },
+        minerals: { Potassium: 60 },
+        carbohydrateTypes: { Fructose: 6, Glucose: 5, Fiber: 0.1 }
+      }))
+    },
+    {
+      name: 'Халва',
+      brand: 'Базовый продукт',
+      calories: 510,
+      protein: 11.6,
+      fat: 29.7,
+      carbs: 54,
+      fiber: 4,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        vitamins: { E: 7, B1: 0.8 },
+        minerals: { Calcium: 200, Iron: 6, Magnesium: 150 },
+        carbohydrateTypes: { Sucrose: 48, Fiber: 4 }
+      }))
+    },
+    {
+      name: 'Зефир',
+      brand: 'Базовый продукт',
+      calories: 304,
+      protein: 0.8,
+      fat: 0.1,
+      carbs: 78.3,
+      fiber: 0.5,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        minerals: { Calcium: 5, Iron: 0.2 },
+        carbohydrateTypes: { Sucrose: 70, Fiber: 0.5 }
+      }))
+    },
+    {
+      name: 'Мармелад',
+      brand: 'Базовый продукт',
+      calories: 296,
+      protein: 0.4,
+      fat: 0.1,
+      carbs: 73,
+      fiber: 0.5,
+      micronutrients: JSON.stringify(buildMicronutrients({
+        minerals: { Calcium: 10, Iron: 0.4 },
+        carbohydrateTypes: { Sucrose: 65, Fiber: 0.5 }
+      }))
+    },
   ];
 
   for (const product of products) {
