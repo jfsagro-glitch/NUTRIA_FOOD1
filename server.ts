@@ -10,6 +10,7 @@ import Levenshtein from "fast-levenshtein";
 import OpenAI from "openai";
 import { ProxyAgent } from "undici";
 import { ZipArchive } from "archiver";
+import { rateLimit } from "express-rate-limit";
 import { registerCrmRoutes } from "./crm-routes.ts";
 import { registerTelegramBot } from "./telegram-bot.ts";
 
@@ -2102,6 +2103,31 @@ export async function createApp(): Promise<express.Express> {
 
   app.use(express.json());
   app.use(cookieParser());
+
+  // Rate limiting: общий лимит на все /api/*, и более строгий — на эндпоинты входа/регистрации
+  // (защита от брутфорса пароля). Отключаем в тестах, чтобы повторные вызовы не падали по лимиту.
+  const skipRateLimitInTest = () => process.env.NODE_ENV === "test";
+  const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: skipRateLimitInTest,
+  });
+  app.use("/api", apiLimiter);
+
+  const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: skipRateLimitInTest,
+    message: { error: "Слишком много попыток. Попробуйте позже." },
+  });
+  app.use(
+    ["/api/auth/login", "/api/crm/auth/login", "/api/crm/auth/register", "/api/onboard/:token/login"],
+    authLimiter
+  );
 
   // --- API Routes ---
 

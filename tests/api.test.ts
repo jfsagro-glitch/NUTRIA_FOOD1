@@ -104,3 +104,23 @@ describe("recipes import", () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe("rate limiting", () => {
+  it("после 20 запросов к /api/auth/login отдаёт 429", async () => {
+    // skip-функция лимитера читает NODE_ENV на каждый запрос — на время теста
+    // временно выключаем тестовый skip, чтобы проверить реальное ограничение.
+    const original = process.env.NODE_ENV;
+    process.env.NODE_ENV = "development";
+    try {
+      let lastStatus = 200;
+      for (let i = 0; i < 25; i++) {
+        const res = await request(app).post("/api/auth/login");
+        lastStatus = res.status;
+        if (lastStatus === 429) break;
+      }
+      expect(lastStatus).toBe(429);
+    } finally {
+      process.env.NODE_ENV = original;
+    }
+  });
+});

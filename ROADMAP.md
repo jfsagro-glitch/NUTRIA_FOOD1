@@ -212,7 +212,7 @@
 | # | Задача | Сложность | Статус |
 |---|---|---|---|
 | T1 | Покрыть API тестами (Vitest + supertest) — сейчас тестов нет | Средняя | ✅ |
-| T2 | Rate limiting на API (express-rate-limit) | Малая | ⬜ |
+| T2 | Rate limiting на API (express-rate-limit) | Малая | ✅ |
 | T3 | Валидация входящих данных (zod) вместо ручных проверок | Малая | ⬜ |
 | T4 | Логирование ошибок (Sentry free tier) — сейчас только console.error | Малая | ⬜ |
 | T5 | Кеширование поиска продуктов (Redis или in-memory LRU) | Средняя | ⬜ |
@@ -231,6 +231,18 @@
 - `package.json`: добавлен скрипт `"test": "vitest run"`, `vitest`/`supertest`/`@types/supertest` — dev dependencies.
 
 **Файлы:** `server.ts` (рефакторинг `startServer`→`createApp`+`startServer`), `tests/api.test.ts`, `package.json`
+
+### T2 — Rate limiting ✅
+
+**Как реализовано:**
+- Два лимитера на базе `express-rate-limit`, оба регистрируются в `createApp()` сразу после `express.json()`/`cookieParser()`, до объявления маршрутов:
+  - Общий — `app.use("/api", apiLimiter)`: 300 запросов / 15 минут на IP, покрывает все `/api/*`.
+  - Строгий — навешан только на эндпоинты входа/регистрации (`/api/auth/login`, `/api/crm/auth/login`, `/api/crm/auth/register`, `/api/onboard/:token/login`): 20 запросов / 15 минут на IP — защита от брутфорса пароля у CRM-логина.
+- Оба лимитера используют `skip: () => process.env.NODE_ENV === "test"`, чтобы не мешать тестам (Vitest сам выставляет `NODE_ENV=test`).
+- В `tests/api.test.ts` добавлен тест, который на время теста явно выставляет `NODE_ENV=development`, прогоняет 25 запросов к `/api/auth/login` и проверяет, что после 20-го лимитер отдаёт `429`.
+- Проверено также вживую (`tsx server.ts` + `curl`) — на ответах видны заголовки `RateLimit-Limit`/`RateLimit-Remaining`/`RateLimit-Policy`.
+
+**Файлы:** `server.ts` (импорт `express-rate-limit`, два лимитера), `tests/api.test.ts`, `package.json`
 
 ---
 
