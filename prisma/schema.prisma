@@ -206,6 +206,14 @@ model TelegramAccount {
   // Настраиваемые напоминания о заполнении дневника, JSON-массив строк "HH:MM"
   remindersJson String? @default("[]")
 
+  // Умные напоминания: если приём пищи не внесён через N часов после
+  // типичного времени (завтрак/обед/ужин), бот сам напомнит об этом.
+  smartRemindersEnabled  Boolean @default(false)
+  // Максимум умных напоминаний в день — настраивается клиентом в ЛК бота.
+  smartReminderMaxPerDay Int     @default(3)
+  // Состояние на текущие сутки: {"date":"YYYY-MM-DD","sentMeals":["BREAKFAST"],"sentCount":1}
+  smartReminderStateJson String? @default("{}")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

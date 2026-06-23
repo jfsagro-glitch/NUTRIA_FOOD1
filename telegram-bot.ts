@@ -52,6 +52,18 @@ const MEAL_TYPES: Record<string, string> = {
   SNACK: "Перекус",
 };
 
+// ─── Умные напоминания (если приём пищи не внесён) ───────────────────────────
+// Типичное время приёма пищи (по таймзоне BOT_TIMEZONE) — отсчёт для задержки
+// напоминания. Перекус не отслеживается: он необязателен у большинства клиентов.
+const MEAL_REMINDER_WINDOWS: Record<string, string> = {
+  BREAKFAST: "08:00",
+  LUNCH: "13:00",
+  DINNER: "19:00",
+};
+const MEAL_REMINDER_ORDER = ["BREAKFAST", "LUNCH", "DINNER"];
+const MEAL_REMINDER_DELAY_HOURS = 3;
+const SMART_REMINDER_MAX_OPTIONS = [1, 2, 3, 4, 5];
+
 // ─── Telegram Bot API helpers ────────────────────────────────────────────────
 
 async function tg(method: string, params: Record<string, any>) {
@@ -553,12 +565,17 @@ async function handleMenuCommand(prisma: PrismaClient, account: any, chatId: str
   if (text === "⏰ Напоминания" || text === "/reminders") {
     const reminders: string[] = JSON.parse(account.remindersJson || "[]");
     const list = reminders.length ? reminders.join(", ") : "нет";
+    const smartStatus = account.smartRemindersEnabled
+      ? `включены, до ${account.smartReminderMaxPerDay} в день`
+      : "выключены";
     return sendMessage(
       chatId,
-      `Текущие напоминания: ${list}`,
+      `🔔 <b>Умные напоминания</b> (если не внесли приём пищи через ${MEAL_REMINDER_DELAY_HOURS} ч после обычного времени): ${smartStatus}\n\n⏰ <b>Напоминания по расписанию</b>: ${list}`,
       inlineKeyboard([
+        [{ text: account.smartRemindersEnabled ? "🔕 Выключить умные" : "🔔 Включить умные", data: "smartrem:toggle" }],
+        [{ text: "🔢 Кол-во умных в день", data: "smartrem:count" }],
         [{ text: "➕ Добавить время", data: "rem:add" }],
-        [{ text: "🗑 Очистить все", data: "rem:clear" }],
+        [{ text: "🗑 Очистить все по расписанию", data: "rem:clear" }],
       ])
     );
   }
@@ -717,6 +734,33 @@ async function handleAwaitReminderTime(prisma: PrismaClient, account: any, chatI
   return sendMessage(chatId, `Готово! Буду напоминать в ${time} ✅`, MAIN_MENU_KEYBOARD);
 }
 
+async function handleSmartReminderCallback(prisma: PrismaClient, account: any, chatId: string, action: string) {
+  if (action === "toggle") {
+    const next = !account.smartRemindersEnabled;
+    await (prisma as any).telegramAccount.update({ where: { chatId }, data: { smartRemindersEnabled: next } });
+    return sendMessage(
+      chatId,
+      next
+        ? `Умные напоминания включены ✅ Если не отметите завтрак/обед/ужин в течение ${MEAL_REMINDER_DELAY_HOURS} ч после обычного времени, бот напомнит (не более ${account.smartReminderMaxPerDay} раз в день).`
+        : "Умные напоминания выключены.",
+      MAIN_MENU_KEYBOARD
+    );
+  }
+  if (action === "count") {
+    return sendMessage(
+      chatId,
+      "Сколько умных напоминаний в день присылать максимум?",
+      inlineKeyboard([SMART_REMINDER_MAX_OPTIONS.map((n) => ({ text: String(n), data: `smartrem:setcount:${n}` }))])
+    );
+  }
+  if (action.startsWith("setcount:")) {
+    const n = Math.max(1, Math.min(5, Number(action.split(":")[1]) || 3));
+    await (prisma as any).telegramAccount.update({ where: { chatId }, data: { smartReminderMaxPerDay: n } });
+    return sendMessage(chatId, `Максимум умных напоминаний в день: ${n} ✅`, MAIN_MENU_KEYBOARD);
+  }
+  return null;
+}
+
 // ─── Диспетчер апдейтов ──────────────────────────────────────────────────────
 
 async function handleUpdate(prisma: PrismaClient, update: any) {
@@ -732,6 +776,9 @@ async function handleUpdate(prisma: PrismaClient, update: any) {
     }
     if (data.startsWith("stats:")) {
       return handleStatsCallback(chatId, account, Number(data.split(":")[1]) || 7);
+    }
+    if (data.startsWith("smartrem:")) {
+      return handleSmartReminderCallback(prisma, account, chatId, data.slice("smartrem:".length));
     }
     if (data.startsWith("rem:")) {
       return handleReminderCallback(prisma, account, chatId, data.split(":")[1]);
@@ -780,7 +827,7 @@ async function handleUpdate(prisma: PrismaClient, update: any) {
 
 const lastReminderSent = new Map<string, string>(); // chatId -> "YYYY-MM-DD HH:MM" уже отправленного
 
-function nowInTimezone(tz: string) {
+function formatInTimezone(date: Date, tz: string) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: tz,
     year: "numeric",
@@ -789,9 +836,93 @@ function nowInTimezone(tz: string) {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-  }).formatToParts(new Date());
+  }).formatToParts(date);
   const get = (t: string) => parts.find((p) => p.type === t)?.value || "";
   return { dateKey: `${get("year")}-${get("month")}-${get("day")}`, hm: `${get("hour")}:${get("minute")}` };
+}
+
+function nowInTimezone(tz: string) {
+  return formatInTimezone(new Date(), tz);
+}
+
+function hmToMinutes(hm: string): number {
+  const [h, m] = hm.split(":").map(Number);
+  return h * 60 + m;
+}
+
+interface SmartReminderState {
+  date: string;
+  sentMeals: string[];
+  sentCount: number;
+}
+
+function getSmartReminderState(account: any, dateKey: string): SmartReminderState {
+  let state: SmartReminderState;
+  try {
+    state = JSON.parse(account.smartReminderStateJson || "{}");
+  } catch {
+    state = { date: "", sentMeals: [], sentCount: 0 };
+  }
+  if (state.date !== dateKey || !Array.isArray(state.sentMeals)) {
+    state = { date: dateKey, sentMeals: [], sentCount: 0 };
+  }
+  return state;
+}
+
+async function hasMealLoggedToday(prisma: PrismaClient, userId: string, mealType: string, tz: string, dateKey: string): Promise<boolean> {
+  const meals = await (prisma as any).meal.findMany({
+    where: { userId, type: mealType },
+    include: { items: true },
+    orderBy: { date: "desc" },
+    take: 10,
+  });
+  return meals.some((m: any) => m.items.length > 0 && formatInTimezone(new Date(m.date), tz).dateKey === dateKey);
+}
+
+function startSmartReminderScheduler(prisma: PrismaClient) {
+  setInterval(async () => {
+    try {
+      const { dateKey, hm } = nowInTimezone(BOT_TIMEZONE);
+      const nowMinutes = hmToMinutes(hm);
+      const accounts = await (prisma as any).telegramAccount.findMany({
+        where: { state: "DONE", userId: { not: null }, smartRemindersEnabled: true },
+      });
+      for (const account of accounts) {
+        try {
+          const state = getSmartReminderState(account, dateKey);
+          let changed = state.date !== JSON.parse(account.smartReminderStateJson || "{}").date;
+          for (const mealType of MEAL_REMINDER_ORDER) {
+            if (state.sentCount >= account.smartReminderMaxPerDay) break;
+            if (state.sentMeals.includes(mealType)) continue;
+            const windowMinutes = hmToMinutes(MEAL_REMINDER_WINDOWS[mealType]);
+            if (nowMinutes < windowMinutes + MEAL_REMINDER_DELAY_HOURS * 60) continue;
+
+            const logged = await hasMealLoggedToday(prisma, account.userId, mealType, BOT_TIMEZONE, dateKey);
+            state.sentMeals.push(mealType);
+            changed = true;
+            if (!logged) {
+              await sendMessage(
+                account.chatId,
+                `Вы ещё не отметили ${MEAL_TYPES[mealType].toLowerCase()} сегодня. Не забудьте записать приём пищи в дневник! 🍽`,
+                MAIN_MENU_KEYBOARD
+              );
+              state.sentCount += 1;
+            }
+          }
+          if (changed) {
+            await (prisma as any).telegramAccount.update({
+              where: { chatId: account.chatId },
+              data: { smartReminderStateJson: JSON.stringify(state) },
+            });
+          }
+        } catch (e) {
+          console.error(`[telegram-bot] Smart reminder error for chat ${account.chatId}:`, e);
+        }
+      }
+    } catch (e) {
+      console.error("[telegram-bot] Smart reminder scheduler error:", e);
+    }
+  }, 60_000);
 }
 
 function startReminderScheduler(prisma: PrismaClient) {
@@ -843,5 +974,6 @@ export function registerTelegramBot(app: Express, prisma: PrismaClient) {
   }
 
   startReminderScheduler(prisma);
+  startSmartReminderScheduler(prisma);
   console.log("[telegram-bot] Telegram-бот зарегистрирован");
 }
