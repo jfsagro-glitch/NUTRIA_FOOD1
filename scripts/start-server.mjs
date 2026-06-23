@@ -45,6 +45,8 @@ if (resolvedDatabaseUrl) {
   env.DATABASE_URL = resolvedDatabaseUrl;
   console.log("[startup] DATABASE_URL resolved. Running prisma db push...");
   runOrExit("npx", ["prisma", "db", "push"], env);
+  console.log("[startup] Running prisma/seed.ts (upsert, safe to repeat on every deploy)...");
+  runOrExit("npx", ["tsx", "prisma/seed.ts"], env);
 } else {
   console.warn("[startup] DATABASE_URL is empty. Skipping prisma db push.");
   console.warn("[startup] Set DATABASE_URL in the Render service's Environment variables to enable DB features.");
