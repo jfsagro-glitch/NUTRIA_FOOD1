@@ -872,9 +872,11 @@ ${finalResults.map((candidate, index) => `${index}: ${candidate.name} (${candida
     }
   }
 
-  const responseResults = localize
+  const localizedResults = localize
     ? await Promise.all(finalResults.slice(0, limit).map((item) => localizeProductForRussianAudience(item)))
     : finalResults.slice(0, limit);
+
+  const responseResults = localizedResults.map((item: any) => ({ ...item, nutriScore: calcNutriScore(item) }));
 
   if (useCache) {
     cacheProductSearch(normalizedInput, responseResults);
@@ -1456,6 +1458,50 @@ function isMicronutrientDataEffectivelyEmpty(completeMicro: ReturnType<typeof bu
   return Object.values(completeMicro).every((group) =>
     Object.values(group as Record<string, number>).every((value) => numberOrZero(value) <= 0)
   );
+}
+
+function clampNutriScorePoints(value: number, max: number) {
+  return Math.max(0, Math.min(max, Math.round(value)));
+}
+
+const NUTRI_SCORE_SUGAR_KEYS = ["Glucose", "Fructose", "Galactose", "Sucrose", "Lactose", "Maltose"];
+
+// Упрощённый Nutri-Score (per 100g): нет отдельного поля "насыщенные жиры" в модели данных,
+// поэтому в негативный компонент идёт общий жир как приближение.
+function calcNutriScore(item: {
+  calories?: number;
+  protein?: number;
+  fat?: number;
+  fiber?: number;
+  minerals?: Record<string, number>;
+  carbohydrateTypes?: Record<string, number>;
+}): { score: number; grade: "A" | "B" | "C" | "D" | "E" } {
+  const calories = numberOrZero(item.calories);
+  const fat = numberOrZero(item.fat);
+  const protein = numberOrZero(item.protein);
+  const fiber = numberOrZero(item.fiber);
+  const sodiumMg = numberOrZero(item.minerals?.Sodium);
+  const carbTypes = item.carbohydrateTypes || {};
+  const sugarG = NUTRI_SCORE_SUGAR_KEYS.reduce((sum, key) => sum + numberOrZero(carbTypes[key]), 0);
+
+  const caloriesPts = clampNutriScorePoints(calories / 80, 10);
+  const fatPts = clampNutriScorePoints(fat, 10);
+  const sugarPts = clampNutriScorePoints(sugarG / 4.5, 10);
+  const sodiumPts = clampNutriScorePoints(sodiumMg / 90, 10);
+
+  const fiberPts = clampNutriScorePoints(fiber / 0.95, 5);
+  const proteinPts = clampNutriScorePoints(protein / 1.6, 5);
+
+  const score = caloriesPts + fatPts + sugarPts + sodiumPts - (fiberPts + proteinPts);
+
+  let grade: "A" | "B" | "C" | "D" | "E";
+  if (score <= -1) grade = "A";
+  else if (score <= 2) grade = "B";
+  else if (score <= 10) grade = "C";
+  else if (score <= 18) grade = "D";
+  else grade = "E";
+
+  return { score, grade };
 }
 
 // Точечная докомплектация: если у продукта нет вообще никаких сохранённых микроэлементов
@@ -2688,7 +2734,7 @@ async function startServer() {
           }
           return {
             ...i,
-            product: { ...i.product, ...micro }
+            product: { ...i.product, ...micro, nutriScore: calcNutriScore({ ...i.product, ...micro }) }
           };
         })
       }));
@@ -3065,6 +3111,72 @@ async function startServer() {
 
     const updatedItem = await prisma.mealItem.update({ where: { id }, data: { amount } });
     res.json(updatedItem);
+  });
+
+  // Quick Add: быстрая запись без поиска продукта — название + ккал/КБЖУ напрямую.
+  // Реализовано без новых полей в схеме: создаём обычный Product (source: "quickadd")
+  // с введёнными значениями как "на 100г" и MealItem с amount: 100, чтобы они отражали
+  // ровно ту порцию, которую пользователь указал.
+  app.post("/api/diary/quick-add", async (req, res) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const { date, mealType, label, calories, protein, fat, carbs } = req.body;
+    const safeLabel = String(label || "").trim();
+    const safeCalories = Number(calories);
+    if (!safeLabel || !Number.isFinite(safeCalories) || safeCalories < 0) {
+      return res.status(400).json({ error: "Invalid quick-add payload" });
+    }
+
+    const type = mealType || "SNACK";
+    const targetDate = dateFromQuery(date);
+    const targetDateKey = toDateKey(targetDate);
+
+    const quickProductData = {
+      name: safeLabel,
+      brand: "Быстрый ввод",
+      calories: safeCalories,
+      protein: numberOrZero(protein),
+      fat: numberOrZero(fat),
+      carbs: numberOrZero(carbs),
+      fiber: 0,
+      source: "quickadd",
+    };
+
+    if (!isDatabaseConfigured()) {
+      const memoryDiary = getOrCreateInMemoryDiary(userId);
+      const mealId = `${type}-${targetDateKey}`;
+      let meal = memoryDiary.meals.find((m: any) => m.id === mealId && getMealDateKey(m) === targetDateKey);
+      if (!meal) {
+        meal = { id: mealId, type, dateKey: targetDateKey, items: [] };
+        memoryDiary.meals.push(meal);
+      }
+      const mealItem = {
+        id: `mi-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        amount: 100,
+        product: { id: `quickadd-${Date.now()}`, ...quickProductData },
+      };
+      meal.items.push(mealItem);
+      return res.json({ ...mealItem, mode: "memory", date: targetDateKey });
+    }
+
+    const product = await prisma.product.create({
+      data: { ...quickProductData, createdByUserId: userId },
+    });
+
+    const { start: startOfDay, end: endOfDay } = dayRangeFromDate(targetDate);
+    let meal = await prisma.meal.findFirst({
+      where: { userId, type, date: { gte: startOfDay, lte: endOfDay } },
+    });
+    if (!meal) {
+      meal = await prisma.meal.create({ data: { userId, type, date: startOfDay } });
+    }
+
+    const mealItem = await prisma.mealItem.create({
+      data: { mealId: meal.id, productId: product.id, amount: 100 },
+    });
+
+    res.json({ ...mealItem, product });
   });
 
   // Voice: Parse transcript into food items

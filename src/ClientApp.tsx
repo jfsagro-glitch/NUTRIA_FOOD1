@@ -576,7 +576,7 @@ const MINERAL_CONFIG = [
   { key: 'Calcium', label: 'Кальций', unit: 'mg' },
   { key: 'Silicon', label: 'Кремний', unit: 'mg' },
   { key: 'Magnesium', label: 'Магний', unit: 'mg' },
-  { key: 'Sodium', label: 'Натрий', unit: 'mg' },
+  { key: 'Sodium', label: 'Натрий', unit: 'mg', isLimit: true },
   { key: 'Sulfur', label: 'Сера', unit: 'mg' },
   { key: 'Phosphorus', label: 'Фосфор', unit: 'mg' },
   { key: 'Chlorine', label: 'Хлор', unit: 'mg' },
@@ -590,7 +590,7 @@ const MINERAL_CONFIG = [
   { key: 'Selenium', label: 'Селен', unit: 'mcg' },
   { key: 'Chromium', label: 'Хром', unit: 'mcg' },
   { key: 'Zinc', label: 'Цинк', unit: 'mg' },
-  { key: 'Salt', label: 'Соль', unit: 'mg' },
+  { key: 'Salt', label: 'Соль', unit: 'mg', isLimit: true },
 ];
 
 const AMINO_CONFIG = [
@@ -620,8 +620,8 @@ const FATTY_ACID_CONFIG = [
   { key: 'Omega3', label: 'Омега-3', unit: 'g' },
   { key: 'Omega6', label: 'Омега-6', unit: 'g' },
   { key: 'Omega9', label: 'Омега-9', unit: 'g' },
-  { key: 'TransFats', label: 'Трансжиры', unit: 'g' },
-  { key: 'Cholesterol', label: 'Холестерин', unit: 'mg' },
+  { key: 'TransFats', label: 'Трансжиры', unit: 'g', isLimit: true },
+  { key: 'Cholesterol', label: 'Холестерин', unit: 'mg', isLimit: true },
 ];
 
 const CARB_TYPE_CONFIG = [
@@ -891,17 +891,93 @@ function calculateAutoGoalsFromProfile(profile: UserProfileSettings): NutrientGo
   };
 }
 
+const NUTRI_SCORE_COLORS: Record<string, string> = {
+  A: "bg-emerald-500 text-white",
+  B: "bg-lime-500 text-white",
+  C: "bg-amber-500 text-white",
+  D: "bg-orange-500 text-white",
+  E: "bg-red-500 text-white",
+};
+
+const NutriScoreBadge = ({ grade }: { grade?: string }) => {
+  if (!grade || !NUTRI_SCORE_COLORS[grade]) return null;
+  return (
+    <span className={cn("inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold flex-shrink-0", NUTRI_SCORE_COLORS[grade])}>
+      {grade}
+    </span>
+  );
+};
+
+// Inline-редактирование граммов: клик по числу превращает его в поле ввода,
+// Enter/blur сохраняет через PATCH /api/diary/item/:id и обновляет дневник.
+const InlineGramsInput = ({ item, onSave }: { item: any; onSave: (itemId: string, amount: number) => Promise<boolean> }) => {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(String(Math.round(item.amount)));
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setValue(String(Math.round(item.amount))); }, [item.amount]);
+  useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
+
+  const commit = async () => {
+    const amount = Number(value);
+    if (Number.isFinite(amount) && amount > 0 && amount !== item.amount) {
+      await onSave(item.id, amount);
+    } else {
+      setValue(String(Math.round(item.amount)));
+    }
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="number"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={commit}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); commit(); }
+          if (e.key === 'Escape') { setValue(String(Math.round(item.amount))); setEditing(false); }
+        }}
+        className="w-12 bg-transparent border-b outline-none"
+        style={{ fontSize: 11, color: PROTO.text, borderColor: PROTO.primary }}
+      />
+    );
+  }
+
+  return (
+    <span
+      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+      className="cursor-pointer"
+      style={{ textDecoration: 'underline', textDecorationStyle: 'dotted' }}
+    >
+      {Math.round(item.amount)}
+    </span>
+  );
+};
+
 // --- Screens ---
 
-const NutrientRow = ({ label, value, goal, unit, colorClass = "bg-emerald-500" }: { label: string, value: number, goal: number, unit: string, colorClass?: string }) => (
-  <div className="flex justify-between items-center text-xs py-1">
-    <span className="text-zinc-400 w-24">{label}</span>
-    <div className="flex-1 mx-4 h-1 bg-zinc-800 rounded-full overflow-hidden">
-      <div className={cn("h-full transition-all duration-500", colorClass)} style={{ width: `${Math.min(100, (value / goal) * 100)}%` }} />
+// DRI-прогресс: для обычных нутриентов 80-120% от цели — «норма» (зелёный), ниже — недобор (серый).
+// Для isLimit-нутриентов (натрий, соль, трансжиры, холестерин) любое превышение 100% цели — красный.
+const NutrientRow = ({ label, value, goal, unit, isLimit = false }: { label: string, value: number, goal: number, unit: string, isLimit?: boolean }) => {
+  const pct = goal > 0 ? (value / goal) * 100 : 0;
+  const barColorClass = isLimit
+    ? (pct > 100 ? "bg-red-500" : "bg-emerald-500")
+    : (pct >= 80 ? "bg-emerald-500" : "bg-zinc-500");
+  const valueColorClass = isLimit && pct > 100 ? "text-red-500" : "text-zinc-200";
+  return (
+    <div className="flex justify-between items-center text-xs py-1">
+      <span className="text-zinc-400 w-24">{label}</span>
+      <div className="flex-1 mx-4 h-1 bg-zinc-800 rounded-full overflow-hidden">
+        <div className={cn("h-full transition-all duration-500", barColorClass)} style={{ width: `${Math.min(100, pct)}%` }} />
+      </div>
+      <span className={cn("w-20 text-right", valueColorClass)}>{Math.round(value * 10) / 10}{unit}</span>
     </div>
-    <span className="text-zinc-200 w-20 text-right">{Math.round(value * 10) / 10}{unit}</span>
-  </div>
-);
+  );
+};
 
 const DIARY_DATE_STRIP_DAY_LABELS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
 
@@ -992,7 +1068,7 @@ const DiaryDateStrip = ({ selectedDate, onSelect }: { selectedDate: string; onSe
   );
 };
 
-const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, onHintClick, onDeleteItem, onEditItem, onUpdateWater }: { data: any, selectedDate: string, onChangeDate: (dateKey: string) => void, onAddClick: (type: string) => void, hints: Hint[], onHintClick: (cta: string) => void, onDeleteItem: (id: string) => void, onEditItem: (item: any) => void, onUpdateWater: (amount: number) => void }) => {
+const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, onHintClick, onDeleteItem, onEditItem, onUpdateWater, onUpdateGrams }: { data: any, selectedDate: string, onChangeDate: (dateKey: string) => void, onAddClick: (type: string) => void, hints: Hint[], onHintClick: (cta: string) => void, onDeleteItem: (id: string) => void, onEditItem: (item: any) => void, onUpdateWater: (amount: number) => void, onUpdateGrams: (itemId: string, amount: number) => Promise<boolean> }) => {
   const { meals = [], waterIntake = 0 } = data;
   const goals = mergeGoals(data.goals);
   const waterGoal = 2500; // 2.5L in ml
@@ -1197,9 +1273,9 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
             }
           >
             <div className="space-y-1">
-              {MINERAL_CONFIG.map(({ key, label, unit }) => (
+              {MINERAL_CONFIG.map(({ key, label, unit, isLimit }) => (
                 <React.Fragment key={key}>
-                  <NutrientRow label={label} value={totals.minerals[key] || 0} goal={goals.minerals[key] || 1} unit={unit} />
+                  <NutrientRow label={label} value={totals.minerals[key] || 0} goal={goals.minerals[key] || 1} unit={unit} isLimit={isLimit} />
                 </React.Fragment>
               ))}
             </div>
@@ -1221,9 +1297,9 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
             }
           >
             <div className="space-y-1">
-              {FATTY_ACID_CONFIG.map(({ key, label, unit }) => (
+              {FATTY_ACID_CONFIG.map(({ key, label, unit, isLimit }) => (
                 <React.Fragment key={key}>
-                  <NutrientRow label={label} value={totals.fattyAcids[key] || 0} goal={goals.fattyAcids[key] || 1} unit={unit} />
+                  <NutrientRow label={label} value={totals.fattyAcids[key] || 0} goal={goals.fattyAcids[key] || 1} unit={unit} isLimit={isLimit} />
                 </React.Fragment>
               ))}
             </div>
@@ -1347,8 +1423,14 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
                             style={idx > 0 ? { borderTop: `1px solid ${PROTO.softDivider}` } : undefined}
                           >
                             <div className="flex-1 min-w-0">
-                              <p style={{ fontSize: 14, color: PROTO.text }}>{item.product.name}</p>
-                              <p style={{ fontSize: 11, color: PROTO.textLt, marginTop: 2 }}>{item.amount} г · Б{Math.round((item.product.protein * item.amount) / 100)} · Ж{Math.round((item.product.fat * item.amount) / 100)} · У{Math.round((item.product.carbs * item.amount) / 100)}</p>
+                              <p style={{ fontSize: 14, color: PROTO.text }} className="flex items-center gap-1.5">
+                                {item.product.source === 'quickadd' && <Zap size={12} style={{ color: PROTO.terra }} className="flex-shrink-0" />}
+                                <span className="truncate">{item.product.name}</span>
+                                <NutriScoreBadge grade={item.product.nutriScore?.grade} />
+                              </p>
+                              <p style={{ fontSize: 11, color: PROTO.textLt, marginTop: 2 }}>
+                                <InlineGramsInput item={item} onSave={onUpdateGrams} /> г · Б{Math.round((item.product.protein * item.amount) / 100)} · Ж{Math.round((item.product.fat * item.amount) / 100)} · У{Math.round((item.product.carbs * item.amount) / 100)}
+                              </p>
                             </div>
                             <span style={{ fontSize: 12, color: PROTO.textMid }} className="flex-shrink-0">{Math.round((item.product.calories * item.amount) / 100)} ккал</span>
                             <button onClick={() => onEditItem(item)} className="p-1.5 hover:text-emerald-500 transition-colors flex-shrink-0" style={{ color: PROTO.textLt }}>
@@ -2533,7 +2615,7 @@ export default function App() {
   const [isSearching, setIsSearching] = useState(false);
 
   // "Недавние" / "Мои" — вкладки в экране добавления еды
-  const [foodTab, setFoodTab] = useState<'all' | 'recent' | 'mine'>('all');
+  const [foodTab, setFoodTab] = useState<'all' | 'recent' | 'mine' | 'quick'>('all');
   const [recentFoods, setRecentFoods] = useState<RecentFoodItem[]>([]);
   const [isLoadingRecent, setIsLoadingRecent] = useState(false);
   const [mineProducts, setMineProducts] = useState<Product[]>([]);
@@ -2542,6 +2624,8 @@ export default function App() {
   const [isAddCustomProductOpen, setIsAddCustomProductOpen] = useState(false);
   const [customProductForm, setCustomProductForm] = useState({ name: '', brand: '', barcode: '', calories: '', protein: '', fat: '', carbs: '' });
   const [isSavingCustomProduct, setIsSavingCustomProduct] = useState(false);
+  const [quickAddForm, setQuickAddForm] = useState({ label: '', calories: '', protein: '', fat: '', carbs: '' });
+  const [isSavingQuickAdd, setIsSavingQuickAdd] = useState(false);
   const [isCreateDishOpen, setIsCreateDishOpen] = useState(false);
   const [dishName, setDishName] = useState('');
   const [dishCookedWeight, setDishCookedWeight] = useState('');
@@ -3270,10 +3354,41 @@ export default function App() {
     }
   };
 
-  const handleFoodTabChange = (tab: 'all' | 'recent' | 'mine') => {
+  const handleFoodTabChange = (tab: 'all' | 'recent' | 'mine' | 'quick') => {
     setFoodTab(tab);
     if (tab === 'recent' && recentFoods.length === 0) fetchRecentFoods();
     if (tab === 'mine') fetchMine();
+  };
+
+  const submitQuickAdd = async () => {
+    if (!quickAddForm.label.trim() || !quickAddForm.calories.trim()) return;
+    setIsSavingQuickAdd(true);
+    try {
+      const res = await fetch('/api/diary/quick-add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: selectedDiaryDate,
+          mealType: selectedMealType,
+          label: quickAddForm.label.trim(),
+          calories: Number(quickAddForm.calories) || 0,
+          protein: Number(quickAddForm.protein) || 0,
+          fat: Number(quickAddForm.fat) || 0,
+          carbs: Number(quickAddForm.carbs) || 0,
+        })
+      });
+      if (res.ok) {
+        setQuickAddForm({ label: '', calories: '', protein: '', fat: '', carbs: '' });
+        setIsSearchSheetOpen(false);
+        setFoodTab('all');
+        fetchDiary(selectedDiaryDate);
+        fetchHints();
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSavingQuickAdd(false);
+    }
   };
 
   const submitCustomProduct = async () => {
@@ -3471,19 +3586,26 @@ export default function App() {
     if (!editingMealItem) return;
     const amount = Number(editAmountValue);
     if (!Number.isFinite(amount) || amount <= 0) return;
+    const ok = await updateMealItemAmountDirect(editingMealItem.id, amount);
+    if (ok) setEditingMealItem(null);
+  };
+
+  const updateMealItemAmountDirect = async (itemId: string, amount: number): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/diary/item/${editingMealItem.id}`, {
+      const res = await fetch(`/api/diary/item/${itemId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount })
       });
       if (res.ok) {
-        setEditingMealItem(null);
         fetchDiary(selectedDiaryDate);
         fetchHints();
+        return true;
       }
+      return false;
     } catch (e) {
       console.error(e);
+      return false;
     }
   };
 
@@ -3960,6 +4082,7 @@ export default function App() {
                 setEditAmountValue(String(Math.round(item.amount)));
               }}
               onUpdateWater={updateWater}
+              onUpdateGrams={updateMealItemAmountDirect}
             />
           ) : (
             <SummaryScreen
@@ -4091,6 +4214,7 @@ export default function App() {
               ['all', 'Все'],
               ['recent', 'Недавние'],
               ['mine', 'Мои'],
+              ['quick', 'Быстро'],
             ] as const).map(([key, label]) => (
               <button
                 key={key}
@@ -4131,6 +4255,7 @@ export default function App() {
                     <div className="text-left">
                       <div className="flex items-center gap-2">
                         <p className="font-semibold text-zinc-200">{product.name}</p>
+                        <NutriScoreBadge grade={product.nutriScore?.grade} />
                         {product.isUsda && (
                           <span className="px-1.5 py-0.5 bg-blue-500/10 text-blue-400 text-[8px] font-bold rounded uppercase tracking-tighter border border-blue-500/20">
                             USDA
@@ -4243,6 +4368,40 @@ export default function App() {
                 ))}
               </>
             )}
+          </div>
+        )}
+
+        {foodTab === 'quick' && !photoCorrectionTarget && (
+          <div className="space-y-3">
+            <input
+              type="text" placeholder="Что съели? (например: «домашняя каша»)"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              value={quickAddForm.label}
+              onChange={(e) => setQuickAddForm((p) => ({ ...p, label: e.target.value }))}
+              autoFocus
+            />
+            <input
+              type="number" placeholder="Калории (ккал)"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              value={quickAddForm.calories}
+              onChange={(e) => setQuickAddForm((p) => ({ ...p, calories: e.target.value }))}
+            />
+            <p className="text-[11px] text-zinc-500 uppercase tracking-wider pt-1">БЖУ (необязательно)</p>
+            <div className="grid grid-cols-3 gap-3">
+              <input type="number" placeholder="Белки, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                value={quickAddForm.protein} onChange={(e) => setQuickAddForm((p) => ({ ...p, protein: e.target.value }))} />
+              <input type="number" placeholder="Жиры, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                value={quickAddForm.fat} onChange={(e) => setQuickAddForm((p) => ({ ...p, fat: e.target.value }))} />
+              <input type="number" placeholder="Углеводы, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                value={quickAddForm.carbs} onChange={(e) => setQuickAddForm((p) => ({ ...p, carbs: e.target.value }))} />
+            </div>
+            <button
+              onClick={submitQuickAdd}
+              disabled={!quickAddForm.label.trim() || !quickAddForm.calories.trim() || isSavingQuickAdd}
+              className="w-full py-3 rounded-xl bg-emerald-500 text-white text-sm font-semibold disabled:opacity-50 active:bg-emerald-600 transition-colors"
+            >
+              {isSavingQuickAdd ? 'Сохранение...' : 'Добавить'}
+            </button>
           </div>
         )}
       </BottomSheet>
