@@ -32,6 +32,7 @@ import type { Express, Request, Response } from "express";
 import type { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
 import { logError } from "./logging.ts";
+import { validateBody, fastingNotifySchema } from "./validation.ts";
 
 // ─── Конфигурация ────────────────────────────────────────────────────────────
 
@@ -1051,6 +1052,23 @@ function startReminderScheduler(prisma: PrismaClient) {
   }, 60_000);
 }
 
+// ─── Уведомления по событиям из веб-приложения (не из диалога бота) ─────────
+// Используется, например, для напоминания о старте/завершении голодания —
+// событие происходит в клиентском React-коде, а не в самом боте.
+
+export async function notifyUserByTelegram(prisma: PrismaClient, userId: string, text: string): Promise<boolean> {
+  if (!TELEGRAM_API) return false;
+  try {
+    const account = await (prisma as any).telegramAccount.findUnique({ where: { userId } });
+    if (!account) return false;
+    await sendMessage(account.chatId, text);
+    return true;
+  } catch (e) {
+    logError("[telegram-bot] notifyUserByTelegram failed:", e);
+    return false;
+  }
+}
+
 // ─── Регистрация в Express ───────────────────────────────────────────────────
 
 export function registerTelegramBot(app: Express, prisma: PrismaClient) {
@@ -1125,6 +1143,23 @@ export function registerTelegramBot(app: Express, prisma: PrismaClient) {
       smartRemindersEnabled: updated.smartRemindersEnabled,
       smartReminderMaxPerDay: updated.smartReminderMaxPerDay,
     });
+  });
+
+  // Уведомление о старте/завершении голодания — вызывается клиентским кодом
+  // (таймер голодания живёт в localStorage, а не на сервере), отправляет
+  // сообщение в Telegram, если у пользователя привязан аккаунт.
+  app.post("/api/telegram/notify-fasting", validateBody(fastingNotifySchema), async (req: Request, res: Response) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const { event, fastingHours, eatingHours } = req.body as { event: "start" | "end"; fastingHours?: number; eatingHours?: number };
+    const text =
+      event === "start"
+        ? `🕐 Голодание начато! Режим ${fastingHours ?? "—"}:${eatingHours ?? "—"}. Окно питания откроется через ${fastingHours ?? "—"} ч.`
+        : "✅ Голодание завершено. Время истекло — можно открыть окно питания.";
+
+    const sent = await notifyUserByTelegram(prisma, userId, text);
+    res.json({ sent });
   });
 
   if (PUBLIC_URL) {

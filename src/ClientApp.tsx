@@ -2265,7 +2265,7 @@ const SummaryScreen = ({
   };
 
   return (
-    <div className="p-4">
+    <div className="p-4 pb-28">
       <header className="mb-6 pt-4">
         <h1 className="font-display text-4xl font-bold tracking-tight">{view === 'stats' ? 'Статистика' : 'Профиль'}</h1>
         <p className="text-zinc-500 text-sm">{view === 'stats' ? 'Динамика, рейтинг и рекомендации' : 'Цели, программы и настройки'}</p>
@@ -3359,6 +3359,26 @@ export default function App() {
     }
   };
 
+  const notifyFastingViaTelegram = async (event: 'start' | 'end', fastingHours?: number, eatingHours?: number) => {
+    try {
+      const res = await fetch('/api/telegram/notify-fasting', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event, fastingHours, eatingHours }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (event === 'start' && !data.sent) {
+        const wantsToConnect = window.confirm(
+          'Telegram не подключён. Подключить, чтобы получать уведомления о начале и завершении голодания? Откроется раздел «Профиль → Настройки».'
+        );
+        if (wantsToConnect) setActiveTab('profile');
+      }
+    } catch (e) {
+      console.warn('Telegram fasting notification failed:', e);
+    }
+  };
+
   const completeFasting = async () => {
     if (fastingNotifiedRef.current) return;
     fastingNotifiedRef.current = true;
@@ -3369,6 +3389,7 @@ export default function App() {
     }
 
     await sendFastingDoneNotification();
+    await notifyFastingViaTelegram('end');
   };
 
   useEffect(() => {
@@ -3413,6 +3434,7 @@ export default function App() {
     }
 
     const fastingHours = fastingMode === 'CUSTOM' ? customFastingHours : FASTING_PRESETS[fastingMode].fastingHours;
+    const eatingHours = Math.max(0, 24 - fastingHours);
     const startAt = Date.now();
     const endAt = startAt + fastingHours * 60 * 60 * 1000;
 
@@ -3421,6 +3443,8 @@ export default function App() {
     setFastingEndAt(endAt);
     setIsFastingActive(true);
     setNowTs(startAt);
+
+    notifyFastingViaTelegram('start', fastingHours, eatingHours);
   };
 
   const handleStopFasting = () => {

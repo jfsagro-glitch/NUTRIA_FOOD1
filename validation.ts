@@ -123,6 +123,12 @@ export const diaryAddSchema = z.object({
   date: z.string().optional(),
 });
 
+export const fastingNotifySchema = z.object({
+  event: z.enum(["start", "end"]),
+  fastingHours: z.coerce.number().min(0).max(48).optional(),
+  eatingHours: z.coerce.number().min(0).max(48).optional(),
+});
+
 export const diaryItemAmountSchema = z.object({
   amount: z.coerce.number().positive("Invalid amount"),
 });
