@@ -5,7 +5,8 @@ import {
   Calendar, Loader2, Upload, Trash2, Edit3, Check,
   AlertCircle, RefreshCw, Leaf, ChevronLeft, Tag,
   User, Activity, Scale, Ruler, Target, Zap, Flame,
-  Download, Copy, ExternalLink, Send, Smartphone
+  Download, Copy, ExternalLink, Send, Smartphone,
+  Utensils, ShoppingCart
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -22,7 +23,7 @@ interface NutritionistUser {
 }
 
 type ClientStatus = 'PENDING' | 'ACTIVE' | 'ARCHIVED';
-type ClientTab = 'questionnaire' | 'diary' | 'weight' | 'analyses' | 'notes' | 'recommendations' | 'messages';
+type ClientTab = 'questionnaire' | 'diary' | 'weight' | 'analytics' | 'mealplans' | 'analyses' | 'notes' | 'recommendations' | 'messages';
 type ClientSource = 'invite' | 'telegram' | 'self';
 
 interface Client {
@@ -578,6 +579,339 @@ function WeightTab({ clientId }: { clientId: string }) {
   );
 }
 
+// ─── Вкладка: Статистика ────────────────────────────────────────────────────
+
+interface ClientAnalytics {
+  days: number;
+  trackedDays: number;
+  avgCalories: number;
+  avgProtein: number;
+  avgFat: number;
+  avgCarbs: number;
+  calGoalHitDays: number;
+  goals: { calories: number } | null;
+  weightTrend: { date: string; weightKg: number }[];
+}
+
+function AnalyticsTab({ clientId }: { clientId: string }) {
+  const api = useApi();
+  const [data, setData] = useState<ClientAnalytics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [days, setDays] = useState(30);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setData(await api.get(`/api/crm/clients/${clientId}/analytics?days=${days}`)); }
+    catch {} finally { setLoading(false); }
+  }, [clientId, days]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-zinc-500"/></div>;
+  if (!data || data.trackedDays === 0) return <EmptyState icon={<BarChart3 size={36}/>} text="Недостаточно данных дневника за период"/>;
+
+  const weightTrend = data.weightTrend;
+  let weightChart: React.ReactNode = null;
+  if (weightTrend.length >= 2) {
+    const values = weightTrend.map(p => p.weightKg);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = Math.max(0.5, max - min);
+    const width = 600, height = 100;
+    const points = weightTrend.map((p, i) => {
+      const x = (i / Math.max(1, weightTrend.length - 1)) * width;
+      const y = height - ((p.weightKg - min) / range) * height;
+      return `${x},${y}`;
+    }).join(' ');
+    weightChart = (
+      <div className="bg-zinc-800/40 rounded-xl p-4 border border-zinc-700/50 mt-4">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-zinc-400 text-xs">Динамика веса</p>
+          <p className="text-white text-sm font-medium">{values[0]} → {values[values.length - 1]} кг</p>
+        </div>
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-24">
+          <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2" className="text-emerald-400"/>
+        </svg>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex gap-2 mb-4">
+        {[7, 30, 90].map(d => (
+          <button key={d} onClick={() => setDays(d)}
+            className={cn('px-3 py-1.5 rounded-lg text-sm', days === d ? 'bg-emerald-500 text-white' : 'bg-zinc-800/60 text-zinc-400')}>
+            {d} дн.
+          </button>
+        ))}
+      </div>
+
+      <p className="text-zinc-500 text-xs mb-3">Дневник вёлся {data.trackedDays} из {data.days} дн.</p>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-zinc-800/40 rounded-xl p-4 border border-zinc-700/50">
+          <p className="text-zinc-400 text-xs mb-1">Средние калории</p>
+          <p className="text-white text-xl font-bold">{data.avgCalories} ккал</p>
+          {data.goals && <p className="text-zinc-500 text-xs mt-1">цель {Math.round(data.goals.calories)} ккал</p>}
+        </div>
+        <div className="bg-zinc-800/40 rounded-xl p-4 border border-zinc-700/50">
+          <p className="text-zinc-400 text-xs mb-1">Дней в норме калорий</p>
+          <p className="text-white text-xl font-bold">{data.calGoalHitDays} / {data.trackedDays}</p>
+        </div>
+        <div className="bg-zinc-800/40 rounded-xl p-4 border border-zinc-700/50">
+          <p className="text-zinc-400 text-xs mb-1">Белки / Жиры / Углеводы</p>
+          <p className="text-white text-base font-semibold">{data.avgProtein} / {data.avgFat} / {data.avgCarbs} г</p>
+        </div>
+      </div>
+
+      {weightChart}
+    </div>
+  );
+}
+
+// ─── Вкладка: Планы питания ──────────────────────────────────────────────────
+
+const PLAN_DAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const PLAN_MEAL_TYPES: { id: string; label: string }[] = [
+  { id: 'BREAKFAST', label: 'Завтрак' },
+  { id: 'LUNCH', label: 'Обед' },
+  { id: 'DINNER', label: 'Ужин' },
+  { id: 'SNACK', label: 'Перекус' },
+];
+
+interface DraftPlanItem {
+  dayOfWeek: number;
+  mealType: string;
+  productId: string;
+  productName: string;
+  amountGrams: number;
+}
+
+function MealPlansTab({ clientId }: { clientId: string }) {
+  const api = useApi();
+  const [plans, setPlans] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [title, setTitle] = useState('');
+  const [weekStartDate, setWeekStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [draftItems, setDraftItems] = useState<DraftPlanItem[]>([]);
+
+  const [dayOfWeek, setDayOfWeek] = useState(0);
+  const [mealType, setMealType] = useState('BREAKFAST');
+  const [amountGrams, setAmountGrams] = useState('100');
+  const [productQuery, setProductQuery] = useState('');
+  const [productResults, setProductResults] = useState<any[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<{ id: string; name: string } | null>(null);
+
+  const [shoppingListPlanId, setShoppingListPlanId] = useState<string | null>(null);
+  const [shoppingList, setShoppingList] = useState<{ category: string; items: { name: string; totalGrams: number }[] }[] | null>(null);
+  const [loadingShoppingList, setLoadingShoppingList] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { const d = await api.get(`/api/crm/clients/${clientId}/meal-plans`); setPlans(d.plans || []); }
+    catch {} finally { setLoading(false); }
+  }, [clientId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const q = productQuery.trim();
+    if (q.length < 2) { setProductResults([]); return; }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/products/search?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        setProductResults(Array.isArray(data) ? data : []);
+      } catch { setProductResults([]); }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [productQuery]);
+
+  function addDraftItem() {
+    if (!selectedProduct) return;
+    const grams = Math.max(1, Number(amountGrams) || 100);
+    setDraftItems(prev => [...prev, { dayOfWeek, mealType, productId: selectedProduct.id, productName: selectedProduct.name, amountGrams: grams }]);
+    setSelectedProduct(null);
+    setProductQuery('');
+    setProductResults([]);
+    setAmountGrams('100');
+  }
+
+  function removeDraftItem(index: number) {
+    setDraftItems(prev => prev.filter((_, i) => i !== index));
+  }
+
+  async function savePlan() {
+    if (!title.trim() || draftItems.length === 0) return;
+    setSaving(true);
+    try {
+      await api.post(`/api/crm/clients/${clientId}/meal-plans`, {
+        title: title.trim(),
+        weekStartDate,
+        items: draftItems.map(({ dayOfWeek, mealType, productId, amountGrams }) => ({ dayOfWeek, mealType, productId, amountGrams })),
+      });
+      setTitle(''); setDraftItems([]); setIsCreating(false);
+      await load();
+    } catch (e: any) { alert(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function deletePlan(planId: string) {
+    if (!confirm('Удалить план питания?')) return;
+    try { await api.del(`/api/crm/meal-plans/${planId}`); await load(); }
+    catch (e: any) { alert(e.message); }
+  }
+
+  async function generateShoppingList(planId: string) {
+    setShoppingListPlanId(planId);
+    setShoppingList(null);
+    setLoadingShoppingList(true);
+    try {
+      const d = await api.post(`/api/crm/meal-plans/${planId}/shopping-list`, {});
+      setShoppingList(d.shoppingList || []);
+    } catch (e: any) { alert(e.message); setShoppingListPlanId(null); }
+    finally { setLoadingShoppingList(false); }
+  }
+
+  if (loading) return <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-zinc-500"/></div>;
+
+  if (shoppingListPlanId) {
+    return (
+      <div>
+        <button onClick={() => { setShoppingListPlanId(null); setShoppingList(null); }} className="text-zinc-400 text-sm mb-4 flex items-center gap-1">
+          <ChevronLeft size={16}/> Назад к планам
+        </button>
+        <h3 className="text-white font-semibold mb-3 flex items-center gap-2"><ShoppingCart size={16}/> Список покупок</h3>
+        {loadingShoppingList ? (
+          <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-zinc-500"/></div>
+        ) : !shoppingList || shoppingList.length === 0 ? (
+          <EmptyState icon={<ShoppingCart size={36}/>} text="План пуст"/>
+        ) : (
+          <div className="space-y-4">
+            {shoppingList.map(group => (
+              <div key={group.category} className="bg-zinc-800/40 rounded-xl p-4 border border-zinc-700/50">
+                <p className="text-emerald-400 text-sm font-semibold mb-2">{group.category}</p>
+                <div className="space-y-1">
+                  {group.items.map(item => (
+                    <div key={item.name} className="flex items-center justify-between text-sm">
+                      <span className="text-zinc-300">{item.name}</span>
+                      <span className="text-zinc-500">{item.totalGrams} г</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (isCreating) {
+    return (
+      <div>
+        <button onClick={() => setIsCreating(false)} className="text-zinc-400 text-sm mb-4 flex items-center gap-1">
+          <ChevronLeft size={16}/> Назад к планам
+        </button>
+
+        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Название плана (напр. «Неделя 1»)"
+          className="w-full bg-zinc-800/60 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-500 mb-3"/>
+        <input type="date" value={weekStartDate} onChange={e => setWeekStartDate(e.target.value)}
+          className="w-full bg-zinc-800/60 border border-zinc-700 rounded-xl px-4 py-3 text-white mb-4"/>
+
+        <div className="bg-zinc-800/40 rounded-xl p-4 border border-zinc-700/50 mb-4">
+          <p className="text-zinc-400 text-xs mb-3">Добавить продукт в план</p>
+          <div className="flex gap-2 mb-2">
+            <select value={dayOfWeek} onChange={e => setDayOfWeek(Number(e.target.value))} className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-2 text-white text-sm">
+              {PLAN_DAY_LABELS.map((label, i) => <option key={i} value={i}>{label}</option>)}
+            </select>
+            <select value={mealType} onChange={e => setMealType(e.target.value)} className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-2 text-white text-sm">
+              {PLAN_MEAL_TYPES.map(mt => <option key={mt.id} value={mt.id}>{mt.label}</option>)}
+            </select>
+          </div>
+          <div className="relative mb-2">
+            <input value={selectedProduct ? selectedProduct.name : productQuery}
+              onChange={e => { setSelectedProduct(null); setProductQuery(e.target.value); }}
+              placeholder="Поиск продукта…"
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm placeholder-zinc-500"/>
+            {!selectedProduct && productResults.length > 0 && (
+              <div className="absolute z-10 left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg max-h-48 overflow-y-auto">
+                {productResults.map((p: any) => (
+                  <button key={p.id} onClick={() => { setSelectedProduct({ id: p.id, name: p.name }); setProductResults([]); }}
+                    className="w-full text-left px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <input type="number" min={1} value={amountGrams} onChange={e => setAmountGrams(e.target.value)}
+              className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm"/>
+            <span className="text-zinc-500 text-sm self-center">г</span>
+            <button onClick={addDraftItem} disabled={!selectedProduct}
+              className="flex-1 bg-emerald-500 disabled:opacity-40 text-white rounded-lg text-sm font-medium">
+              Добавить
+            </button>
+          </div>
+        </div>
+
+        {draftItems.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {draftItems.map((item, i) => (
+              <div key={i} className="flex items-center justify-between bg-zinc-800/40 rounded-lg px-3 py-2 border border-zinc-700/50">
+                <span className="text-zinc-300 text-sm">
+                  {PLAN_DAY_LABELS[item.dayOfWeek]} · {PLAN_MEAL_TYPES.find(mt => mt.id === item.mealType)?.label} · {item.productName} — {item.amountGrams} г
+                </span>
+                <button onClick={() => removeDraftItem(i)} className="text-zinc-500 hover:text-red-400"><X size={14}/></button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button onClick={savePlan} disabled={saving || !title.trim() || draftItems.length === 0}
+          className="w-full py-3 bg-emerald-500 disabled:opacity-40 text-white rounded-xl font-medium">
+          {saving ? <Loader2 size={16} className="animate-spin mx-auto"/> : 'Сохранить план'}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <button onClick={() => setIsCreating(true)} className="w-full mb-4 py-3 bg-zinc-800/60 border border-zinc-700 rounded-xl text-zinc-300 text-sm font-medium flex items-center justify-center gap-2">
+        <Plus size={16}/> Новый план питания
+      </button>
+
+      {plans.length === 0 ? (
+        <EmptyState icon={<Utensils size={36}/>} text="У клиента пока нет плана питания"/>
+      ) : (
+        <div className="space-y-2">
+          {plans.map(plan => (
+            <div key={plan.id} className="bg-zinc-800/40 rounded-xl p-4 border border-zinc-700/50">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-white font-medium">{plan.title}</p>
+                <button onClick={() => deletePlan(plan.id)} className="text-zinc-500 hover:text-red-400"><Trash2 size={14}/></button>
+              </div>
+              <p className="text-zinc-500 text-xs mb-3">
+                с {new Date(plan.weekStartDate).toLocaleDateString('ru-RU')} · {plan.items?.length || 0} позиций
+              </p>
+              <button onClick={() => generateShoppingList(plan.id)}
+                className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-zinc-200 text-xs font-medium flex items-center gap-1.5">
+                <ShoppingCart size={12}/> Список покупок
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Вкладка: Заметки ─────────────────────────────────────────────────────
 
 function NotesTab({ clientId }: { clientId: string }) {
@@ -828,6 +1162,8 @@ function ClientCard({ clientId, inviteToken, onBack }: { clientId: string | null
     { id: 'questionnaire', label: 'Анкета', icon: <User size={14}/> },
     { id: 'diary', label: 'Дневник', icon: <Clipboard size={14}/> },
     { id: 'weight', label: 'Вес', icon: <Scale size={14}/> },
+    { id: 'analytics', label: 'Статистика', icon: <BarChart3 size={14}/> },
+    { id: 'mealplans', label: 'Меню', icon: <Utensils size={14}/> },
     { id: 'analyses', label: 'Анализы', icon: <FileText size={14}/> },
     { id: 'notes', label: 'Заметки', icon: <MessageSquare size={14}/> },
     { id: 'recommendations', label: 'Рекомендации', icon: <Star size={14}/> },
@@ -889,6 +1225,8 @@ function ClientCard({ clientId, inviteToken, onBack }: { clientId: string | null
             )}
             {activeTab === 'diary' && clientId && <DiaryTab clientId={clientId}/>}
             {activeTab === 'weight' && clientId && <WeightTab clientId={clientId}/>}
+            {activeTab === 'analytics' && clientId && <AnalyticsTab clientId={clientId}/>}
+            {activeTab === 'mealplans' && clientId && <MealPlansTab clientId={clientId}/>}
             {activeTab === 'analyses' && clientId && <AnalysesTab clientId={clientId}/>}
             {activeTab === 'notes' && clientId && <NotesTab clientId={clientId}/>}
             {activeTab === 'recommendations' && clientId && <RecommendationsTab clientId={clientId}/>}

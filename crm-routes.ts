@@ -422,6 +422,72 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
     }
   });
 
+  // ── АНАЛИТИКА КЛИЕНТА ЗА ПЕРИОД ────────────────────────────────────────────
+
+  app.get("/api/crm/clients/:clientId/analytics", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const { clientId } = req.params;
+      const days = Math.min(180, Math.max(1, parseInt(String(req.query.days ?? "30"), 10) || 30));
+
+      const clientUser = await prisma.user.findUnique({ where: { id: clientId } });
+      if (!clientUser || !isClientRole(clientUser.role)) return res.status(404).json({ error: "Клиент не найден" });
+
+      const since = new Date();
+      since.setDate(since.getDate() - days);
+
+      const [meals, goals, weightLogs] = await Promise.all([
+        prisma.meal.findMany({
+          where: { userId: clientId, date: { gte: since }, type: { not: "WATER" } },
+          include: { items: { include: { product: true } } },
+        }),
+        prisma.nutrientGoal.findUnique({ where: { userId: clientId } }),
+        (prisma as any).weightLog.findMany({ where: { userId: clientId, date: { gte: since } }, orderBy: { date: "asc" } }),
+      ]);
+
+      const dayTotals = new Map<string, { calories: number; protein: number; fat: number; carbs: number }>();
+      for (const meal of meals) {
+        const key = meal.date.toISOString().slice(0, 10);
+        const point = dayTotals.get(key) || { calories: 0, protein: 0, fat: 0, carbs: 0 };
+        for (const item of meal.items) {
+          const factor = item.amount / 100;
+          const product = item.product || ({} as any);
+          point.calories += (product.calories || 0) * factor;
+          point.protein += (product.protein || 0) * factor;
+          point.fat += (product.fat || 0) * factor;
+          point.carbs += (product.carbs || 0) * factor;
+        }
+        dayTotals.set(key, point);
+      }
+
+      const trackedDays = Array.from(dayTotals.values());
+      const n = trackedDays.length || 1;
+      const avgCalories = trackedDays.reduce((s, d) => s + d.calories, 0) / n;
+      const avgProtein = trackedDays.reduce((s, d) => s + d.protein, 0) / n;
+      const avgFat = trackedDays.reduce((s, d) => s + d.fat, 0) / n;
+      const avgCarbs = trackedDays.reduce((s, d) => s + d.carbs, 0) / n;
+
+      const calGoalHitDays = goals
+        ? trackedDays.filter((d) => Math.abs(d.calories - goals.calories) / Math.max(1, goals.calories) <= 0.1).length
+        : 0;
+
+      const weightTrend = weightLogs.map((w: any) => ({ date: new Date(w.date).toISOString().slice(0, 10), weightKg: w.weightKg }));
+
+      return res.json({
+        days,
+        trackedDays: trackedDays.length,
+        avgCalories: Math.round(avgCalories),
+        avgProtein: Math.round(avgProtein),
+        avgFat: Math.round(avgFat),
+        avgCarbs: Math.round(avgCarbs),
+        calGoalHitDays,
+        goals,
+        weightTrend,
+      });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
   // ── ЗАМЕТКИ: список ────────────────────────────────────────────────────────
 
   app.get("/api/crm/clients/:clientId/notes", requireNutritionist, async (req: Request, res: Response) => {
@@ -681,6 +747,148 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       });
 
       return res.json({ consultation });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── ПЛАНЫ ПИТАНИЯ: список для клиента ──────────────────────────────────────
+
+  app.get("/api/crm/clients/:clientId/meal-plans", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const { clientId } = req.params;
+      const clientUser = await prisma.user.findUnique({ where: { id: clientId } });
+      if (!clientUser || !isClientRole(clientUser.role)) return res.status(404).json({ error: "Клиент не найден" });
+
+      const plans = await (prisma as any).mealPlan.findMany({
+        where: { clientId },
+        include: { items: true },
+        orderBy: { weekStartDate: "desc" },
+      });
+      return res.json({ plans });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── ПЛАНЫ ПИТАНИЯ: создать ──────────────────────────────────────────────────
+
+  app.post("/api/crm/clients/:clientId/meal-plans", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientId } = req.params;
+      const { title, weekStartDate, items } = req.body;
+
+      const clientUser = await prisma.user.findUnique({ where: { id: clientId } });
+      if (!clientUser || !isClientRole(clientUser.role)) return res.status(404).json({ error: "Клиент не найден" });
+      if (!title || !weekStartDate) return res.status(400).json({ error: "Название и дата начала недели обязательны" });
+      if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "План должен содержать хотя бы один продукт" });
+
+      const plan = await (prisma as any).mealPlan.create({
+        data: {
+          nutritionistId,
+          clientId,
+          title: String(title).trim(),
+          weekStartDate: new Date(weekStartDate),
+          items: {
+            create: items.map((it: any) => ({
+              dayOfWeek: Math.min(6, Math.max(0, parseInt(it.dayOfWeek, 10) || 0)),
+              mealType: String(it.mealType || "BREAKFAST"),
+              productId: String(it.productId),
+              amountGrams: Math.max(1, Number(it.amountGrams) || 100),
+            })),
+          },
+        },
+        include: { items: { include: { product: true } } },
+      });
+
+      return res.json({ plan });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── ПЛАНЫ ПИТАНИЯ: получить один (с продуктами) ─────────────────────────────
+
+  app.get("/api/crm/meal-plans/:planId", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { planId } = req.params;
+      const plan = await (prisma as any).mealPlan.findUnique({
+        where: { id: planId },
+        include: { items: { include: { product: true } } },
+      });
+      if (!plan || plan.nutritionistId !== nutritionistId) return res.status(404).json({ error: "План не найден" });
+      return res.json({ plan });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── ПЛАНЫ ПИТАНИЯ: удалить ───────────────────────────────────────────────────
+
+  app.delete("/api/crm/meal-plans/:planId", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { planId } = req.params;
+      const plan = await (prisma as any).mealPlan.findUnique({ where: { id: planId } });
+      if (!plan || plan.nutritionistId !== nutritionistId) return res.status(404).json({ error: "План не найден" });
+
+      await (prisma as any).mealPlan.delete({ where: { id: planId } });
+      return res.json({ success: true });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── ПЛАНЫ ПИТАНИЯ: список покупок ────────────────────────────────────────────
+  // Грубая категоризация по ключевым словам в названии продукта — без AI,
+  // т.к. в Product нет поля category, а для списка покупок нужна стабильность.
+  const SHOPPING_CATEGORY_KEYWORDS: { category: string; keywords: string[] }[] = [
+    { category: "Овощи и фрукты", keywords: ["яблок", "банан", "помидор", "огурец", "картоф", "морков", "лук", "капуст", "перец", "зелен", "салат", "фрукт", "овощ", "ягод", "лимон", "апельсин", "чеснок", "свекл", "тыкв", "кабачок"] },
+    { category: "Молочные продукты", keywords: ["молок", "сыр", "творог", "йогурт", "кефир", "сметан", "масло слив", "сливк"] },
+    { category: "Мясо, рыба, яйца", keywords: ["мясо", "курин", "куриц", "говяд", "свин", "индейк", "рыба", "лосос", "тунец", "яйцо", "яйца", "фарш", "колбас"] },
+    { category: "Крупы, мука, бакалея", keywords: ["мука", "рис", "греч", "овес", "макарон", "паста", "крупа", "сахар", "соль", "масло раст", "хлеб"] },
+  ];
+  function categorizeProductName(name: string): string {
+    const lower = name.toLowerCase();
+    for (const { category, keywords } of SHOPPING_CATEGORY_KEYWORDS) {
+      if (keywords.some((kw) => lower.includes(kw))) return category;
+    }
+    return "Прочее";
+  }
+
+  app.post("/api/crm/meal-plans/:planId/shopping-list", requireNutritionist, async (req: Request, res: Response) => {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { planId } = req.params;
+      const plan = await (prisma as any).mealPlan.findUnique({
+        where: { id: planId },
+        include: { items: { include: { product: true } } },
+      });
+      if (!plan || plan.nutritionistId !== nutritionistId) return res.status(404).json({ error: "План не найден" });
+
+      const totalsByProduct = new Map<string, { name: string; totalGrams: number }>();
+      for (const item of plan.items) {
+        const key = item.productId;
+        const entry = totalsByProduct.get(key) || { name: item.product.name, totalGrams: 0 };
+        entry.totalGrams += item.amountGrams;
+        totalsByProduct.set(key, entry);
+      }
+
+      const grouped = new Map<string, { name: string; totalGrams: number }[]>();
+      for (const entry of totalsByProduct.values()) {
+        const category = categorizeProductName(entry.name);
+        if (!grouped.has(category)) grouped.set(category, []);
+        grouped.get(category)!.push({ name: entry.name, totalGrams: Math.round(entry.totalGrams) });
+      }
+
+      const shoppingList = Array.from(grouped.entries()).map(([category, items]) => ({
+        category,
+        items: items.sort((a, b) => a.name.localeCompare(b.name)),
+      }));
+
+      return res.json({ shoppingList });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }

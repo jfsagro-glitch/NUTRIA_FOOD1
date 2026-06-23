@@ -9,6 +9,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import Levenshtein from "fast-levenshtein";
 import OpenAI from "openai";
 import { ProxyAgent } from "undici";
+import { ZipArchive } from "archiver";
 import { registerCrmRoutes } from "./crm-routes.ts";
 import { registerTelegramBot } from "./telegram-bot.ts";
 
@@ -3319,6 +3320,61 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       console.error("Weight History Error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
+  });
+
+  // Экспорт личных данных пользователя в zip (GDPR-style)
+  app.get("/api/export", async (req, res) => {
+    const userId = req.cookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    let diary: any[];
+    let customFoods: any[];
+    let weightHistory: any[];
+    let activityHistory: any[];
+
+    if (!isDatabaseConfigured()) {
+      diary = getOrCreateInMemoryDiary(userId).meals;
+      customFoods = getOrCreateInMemoryCustomProducts(userId);
+      weightHistory = Array.from(getOrCreateInMemoryWeightLogs(userId).entries())
+        .map(([date, weightKg]) => ({ date, weightKg }));
+      activityHistory = getOrCreateInMemoryActivities(userId);
+    } else {
+      try {
+        const [meals, products, weightLogs, activities] = await Promise.all([
+          prisma.meal.findMany({
+            where: { userId },
+            include: { items: { include: { product: true } } },
+            orderBy: { date: "asc" },
+          }),
+          prisma.product.findMany({ where: { createdByUserId: userId, source: "user" } }),
+          prisma.weightLog.findMany({ where: { userId }, orderBy: { date: "asc" } }),
+          prisma.activityLog.findMany({ where: { userId }, orderBy: { date: "asc" } }),
+        ]);
+        diary = meals;
+        customFoods = products;
+        weightHistory = weightLogs.map((l) => ({ date: toDateKey(l.date), weightKg: l.weightKg }));
+        activityHistory = activities;
+      } catch (e: any) {
+        console.error("Export Error:", e);
+        return res.status(500).json({ error: "Internal Server Error", message: e.message });
+      }
+    }
+
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="nutria-export-${toDateKey(new Date())}.zip"`);
+
+    const archive = new ZipArchive({ zlib: { level: 9 } });
+    archive.on("error", (err) => {
+      console.error("Export archive error:", err);
+      if (!res.headersSent) res.status(500).json({ error: "Internal Server Error" });
+      else res.end();
+    });
+    archive.pipe(res);
+    archive.append(JSON.stringify(diary, null, 2), { name: "diary.json" });
+    archive.append(JSON.stringify(customFoods, null, 2), { name: "custom_foods.json" });
+    archive.append(JSON.stringify(weightHistory, null, 2), { name: "weight_history.json" });
+    archive.append(JSON.stringify(activityHistory, null, 2), { name: "activity_history.json" });
+    await archive.finalize();
   });
 
   // Diary: Add meal item

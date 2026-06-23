@@ -33,7 +33,8 @@ import {
   MessageCircle,
   Send,
   Flame,
-  Link2
+  Link2,
+  Download
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -2629,6 +2630,18 @@ const SummaryScreen = ({
                       </button>
                     </div>
                   )}
+                </div>
+
+                <div className="mt-4 bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+                  <p className="text-base font-semibold text-zinc-100 mb-3">Экспорт данных</p>
+                  <p className="text-sm text-zinc-400 mb-3">Скачайте архив со всеми своими записями: дневник питания, свои продукты, вес и активность.</p>
+                  <a
+                    href="/api/export"
+                    download
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-sm font-medium transition-colors"
+                  >
+                    <Download size={16} /> Скачать архив
+                  </a>
                 </div>
               </div>
             </motion.div>

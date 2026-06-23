@@ -52,6 +52,9 @@ model User {
   // Трекер активности (новое, Sprint 2)
   activityLogs ActivityLog[]
   weightLogs   WeightLog[]
+
+  // Планы питания CRM (новое, Sprint 4)
+  mealPlansAsNutritionist MealPlan[] @relation("NutritionistMealPlans")
 }
 
 // ─── Профиль нутрициолога ────────────────────────────────────────────────────
@@ -283,6 +286,7 @@ model Product {
   recipe           Recipe?  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
   recentFoods      RecentFood[]
   recipeIngredients RecipeIngredient[]
+  mealPlanItems     MealPlanItem[]
 
   @@unique([name, brand])
 }
@@ -402,6 +406,36 @@ model WeightLog {
 
   @@unique([userId, date])
   @@index([userId, date])
+}
+
+// ─── Планы питания CRM (новое, Sprint 4) ─────────────────────────────────────
+// Нутрициолог составляет недельный план блюд для клиента; каждая позиция плана —
+// продукт + граммовка (как MealItem в дневнике), привязанная к дню недели и приёму пищи.
+// Список покупок строится агрегацией всех MealPlanItem плана.
+model MealPlan {
+  id             String         @id @default(cuid())
+  nutritionistId String
+  nutritionist   User           @relation("NutritionistMealPlans", fields: [nutritionistId], references: [id], onDelete: Cascade)
+  clientId       String
+  title          String
+  weekStartDate  DateTime
+  items          MealPlanItem[]
+  createdAt      DateTime       @default(now())
+
+  @@index([nutritionistId, clientId])
+}
+
+model MealPlanItem {
+  id          String   @id @default(cuid())
+  planId      String
+  plan        MealPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  dayOfWeek   Int // 0 (Пн) .. 6 (Вс)
+  mealType    String // BREAKFAST | LUNCH | DINNER | SNACK
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  amountGrams Float
+
+  @@index([planId])
 }
 
 model NutrientGoal {
