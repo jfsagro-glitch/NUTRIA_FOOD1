@@ -666,20 +666,21 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   app.get("/api/crm/clients/:clientId/messages", requireNutritionist, async (req: Request, res: Response) => {
     try {
-      const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
 
       const clientUser = await prisma.user.findUnique({ where: { id: clientId } });
       if (!clientUser || !isClientRole(clientUser.role)) return res.status(404).json({ error: "Клиент не найден" });
 
+      // Переписка не делится по нутрициологам — это одна практика, любой
+      // нутрициолог видит всю переписку с клиентом, кем бы из них она ни велась.
       const messages = await (prisma as any).message.findMany({
-        where: { nutritionistId, clientId },
+        where: { clientId },
         orderBy: { createdAt: "asc" },
       });
 
       // Отмечаем сообщения от клиента как прочитанные
       await (prisma as any).message.updateMany({
-        where: { nutritionistId, clientId, sender: "CLIENT", readAt: null },
+        where: { clientId, sender: "CLIENT", readAt: null },
         data: { readAt: new Date() },
       });
 
@@ -716,10 +717,9 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   app.get("/api/crm/messages/unread-count", requireNutritionist, async (req: Request, res: Response) => {
     try {
-      const nutritionistId = (req as any).user.id;
       const rows = await (prisma as any).message.groupBy({
         by: ["clientId"],
-        where: { nutritionistId, sender: "CLIENT", readAt: null },
+        where: { sender: "CLIENT", readAt: null },
         _count: { _all: true },
       });
       const total = rows.reduce((sum: number, r: any) => sum + r._count._all, 0);
