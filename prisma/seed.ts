@@ -107,6 +107,35 @@ function buildMicronutrients(overrides: MicronutrientOverrides) {
   return merged;
 }
 
+function parseMicronutrientsRaw(raw: string | null | undefined): Micronutrients {
+  if (!raw) return buildMicronutrients({});
+  try {
+    const parsed = JSON.parse(raw);
+    return buildMicronutrients(parsed && typeof parsed === 'object' ? parsed : {});
+  } catch {
+    return buildMicronutrients({});
+  }
+}
+
+function buildMicronutrientsFromJson(raw: string): Micronutrients {
+  return parseMicronutrientsRaw(raw);
+}
+
+function mergeMicronutrientsPreferExisting(existing: Micronutrients, seeded: Micronutrients): Micronutrients {
+  const merged: any = {};
+  for (const groupKey of Object.keys(seeded)) {
+    const seededGroup: any = (seeded as any)[groupKey];
+    const existingGroup: any = (existing as any)[groupKey] || {};
+    merged[groupKey] = { ...seededGroup };
+    for (const key of Object.keys(seededGroup)) {
+      if (existingGroup[key]) {
+        merged[groupKey][key] = existingGroup[key];
+      }
+    }
+  }
+  return merged as Micronutrients;
+}
+
 async function main() {
   const products = [
     {
@@ -2866,6 +2895,19 @@ async function main() {
 
   for (const product of products) {
     const barcode = `seed-${Buffer.from(`${product.name}-${product.brand}`).toString('base64url').slice(0, 20)}`;
+    const existing = await prisma.product.findUnique({
+      where: { name_brand: { name: product.name, brand: product.brand } },
+      select: { micronutrients: true },
+    });
+
+    // Сидинг гоняется на каждом старте сервера (см. scripts/start-server.mjs), поэтому
+    // микроэлементы нельзя слепо перезатирать — это стирало бы уже накопленные/уточнённые
+    // значения каждым деплоем. Берём ненулевое значение по каждому нутриенту, отдавая
+    // приоритет уже сохранённому в БД, и только подмешиваем то, чего там не было.
+    const mergedMicronutrients = JSON.stringify(
+      mergeMicronutrientsPreferExisting(parseMicronutrientsRaw(existing?.micronutrients), buildMicronutrientsFromJson(product.micronutrients))
+    );
+
     await prisma.product.upsert({
       where: {
         name_brand: {
@@ -2879,7 +2921,7 @@ async function main() {
         fat: product.fat,
         carbs: product.carbs,
         fiber: product.fiber,
-        micronutrients: product.micronutrients,
+        micronutrients: mergedMicronutrients,
       },
       create: {
         ...product,

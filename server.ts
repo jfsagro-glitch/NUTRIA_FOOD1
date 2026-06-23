@@ -83,6 +83,8 @@ const PRODUCT_SEARCH_CACHE_TTL_MS = Number(process.env.PRODUCT_SEARCH_CACHE_TTL_
 const RU_LOCALIZATION_CACHE_TTL_MS = Number(process.env.RU_LOCALIZATION_CACHE_TTL_MS || 1000 * 60 * 60 * 24 * 14);
 const ruLocalizationCache = new Map<string, { expiresAt: number; value: string }>();
 const CYRILLIC_RE = /[А-Яа-яЁё]/;
+// Защита от повторных параллельных AI-запросов на докомплектацию микроэлементов одного и того же продукта
+const micronutrientEnrichmentInFlight = new Set<string>();
 
 function getOrCreateInMemoryDiary(userId: string) {
   if (!inMemoryDiary.has(userId)) {
@@ -733,6 +735,9 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
 
   const parsedLocal = localProducts.map((product) => {
     const micro = buildCompleteMicronutrients(parseMicronutrients(product.micronutrients), product.fiber);
+    if (isMicronutrientDataEffectivelyEmpty(micro)) {
+      enrichProductMicronutrientsInBackground(product).catch(() => {});
+    }
     return { ...product, ...micro, source: "local" };
   });
 
@@ -1445,6 +1450,47 @@ function shouldRefreshMicronutrients(existingRaw: any, incoming: any) {
   }
 
   return false;
+}
+
+function isMicronutrientDataEffectivelyEmpty(completeMicro: ReturnType<typeof buildCompleteMicronutrients>) {
+  return Object.values(completeMicro).every((group) =>
+    Object.values(group as Record<string, number>).every((value) => numberOrZero(value) <= 0)
+  );
+}
+
+// Точечная докомплектация: если у продукта нет вообще никаких сохранённых микроэлементов
+// (старые/сидинговые записи без реальных данных), асинхронно (не блокируя текущий запрос)
+// запрашиваем у AI оценку и сохраняем её в Product.micronutrients — следующий показ дневника/поиска
+// у этого же продукта будет уже с реальными значениями.
+async function enrichProductMicronutrientsInBackground(product: { id: string; name: string; fiber?: number | null }) {
+  if (!isDatabaseConfigured() || micronutrientEnrichmentInFlight.has(product.id)) return;
+  micronutrientEnrichmentInFlight.add(product.id);
+
+  try {
+    const estimateResponseText = await withTimeout(generateAI(`Оцени полный микроэлементный состав продукта "${product.name}" на 100 г.
+Верни только JSON со структурой:
+{
+  "vitamins": { "BetaCarotene": number, "B1": number, "B2": number, "B5": number, "B6": number, "B9": number, "B12": number, "C": number, "A": number, "D": number, "E": number, "K": number, "B3": number, "Biotin": number, "Choline": number },
+  "minerals": { "Potassium": number, "Calcium": number, "Silicon": number, "Magnesium": number, "Sodium": number, "Sulfur": number, "Phosphorus": number, "Chlorine": number, "Vanadium": number, "Iron": number, "Iodine": number, "Cobalt": number, "Manganese": number, "Copper": number, "Molybdenum": number, "Selenium": number, "Chromium": number, "Zinc": number, "Salt": number },
+  "fattyAcids": { "Omega3": number, "Omega6": number, "Omega9": number, "TransFats": number, "Cholesterol": number },
+  "carbohydrateTypes": { "Glucose": number, "Fructose": number, "Galactose": number, "Sucrose": number, "Lactose": number, "Maltose": number, "Starch": number, "Fiber": number },
+  "aminoAcids": { "Alanine": number, "Arginine": number, "Asparagine": number, "AsparticAcid": number, "Valine": number, "Histidine": number, "Glycine": number, "Glutamine": number, "GlutamicAcid": number, "Isoleucine": number, "Leucine": number, "Lysine": number, "Methionine": number, "Proline": number, "Serine": number, "Tyrosine": number, "Threonine": number, "Tryptophan": number, "Phenylalanine": number, "Cysteine": number }
+}
+Единицы: витамины и большинство минералов в mg/mcg как принято в таблицах состава продуктов, аминокислоты и жирные кислоты в mg. Если нутриент отсутствует в продукте — укажи 0.`), 12000, "AI micronutrient enrichment");
+
+    const estimateData = parseAiJsonPayload(estimateResponseText || "{}");
+    const completeMicro = buildCompleteMicronutrients(estimateData, product.fiber);
+    if (isMicronutrientDataEffectivelyEmpty(completeMicro)) return;
+
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { micronutrients: JSON.stringify(completeMicro) },
+    });
+  } catch (e) {
+    console.error("Background micronutrient enrichment error:", e);
+  } finally {
+    micronutrientEnrichmentInFlight.delete(product.id);
+  }
 }
 
 function convertNutrientUnit(value: number, fromUnitRaw: any, targetUnitRaw: "mg" | "mcg" | "g") {
@@ -2637,6 +2683,9 @@ async function startServer() {
         ...m,
         items: m.items.map(i => {
           const micro = buildCompleteMicronutrients(parseMicronutrients(i.product.micronutrients), i.product.fiber);
+          if (isMicronutrientDataEffectivelyEmpty(micro)) {
+            enrichProductMicronutrientsInBackground(i.product).catch(() => {});
+          }
           return {
             ...i,
             product: { ...i.product, ...micro }
