@@ -4140,7 +4140,7 @@ export default function App() {
       setEditDishMealItemId(item.id);
       setEditDishMealItemRecipeId(recipeId);
       setDishName(recipe.name);
-      setDishCookedWeight(String(Math.round(item.amount)));
+      setDishCookedWeight(String(Math.round(recipe.cookedWeightGrams || item.amount)));
       setDishIngredients((recipe.ingredients || []).map((ing: any) => ({
         productId: ing.productId,
         name: ing.product?.name || ing.name || '',
@@ -4191,7 +4191,10 @@ export default function App() {
           body: JSON.stringify(payload)
         });
         if (res.ok) {
-          await updateMealItemAmountDirect(editDishMealItemId, payload.cookedWeightGrams);
+          // "Вес готового блюда" — это вес всего блюда (для пересчёта КБЖУ на 100г),
+          // а не порция, которую съел пользователь — amount в дневнике не трогаем.
+          fetchDiary(selectedDiaryDate);
+          fetchHints();
           closeMealItemComposition();
         }
         return;
