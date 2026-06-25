@@ -30,7 +30,7 @@ Render настроен на **Auto-Deploy при пуше в ветку `main`*
 3. Пуш в `main` = немедленный автодеплой на Render. Прогресс смотреть в Render Dashboard → `Events` (там видно `Deploy started` → `Deploy live` для конкретного коммита).
 4. Если коммиты лежат только в feature-ветке и не слиты в `main` — на проде ничего не изменится, как бы много коммитов ни было.
 
-Render-настройки сервиса (Build/Start command, переменные окружения) задаются в самой панели Render, а не файлами в репозитории — `railway.json`/`nixpacks.toml` (Railway-specific) удалены, т.к. Render их не читает.
+Render-настройки сервиса (Build/Start command, переменные окружения) задаются в самой панели Render, а не файлами в репозитории.
 
 Build command: `npm install && npm run build`
 Start command: `npm start` (= `node scripts/start-server.mjs`)
