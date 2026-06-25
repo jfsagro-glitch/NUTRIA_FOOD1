@@ -363,26 +363,52 @@ const BottomNav = ({ activeTab, onTabChange, unreadMessages = 0 }: { activeTab: 
 };
 
 const FAB = ({ onClick }: { onClick: () => void }) => {
+  // Кнопка фиксирована над BottomNav и иначе перекрывает заголовки карточек
+  // (Вода/Активность/Качество питания), когда они доскроллены до этой высоты —
+  // прячем её при скролле вниз и возвращаем при скролле вверх или у верха страницы.
+  const [visible, setVisible] = useState(true);
+  const lastScrollY = useRef(0);
+
+  useEffect(() => {
+    lastScrollY.current = window.scrollY;
+    const handleScroll = () => {
+      const y = window.scrollY;
+      if (y < 80) setVisible(true);
+      else if (y > lastScrollY.current + 4) setVisible(false);
+      else if (y < lastScrollY.current - 4) setVisible(true);
+      lastScrollY.current = y;
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   return (
-    <motion.button
-      animate={{
-        scale: [1, 1.04, 1, 1.03, 1],
-        boxShadow: [
-          '0 8px 24px rgba(0,115,112,0.35)',
-          '0 10px 28px rgba(0,115,112,0.5)',
-          '0 8px 24px rgba(0,115,112,0.35)',
-          '0 10px 28px rgba(0,115,112,0.48)',
-          '0 8px 24px rgba(0,115,112,0.35)'
-        ]
-      }}
-      transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
-      whileTap={{ scale: 0.9 }}
-      whileHover={{ scale: 1.05 }}
-      onClick={onClick}
-      className="fixed bottom-[72px] left-1/2 -translate-x-1/2 w-14 h-14 bg-gradient-to-br from-emerald-400 to-emerald-500 rounded-full flex items-center justify-center border border-emerald-300/20 z-50"
+    <motion.div
+      animate={{ opacity: visible ? 1 : 0, scale: visible ? 1 : 0.6 }}
+      transition={{ duration: 0.2 }}
+      style={{ pointerEvents: visible ? 'auto' : 'none' }}
+      className="fixed bottom-[72px] left-1/2 -translate-x-1/2 z-50"
     >
-      <Plus size={32} className="text-white" />
-    </motion.button>
+      <motion.button
+        animate={{
+          scale: [1, 1.04, 1, 1.03, 1],
+          boxShadow: [
+            '0 8px 24px rgba(0,115,112,0.35)',
+            '0 10px 28px rgba(0,115,112,0.5)',
+            '0 8px 24px rgba(0,115,112,0.35)',
+            '0 10px 28px rgba(0,115,112,0.48)',
+            '0 8px 24px rgba(0,115,112,0.35)'
+          ]
+        }}
+        transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+        whileTap={{ scale: 0.9 }}
+        whileHover={{ scale: 1.05 }}
+        onClick={onClick}
+        className="w-14 h-14 bg-gradient-to-br from-emerald-400 to-emerald-500 rounded-full flex items-center justify-center border border-emerald-300/20"
+      >
+        <Plus size={32} className="text-white" />
+      </motion.button>
+    </motion.div>
   );
 };
 
