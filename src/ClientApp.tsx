@@ -473,12 +473,57 @@ const CollapsibleCard = ({
   );
 };
 
+// Открытый bottom sheet добавляет запись в history, чтобы системная кнопка "назад"
+// закрывала только текущий sheet, а не выходила из приложения (история отсутствовала
+// и первый back сразу схлопывал всё приложение).
 const BottomSheet = ({ isOpen, onClose, children, title }: { isOpen: boolean, onClose: () => void, children: React.ReactNode, title?: string }) => {
+  const pushedHistoryRef = useRef(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    window.history.pushState({ sheetOpen: true }, '');
+    pushedHistoryRef.current = true;
+    const handlePopState = () => {
+      pushedHistoryRef.current = false;
+      onClose();
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      if (pushedHistoryRef.current) {
+        pushedHistoryRef.current = false;
+        window.history.back();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  // На мобильных при открытии клавиатуры visualViewport сжимается, но fixed-позиционирование
+  // считается от layout viewport — без этого sheet с инпутом и кнопками "Отмена/Добавить"
+  // уезжает под клавиатуру. Поднимаем sheet на высоту клавиатуры и уменьшаем его max-height.
+  useEffect(() => {
+    if (!isOpen) { setKeyboardInset(0); return; }
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const updateInset = () => {
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setKeyboardInset(inset);
+    };
+    updateInset();
+    vv.addEventListener('resize', updateInset);
+    vv.addEventListener('scroll', updateInset);
+    return () => {
+      vv.removeEventListener('resize', updateInset);
+      vv.removeEventListener('scroll', updateInset);
+    };
+  }, [isOpen]);
+
   return (
     <AnimatePresence>
       {isOpen && (
         <>
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -490,7 +535,8 @@ const BottomSheet = ({ isOpen, onClose, children, title }: { isOpen: boolean, on
             animate={{ y: 0 }}
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-            className="fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-zinc-800 rounded-t-[32px] p-6 pb-12 z-[70] shadow-[0_-8px_40px_rgba(0,0,0,0.5)] max-h-[90vh] overflow-y-auto"
+            style={{ bottom: keyboardInset, maxHeight: keyboardInset > 0 ? `calc(90vh - ${keyboardInset}px)` : undefined }}
+            className="fixed left-0 right-0 bg-zinc-900 border-t border-zinc-800 rounded-t-[32px] p-6 pb-12 z-[70] shadow-[0_-8px_40px_rgba(0,0,0,0.5)] max-h-[90vh] overflow-y-auto"
           >
             <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6" />
             {title && <h3 className="text-xl font-bold mb-6 text-center">{title}</h3>}
@@ -962,23 +1008,6 @@ function calculateAutoGoalsFromProfile(profile: UserProfileSettings): NutrientGo
     carbohydrateTypes: scaleMap(DEFAULT_GOALS.carbohydrateTypes),
   };
 }
-
-const NUTRI_SCORE_COLORS: Record<string, string> = {
-  A: "bg-emerald-500 text-white",
-  B: "bg-lime-500 text-white",
-  C: "bg-amber-500 text-white",
-  D: "bg-orange-500 text-white",
-  E: "bg-red-500 text-white",
-};
-
-const NutriScoreBadge = ({ grade }: { grade?: string }) => {
-  if (!grade || !NUTRI_SCORE_COLORS[grade]) return null;
-  return (
-    <span className={cn("inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold flex-shrink-0", NUTRI_SCORE_COLORS[grade])}>
-      {grade}
-    </span>
-  );
-};
 
 // Inline-редактирование граммов: клик по числу превращает его в поле ввода,
 // Enter/blur сохраняет через PATCH /api/diary/item/:id и обновляет дневник.
@@ -1460,11 +1489,14 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
                 onClick={() => toggleMeal(type)}
                 className="flex items-center gap-3 p-4 cursor-pointer active:opacity-80 transition-opacity"
               >
-                <div
-                  className="flex items-center justify-center flex-shrink-0 overflow-hidden"
-                  style={{ width: 58, height: 58, borderRadius: 14, background: PROTO.coolBlock }}
-                >
-                  <img src={mealIconSrc[type]} alt={mealLabels[type]} className="w-full h-full object-cover" />
+                <div className="flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ width: 64, height: 64, borderRadius: 16 }}>
+                  <img
+                    src={mealIconSrc[type]}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    style={{ borderRadius: 16 }}
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
@@ -1475,10 +1507,8 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
                       </span>
                     )}
                   </div>
-                  {isEmpty ? (
-                    <p style={{ fontSize: 12, color: PROTO.textMid, marginTop: 2 }}>Нажмите, чтобы добавить</p>
-                  ) : (
-                    <p style={{ fontSize: 12, color: PROTO.textMid, marginTop: 2 }} className="truncate">{items.map((i: any) => i.product.name).join(' · ')}</p>
+                  {!isEmpty && (
+                    <p style={{ fontSize: 13, color: PROTO.textMid, marginTop: 2 }} className="truncate">{items.map((i: any) => i.product.name).join(' · ')}</p>
                   )}
                   {mealTarget > 0 && (
                     <div style={{ height: 4, borderRadius: 9999, background: PROTO.softDivider, overflow: 'hidden', marginTop: 6 }}>
@@ -1496,8 +1526,7 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
               {expanded && (
                 <div style={{ borderTop: `1px solid ${PROTO.softDivider}` }}>
                   {isEmpty ? (
-                    <div className="p-4 text-center">
-                      <p style={{ fontSize: 12, color: PROTO.textMid, marginBottom: 12 }}>В этом приёме пищи пока нет записей</p>
+                    <div className="p-4">
                       <button
                         onClick={() => onAddClick(type)}
                         className="w-full text-sm font-semibold active:scale-[0.98] transition-transform"
@@ -1516,16 +1545,16 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
                             style={idx > 0 ? { borderTop: `1px solid ${PROTO.softDivider}` } : undefined}
                           >
                             <div className="flex-1 min-w-0">
-                              <p style={{ fontSize: 14, color: PROTO.text }} className="flex items-center gap-1.5">
+                              <p style={{ fontSize: 15, color: PROTO.text }} className="flex items-center gap-1.5">
                                 {item.product.source === 'quickadd' && <Zap size={12} style={{ color: PROTO.terra }} className="flex-shrink-0" />}
                                 <span className="truncate">{item.product.name}</span>
-                                <NutriScoreBadge grade={item.product.nutriScore?.grade} />
+                                {item.product.source === 'quickadd' && <span style={{ fontSize: 10, color: PROTO.textLt, flexShrink: 0 }}>приблизительно</span>}
                               </p>
-                              <p style={{ fontSize: 11, color: PROTO.textLt, marginTop: 2 }}>
+                              <p style={{ fontSize: 12, color: PROTO.textMid, marginTop: 2 }}>
                                 <InlineGramsInput item={item} onSave={onUpdateGrams} /> г · Б{Math.round((item.product.protein * item.amount) / 100)} · Ж{Math.round((item.product.fat * item.amount) / 100)} · У{Math.round((item.product.carbs * item.amount) / 100)}
                               </p>
                             </div>
-                            <span style={{ fontSize: 12, color: PROTO.textMid }} className="flex-shrink-0">{Math.round((item.product.calories * item.amount) / 100)} ккал</span>
+                            <span style={{ fontSize: 13, color: PROTO.textMid, fontWeight: 600 }} className="flex-shrink-0">{Math.round((item.product.calories * item.amount) / 100)} ккал</span>
                             {item.product.recipeId && (
                               <button onClick={() => onOpenComposition(item)} className="p-1.5 hover:text-emerald-500 transition-colors flex-shrink-0" style={{ color: PROTO.textLt }} title="Состав">
                                 <ListChecks size={14} />
@@ -1573,11 +1602,14 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
               {waterIntake >= waterGoal && <span style={{ color: PROTO.primary }}> · цель достигнута</span>}
             </p>
           </div>
-          <div
-            className="flex items-center justify-center flex-shrink-0 overflow-hidden"
-            style={{ width: 48, height: 48, borderRadius: 14, background: PROTO.coolBlock }}
-          >
-            <img src="/meal-icons/water.jpg" alt="Вода" className="w-full h-full object-cover" />
+          <div className="flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ width: 56, height: 56, borderRadius: 16 }}>
+            <img
+              src="/meal-icons/water.jpg"
+              alt=""
+              className="w-full h-full object-cover"
+              style={{ borderRadius: 16 }}
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+            />
           </div>
         </div>
         <p style={{ fontSize: 10, color: PROTO.textLt, marginBottom: 8 }}>Нажимайте на капли, чтобы отметить выпитое</p>
@@ -4942,24 +4974,8 @@ export default function App() {
                     className="w-full bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center active:bg-zinc-800 transition-colors"
                   >
                     <div className="text-left">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-zinc-200">{product.name}</p>
-                        <NutriScoreBadge grade={product.nutriScore?.grade} />
-                        {product.isUsda && (
-                          <span className="px-1.5 py-0.5 bg-blue-500/10 text-blue-400 text-[8px] font-bold rounded uppercase tracking-tighter border border-blue-500/20">
-                            USDA
-                          </span>
-                        )}
-                        {product.isAiEstimated && (
-                          <span className="px-1.5 py-0.5 bg-emerald-500/10 text-emerald-400 text-[8px] font-bold rounded uppercase tracking-tighter border border-emerald-500/20">
-                            AI
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{product.brand} • {product.calories} kcal / 100g</p>
-                      {product.explanation && (
-                        <p className="text-[9px] text-zinc-600 italic mt-1 leading-tight max-w-[200px]">{product.explanation}</p>
-                      )}
+                      <p className="font-semibold text-zinc-200 text-[15px]">{product.name}</p>
+                      <p className="text-[11px] text-zinc-500">{product.brand ? `${product.brand} • ` : ''}{Math.round(product.calories)} ккал / 100 г</p>
                     </div>
                     <Plus size={20} className="text-emerald-500" />
                   </button>
@@ -4992,8 +5008,8 @@ export default function App() {
                   className="w-full bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center active:bg-zinc-800 transition-colors"
                 >
                   <div className="text-left">
-                    <p className="font-semibold text-zinc-200">{product.name}</p>
-                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{product.brand} • {product.calories} kcal / 100g</p>
+                    <p className="font-semibold text-zinc-200 text-[15px]">{product.name}</p>
+                    <p className="text-[11px] text-zinc-500">{product.brand ? `${product.brand} • ` : ''}{Math.round(product.calories)} ккал / 100 г</p>
                   </div>
                   <Plus size={20} className="text-emerald-500" />
                 </button>
@@ -5042,8 +5058,8 @@ export default function App() {
                     className="w-full bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center active:bg-zinc-800 transition-colors"
                   >
                     <div className="text-left">
-                      <p className="font-semibold text-zinc-200">{recipe.name}</p>
-                      <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Блюдо • {Math.round(recipe.product.calories)} kcal / 100g</p>
+                      <p className="font-semibold text-zinc-200 text-[15px]">{recipe.name}</p>
+                      <p className="text-[11px] text-zinc-500">Блюдо • {Math.round(recipe.product.calories)} ккал / 100 г</p>
                     </div>
                     <Plus size={20} className="text-emerald-500" />
                   </button>
@@ -5055,8 +5071,8 @@ export default function App() {
                     className="w-full bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center active:bg-zinc-800 transition-colors"
                   >
                     <div className="text-left">
-                      <p className="font-semibold text-zinc-200">{product.name}</p>
-                      <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{product.brand || 'Свой продукт'} • {product.calories} kcal / 100g</p>
+                      <p className="font-semibold text-zinc-200 text-[15px]">{product.name}</p>
+                      <p className="text-[11px] text-zinc-500">{product.brand || 'Свой продукт'} • {Math.round(product.calories)} ккал / 100 г</p>
                     </div>
                     <Plus size={20} className="text-emerald-500" />
                   </button>
