@@ -1307,10 +1307,16 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
             <div className="absolute flex flex-col items-center text-center">
               <span style={{ fontSize: 11, color: PROTO.textLt, whiteSpace: 'nowrap' }}>{ringLabel}</span>
               <span className="font-display" style={{ fontSize: 30, fontWeight: 600, lineHeight: 1.2, color: over > 0 ? PROTO.terra : goalJustAchieved ? PROTO.goalAchieved : PROTO.text, whiteSpace: 'nowrap' }}>{ringValue}</span>
-              <span style={{ fontSize: 11, color: PROTO.textLt, marginTop: 2, lineHeight: 1.3, maxWidth: 116, display: 'inline-block' }}>
-                Цель: {calorieGoal} ккал
-                {totalBurned > 0 && <><br />{`+${Math.round(totalBurned)} от тренировок`}</>}
+              <span className="flex items-center justify-center gap-1" style={{ fontSize: 11, color: PROTO.textLt, marginTop: 2 }}>
+                <Target size={11} className="flex-shrink-0" />
+                {calorieGoal} ккал
               </span>
+              {totalBurned > 0 && (
+                <span className="flex items-center justify-center gap-1" style={{ fontSize: 11, color: PROTO.textLt, marginTop: 1 }}>
+                  <Flame size={11} className="flex-shrink-0" />
+                  +{Math.round(totalBurned)} ккал
+                </span>
+              )}
             </div>
           </div>
 
