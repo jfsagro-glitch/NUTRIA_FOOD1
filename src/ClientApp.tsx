@@ -476,16 +476,40 @@ const CollapsibleCard = ({
 // Открытый bottom sheet добавляет запись в history, чтобы системная кнопка "назад"
 // закрывала только текущий sheet, а не выходила из приложения (история отсутствовала
 // и первый back сразу схлопывал всё приложение).
+//
+// sheetDepth/sheetHistoryArmed — общие на все BottomSheet, а не per-instance:
+// когда один sheet закрывается и другой открывается в одном синхронном батче
+// (например, добавление продукта из поиска закрывает search-sheet и сразу
+// открывает review-sheet), React сначала прогоняет cleanup закрывающегося
+// эффекта (планирует history.back(), он асинхронный), потом setup открывающегося
+// (синхронный pushState). pushState успевает встать "над" ещё не отработавшим
+// back(), и когда back() всё же срабатывает, он схлопывает только что открытый
+// sheet вместо закрывшегося — popstate-листенер нового sheet'а получает событие
+// и сразу вызывает его onClose, не дав пользователю увидеть содержимое. Решение —
+// решать push/back через queueMicrotask, чтобы к моменту реального вызова глубина
+// уже отражала итог всего синхронного батча (swap "закрыть+открыть" даёт net 0).
+let sheetDepth = 0;
+let sheetHistoryArmed = false;
+
 const BottomSheet = ({ isOpen, onClose, children, title }: { isOpen: boolean, onClose: () => void, children: React.ReactNode, title?: string }) => {
   const pushedHistoryRef = useRef(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
 
   useEffect(() => {
     if (!isOpen) return;
-    window.history.pushState({ sheetOpen: true }, '');
     pushedHistoryRef.current = true;
+    sheetDepth += 1;
+    queueMicrotask(() => {
+      if (sheetDepth > 0 && !sheetHistoryArmed) {
+        window.history.pushState({ sheetOpen: true }, '');
+        sheetHistoryArmed = true;
+      }
+    });
     const handlePopState = () => {
+      if (!pushedHistoryRef.current) return;
       pushedHistoryRef.current = false;
+      sheetDepth = Math.max(0, sheetDepth - 1);
+      sheetHistoryArmed = false;
       onClose();
     };
     window.addEventListener('popstate', handlePopState);
@@ -493,7 +517,13 @@ const BottomSheet = ({ isOpen, onClose, children, title }: { isOpen: boolean, on
       window.removeEventListener('popstate', handlePopState);
       if (pushedHistoryRef.current) {
         pushedHistoryRef.current = false;
-        window.history.back();
+        sheetDepth = Math.max(0, sheetDepth - 1);
+        queueMicrotask(() => {
+          if (sheetDepth === 0 && sheetHistoryArmed) {
+            sheetHistoryArmed = false;
+            window.history.back();
+          }
+        });
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
