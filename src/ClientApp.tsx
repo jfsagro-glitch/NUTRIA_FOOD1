@@ -1276,10 +1276,11 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
                 transform="rotate(135 85 85)" className="transition-all duration-500" />
             </svg>
             <div className="absolute flex flex-col items-center text-center">
-              <span style={{ fontSize: 11, color: PROTO.textLt }}>{ringLabel}</span>
-              <span className="font-display" style={{ fontSize: 30, fontWeight: 600, lineHeight: 1.2, color: over > 0 ? PROTO.terra : goalJustAchieved ? PROTO.goalAchieved : PROTO.text }}>{ringValue}</span>
-              <span style={{ fontSize: 11, color: PROTO.textLt, marginTop: 2 }}>
-                Цель: {calorieGoal} ккал{totalBurned > 0 ? ` +${Math.round(totalBurned)} от тренировок` : ''}
+              <span style={{ fontSize: 11, color: PROTO.textLt, whiteSpace: 'nowrap' }}>{ringLabel}</span>
+              <span className="font-display" style={{ fontSize: 30, fontWeight: 600, lineHeight: 1.2, color: over > 0 ? PROTO.terra : goalJustAchieved ? PROTO.goalAchieved : PROTO.text, whiteSpace: 'nowrap' }}>{ringValue}</span>
+              <span style={{ fontSize: 11, color: PROTO.textLt, marginTop: 2, lineHeight: 1.3, maxWidth: 116, display: 'inline-block' }}>
+                Цель: {calorieGoal} ккал
+                {totalBurned > 0 && <><br />{`+${Math.round(totalBurned)} от тренировок`}</>}
               </span>
             </div>
           </div>
