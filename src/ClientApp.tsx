@@ -474,57 +474,84 @@ const CollapsibleCard = ({
 };
 
 // Открытый bottom sheet добавляет запись в history, чтобы системная кнопка "назад"
-// закрывала только текущий sheet, а не выходила из приложения (история отсутствовала
-// и первый back сразу схлопывал всё приложение).
+// закрывала только текущий sheet, а не выходила из приложения. Sheet'ы могут быть
+// вложены (например, sheet ввода веса открывается НАД ещё не закрытым sheet'ом поиска),
+// поэтому глубина истории должна точно соответствовать количеству реально открытых
+// sheet'ов, а закрывать на popstate можно только самый верхний — иначе одно нажатие
+// "назад" схлопывает все вложенные sheet'ы сразу, а на следующее нажатие истории уже
+// не остаётся и приложение закрывается целиком.
 //
-// sheetDepth/sheetHistoryArmed — общие на все BottomSheet, а не per-instance:
-// когда один sheet закрывается и другой открывается в одном синхронном батче
-// (например, добавление продукта из поиска закрывает search-sheet и сразу
-// открывает review-sheet), React сначала прогоняет cleanup закрывающегося
-// эффекта (планирует history.back(), он асинхронный), потом setup открывающегося
-// (синхронный pushState). pushState успевает встать "над" ещё не отработавшим
-// back(), и когда back() всё же срабатывает, он схлопывает только что открытый
-// sheet вместо закрывшегося — popstate-листенер нового sheet'а получает событие
-// и сразу вызывает его onClose, не дав пользователю увидеть содержимое. Решение —
-// решать push/back через queueMicrotask, чтобы к моменту реального вызова глубина
-// уже отражала итог всего синхронного батча (swap "закрыть+открыть" даёт net 0).
-let sheetDepth = 0;
-let sheetHistoryArmed = false;
+// sheetStack — общий на все BottomSheet LIFO-стек открытых instance'ов (а не per-instance
+// состояние): один общий popstate-листенер всегда обрабатывает только верхний элемент
+// стека, остальные открытые sheet'ы его игнорируют. historyDepth — сколько push-записей
+// реально сделано в history.history.pushState/back вызываются не сразу, а через
+// queueMicrotask и сверяются с sheetStack.length: если в одном синхронном батче один
+// sheet закрылся и другой открылся (React сначала прогоняет все cleanup, потом все setup),
+// к моменту микротаска стек уже отражает итог всего батча, и при swap "закрыть+открыть"
+// итоговая глубина не меняется — лишних push/back не происходит.
+let sheetStack: Array<{ token: symbol; onClose: () => void }> = [];
+let historyDepth = 0;
+let popstateAttached = false;
+// Когда sheet закрывается не системным "назад" (кнопкой/бэкдропом), reconcileSheetHistory
+// сам вызывает history.back() для очистки лишней записи истории. Этот вызов асинхронно
+// порождает свой собственный popstate, неотличимый от настоящего нажатия пользователя —
+// без подавления общий листенер реагирует на него и закрывает ещё и sheet под текущим.
+// pendingProgrammaticBacks считает такие "свои" back() и глушит ровно столько же popstate.
+let pendingProgrammaticBacks = 0;
+
+function reconcileSheetHistory() {
+  const target = sheetStack.length;
+  if (target > historyDepth) {
+    for (let i = historyDepth; i < target; i++) {
+      window.history.pushState({ sheetOpen: true }, '');
+    }
+    historyDepth = target;
+  } else if (target < historyDepth) {
+    const diff = historyDepth - target;
+    historyDepth = target;
+    for (let i = 0; i < diff; i++) {
+      pendingProgrammaticBacks += 1;
+      window.history.back();
+    }
+  }
+}
+
+function ensureSheetPopstateListener() {
+  if (popstateAttached) return;
+  popstateAttached = true;
+  window.addEventListener('popstate', () => {
+    if (pendingProgrammaticBacks > 0) {
+      pendingProgrammaticBacks -= 1;
+      return;
+    }
+    if (historyDepth <= 0) return;
+    historyDepth -= 1;
+    const top = sheetStack.pop();
+    top?.onClose();
+  });
+}
 
 const BottomSheet = ({ isOpen, onClose, children, title }: { isOpen: boolean, onClose: () => void, children: React.ReactNode, title?: string }) => {
-  const pushedHistoryRef = useRef(false);
+  const tokenRef = useRef<symbol | null>(null);
   const [keyboardInset, setKeyboardInset] = useState(0);
 
   useEffect(() => {
     if (!isOpen) return;
-    pushedHistoryRef.current = true;
-    sheetDepth += 1;
-    queueMicrotask(() => {
-      if (sheetDepth > 0 && !sheetHistoryArmed) {
-        window.history.pushState({ sheetOpen: true }, '');
-        sheetHistoryArmed = true;
-      }
-    });
-    const handlePopState = () => {
-      if (!pushedHistoryRef.current) return;
-      pushedHistoryRef.current = false;
-      sheetDepth = Math.max(0, sheetDepth - 1);
-      sheetHistoryArmed = false;
-      onClose();
-    };
-    window.addEventListener('popstate', handlePopState);
+    ensureSheetPopstateListener();
+    const token = Symbol();
+    tokenRef.current = token;
+    sheetStack.push({ token, onClose });
+    queueMicrotask(reconcileSheetHistory);
+
     return () => {
-      window.removeEventListener('popstate', handlePopState);
-      if (pushedHistoryRef.current) {
-        pushedHistoryRef.current = false;
-        sheetDepth = Math.max(0, sheetDepth - 1);
-        queueMicrotask(() => {
-          if (sheetDepth === 0 && sheetHistoryArmed) {
-            sheetHistoryArmed = false;
-            window.history.back();
-          }
-        });
+      const idx = sheetStack.findIndex((s) => s.token === tokenRef.current);
+      // Если запись уже не в стеке — этот sheet закрыл сам глобальный popstate-листенер
+      // (нажатие "назад"), история уже синхронизирована, повторно дёргать back() нельзя.
+      if (idx !== -1) {
+        sheetStack.splice(idx, 1);
+        queueMicrotask(reconcileSheetHistory);
       }
+      tokenRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
@@ -5133,6 +5160,9 @@ export default function App() {
               value={quickAddForm.calories}
               onChange={(e) => setQuickAddForm((p) => ({ ...p, calories: e.target.value }))}
             />
+            {quickAddForm.label.trim() && !quickAddForm.calories.trim() && (
+              <p className="text-[11px] text-orange-400 -mt-1">Укажите калории, чтобы сохранить запись</p>
+            )}
             <p className="text-[11px] text-zinc-500 uppercase tracking-wider pt-1">БЖУ (необязательно)</p>
             <div className="grid grid-cols-3 gap-3">
               <input type="number" placeholder="Белки, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
