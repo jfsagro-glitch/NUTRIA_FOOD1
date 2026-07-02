@@ -1202,8 +1202,13 @@ const PROTO = {
 
 // 7-дневная полоса дней над дневником — привычная календарная неделя с понедельника,
 // содержащая сегодняшний день (а не окно «последние 7 дней», где сегодня всегда в конце).
-// Будущие дни показываются, но неактивны.
+// Будущие дни показываются, но неактивны. Горизонтальный свайп по полосе листает недели:
+// назад — без ограничений, вперёд — не дальше текущей недели.
 const DiaryDateStrip = ({ selectedDate, onSelect }: { selectedDate: string; onSelect: (dateKey: string) => void }) => {
+  // 0 — текущая неделя, отрицательные значения — недели в прошлом
+  const [weekOffset, setWeekOffset] = useState(0);
+  const touchStartXRef = useRef<number | null>(null);
+
   const days = useMemo(() => {
     const today = new Date();
     const todayKey = toDateKey(today);
@@ -1211,14 +1216,44 @@ const DiaryDateStrip = ({ selectedDate, onSelect }: { selectedDate: string; onSe
     const mondayOffset = (today.getDay() + 6) % 7;
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(today);
-      d.setDate(today.getDate() - mondayOffset + i);
+      d.setDate(today.getDate() - mondayOffset + i + weekOffset * 7);
       const key = toDateKey(d);
       return { key, label: DIARY_DATE_STRIP_DAY_LABELS[d.getDay()], num: d.getDate(), isFuture: key > todayKey };
     });
-  }, []);
+  }, [weekOffset]);
+
+  // Подпись диапазона недели — без неё числа прошлых недель неотличимы от текущей
+  const weekCaption = useMemo(() => {
+    if (weekOffset === 0) return null;
+    const fmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' });
+    const first = new Date(`${days[0].key}T12:00:00`);
+    const last = new Date(`${days[6].key}T12:00:00`);
+    return `${fmt.format(first)} — ${fmt.format(last)}`;
+  }, [days, weekOffset]);
+
+  const handleTouchStart = (e: React.TouchEvent) => { touchStartXRef.current = e.touches[0]?.clientX ?? null; };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const startX = touchStartXRef.current;
+    touchStartXRef.current = null;
+    if (startX == null) return;
+    const delta = (e.changedTouches[0]?.clientX ?? startX) - startX;
+    if (Math.abs(delta) < 50) return;
+    // свайп вправо — неделя назад, влево — вперёд (максимум до текущей)
+    setWeekOffset((o) => (delta > 0 ? o - 1 : Math.min(0, o + 1)));
+  };
 
   return (
-    <div className="flex gap-1" style={{ padding: '2px 0 10px' }}>
+    <div onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} style={{ touchAction: 'pan-y' }}>
+      {weekCaption && (
+        <button
+          onClick={() => setWeekOffset(0)}
+          className="w-full text-center"
+          style={{ fontSize: 11, fontWeight: 600, color: PROTO.textMid, padding: '0 0 4px' }}
+        >
+          {weekCaption} · к текущей неделе
+        </button>
+      )}
+      <div className="flex gap-1" style={{ padding: '2px 0 10px' }}>
       {days.map((d) => {
         const isActive = d.key === selectedDate;
         return (
@@ -1260,6 +1295,7 @@ const DiaryDateStrip = ({ selectedDate, onSelect }: { selectedDate: string; onSe
           </button>
         );
       })}
+      </div>
     </div>
   );
 };

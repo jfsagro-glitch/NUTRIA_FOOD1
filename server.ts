@@ -1596,15 +1596,106 @@ function calcNutriScore(item: {
   return { score, grade };
 }
 
+// Точные микроэлементы из USDA FDC по названию продукта. Название в базе русское, поэтому
+// сначала переводим его в короткий английский поисковый запрос (единственное место, где
+// участвует AI — сами значения берутся из USDA без оценок). Generic-базы (Foundation,
+// SR Legacy) предпочтительнее Branded: значения на 100 г и полный аминокислотный профиль.
+async function fetchUsdaMicronutrientsByName(productName: string) {
+  const usdaKey = process.env.USDA_FDC_API_KEY;
+  if (!usdaKey) return null;
+
+  let englishQuery = String(productName || "").trim();
+  if (!englishQuery) return null;
+  try {
+    const translationText = await withTimeout(
+      generateAI(`Переведи название продукта "${productName}" в короткий английский поисковый запрос для базы продуктов USDA (без бренда и лишних слов, максимум 4 слова). Верни только JSON: {"query": "..."}`),
+      8000,
+      "USDA query translation"
+    );
+    const translated = parseAiJsonPayload(translationText || "{}");
+    if (translated?.query && String(translated.query).trim()) {
+      englishQuery = String(translated.query).trim();
+    }
+  } catch {
+    // перевод не удался — пробуем исходное название (для латиницы сработает и так)
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${usdaKey}&query=${encodeURIComponent(englishQuery)}&dataType=${encodeURIComponent("Foundation,SR Legacy")}&pageSize=5`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    if (!response.ok) return null;
+    const payload: any = await response.json();
+    const foods = Array.isArray(payload?.foods) ? payload.foods : [];
+    // Предпочитаем запись с аминокислотным профилем (id нутриентов 1210–1229) — именно
+    // его чаще всего не хватает; иначе берём первый результат.
+    const withAmino = foods.find((f: any) =>
+      Array.isArray(f?.foodNutrients) &&
+      f.foodNutrients.some((n: any) => Number(n?.nutrientId) >= 1210 && Number(n?.nutrientId) <= 1229 && numberOrZero(n?.value) > 0)
+    );
+    const food = withAmino || foods[0];
+    if (!food) return null;
+    return extractUsdaExtendedNutrients(food);
+  } catch (e) {
+    logError("USDA micronutrient lookup error:", e);
+    return null;
+  }
+}
+
 // Точечная докомплектация: если у продукта нет сохранённых микроэлементов или пуста
 // целая группа (например, аминокислоты), асинхронно (не блокируя текущий запрос)
-// запрашиваем у AI оценку и сохраняем её в Product.micronutrients — следующий показ дневника/поиска
-// у этого же продукта будет уже с реальными значениями. Уже заполненные группы
-// не перезаписываются: AI-оценка используется только для пустых групп.
+// добираем данные и сохраняем в Product.micronutrients. Приоритет источников:
+// сначала точные значения из USDA FDC, и только для групп, оставшихся пустыми, —
+// AI-оценка. Уже заполненные группы не перезаписываются.
 async function enrichProductMicronutrientsInBackground(product: { id: string; name: string; fiber?: number | null; micronutrients?: any }) {
   if (!isDatabaseConfigured() || micronutrientEnrichmentInFlight.has(product.id)) return;
   micronutrientEnrichmentInFlight.add(product.id);
 
+  try {
+    const existingMicro = buildCompleteMicronutrients(parseMicronutrients(product.micronutrients), product.fiber);
+    const merged: Record<string, Record<string, number>> = JSON.parse(JSON.stringify(existingMicro));
+    let changed = false;
+
+    const usdaMicro = await fetchUsdaMicronutrientsByName(product.name);
+    if (usdaMicro) {
+      const usdaComplete = buildCompleteMicronutrients(usdaMicro, product.fiber);
+      for (const groupKey of Object.keys(merged)) {
+        if (!hasAnyPositiveValue(merged[groupKey]) && hasAnyPositiveValue((usdaComplete as any)[groupKey])) {
+          merged[groupKey] = (usdaComplete as any)[groupKey];
+          changed = true;
+        }
+      }
+    }
+
+    // Группы, для которых и в USDA ничего не нашлось, добираем AI-оценкой —
+    // менее точно, но лучше нулей.
+    if (hasEmptyMicronutrientGroup(merged as any)) {
+      const estimatedMicro = await estimateMicronutrientsWithAI(product);
+      if (estimatedMicro) {
+        for (const groupKey of Object.keys(merged)) {
+          if (!hasAnyPositiveValue(merged[groupKey]) && hasAnyPositiveValue((estimatedMicro as any)[groupKey])) {
+            merged[groupKey] = (estimatedMicro as any)[groupKey];
+            changed = true;
+          }
+        }
+      }
+    }
+
+    if (!changed) return;
+
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { micronutrients: JSON.stringify(merged) },
+    });
+  } catch (e) {
+    logError("Background micronutrient enrichment error:", e);
+  } finally {
+    micronutrientEnrichmentInFlight.delete(product.id);
+  }
+}
+
+async function estimateMicronutrientsWithAI(product: { name: string; fiber?: number | null }) {
   try {
     const estimateResponseText = await withTimeout(generateAI(`Оцени полный микроэлементный состав продукта "${product.name}" на 100 г.
 Верни только JSON со структурой:
@@ -1619,27 +1710,54 @@ async function enrichProductMicronutrientsInBackground(product: { id: string; na
 
     const estimateData = parseAiJsonPayload(estimateResponseText || "{}");
     const estimatedMicro = buildCompleteMicronutrients(estimateData, product.fiber);
-    if (isMicronutrientDataEffectivelyEmpty(estimatedMicro)) return;
-
-    // Группы с реальными данными (из USDA/OFF/прошлых оценок) не трогаем — AI-оценка
-    // заполняет только пустые группы.
-    const existingMicro = buildCompleteMicronutrients(parseMicronutrients(product.micronutrients), product.fiber);
-    const mergedMicro = Object.fromEntries(
-      Object.entries(existingMicro).map(([groupKey, group]) => [
-        groupKey,
-        hasAnyPositiveValue(group as Record<string, any>) ? group : (estimatedMicro as any)[groupKey],
-      ])
-    );
-
-    await prisma.product.update({
-      where: { id: product.id },
-      data: { micronutrients: JSON.stringify(mergedMicro) },
-    });
+    return isMicronutrientDataEffectivelyEmpty(estimatedMicro) ? null : estimatedMicro;
   } catch (e) {
-    logError("Background micronutrient enrichment error:", e);
-  } finally {
-    micronutrientEnrichmentInFlight.delete(product.id);
+    logError("AI micronutrient estimation error:", e);
+    return null;
   }
+}
+
+// Пакетная докомплектация всей базы: продукты с хотя бы одной пустой группой
+// микроэлементов прогоняются через ту же цепочку USDA → AI. Пауза между продуктами
+// щадит лимиты USDA (1000 запросов/час) и AI-провайдеров. Запуск — админ-эндпоинтом
+// или env MICRONUTRIENT_BACKFILL_ON_BOOT (см. регистрацию роутов).
+let micronutrientBackfillRunning = false;
+async function runMicronutrientBackfill(limit = 200) {
+  if (!isDatabaseConfigured()) return { processed: 0, scanned: 0, skipped: "no database" };
+  if (micronutrientBackfillRunning) return { processed: 0, scanned: 0, skipped: "already running" };
+  micronutrientBackfillRunning = true;
+
+  let processed = 0;
+  let scanned = 0;
+  try {
+    let cursor: string | undefined;
+    while (processed < limit) {
+      const page: any[] = await prisma.product.findMany({
+        take: 500,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+        orderBy: { id: "asc" },
+      });
+      if (page.length === 0) break;
+      cursor = page[page.length - 1].id;
+
+      for (const product of page) {
+        if (processed >= limit) break;
+        scanned += 1;
+        const micro = buildCompleteMicronutrients(parseMicronutrients(product.micronutrients), product.fiber);
+        if (!hasEmptyMicronutrientGroup(micro)) continue;
+        await enrichProductMicronutrientsInBackground(product);
+        processed += 1;
+        if (processed % 25 === 0) {
+          console.log(`[micronutrient-backfill] processed ${processed}/${limit} (scanned ${scanned})`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+    }
+  } finally {
+    micronutrientBackfillRunning = false;
+  }
+  console.log(`[micronutrient-backfill] finished: processed ${processed}, scanned ${scanned}`);
+  return { processed, scanned };
 }
 
 function convertNutrientUnit(value: number, fromUnitRaw: any, targetUnitRaw: "mg" | "mcg" | "g") {
@@ -2194,6 +2312,23 @@ export async function createApp(): Promise<express.Express> {
       logError("AI Proxy Error:", e);
       res.status(500).json({ error: e.message });
     }
+  });
+
+  // Пакетная докомплектация микроэлементов (USDA → AI) по запросу:
+  //   curl -X POST "https://<host>/api/admin/backfill-micronutrients?limit=500" -H "x-admin-token: $ADMIN_TOKEN"
+  // Работает только если в env задан ADMIN_TOKEN. Запускается в фоне, прогресс — в логах.
+  app.post("/api/admin/backfill-micronutrients", async (req, res) => {
+    const adminToken = process.env.ADMIN_TOKEN;
+    if (!adminToken) return res.status(404).json({ error: "Not found" });
+    if (req.get("x-admin-token") !== adminToken) return res.status(403).json({ error: "Forbidden" });
+
+    if (micronutrientBackfillRunning) {
+      return res.status(409).json({ error: "Backfill already running" });
+    }
+
+    const limit = Math.max(1, Math.min(5000, Number(req.query.limit) || 200));
+    runMicronutrientBackfill(limit).catch((e) => logError("Backfill error:", e));
+    res.json({ started: true, limit });
   });
 
   // Health check
@@ -3790,6 +3925,17 @@ async function startServer() {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Nutria Server running on http://localhost:${PORT}`);
   });
+
+  // Разовый прогон точной (USDA → AI) докомплектации микроэлементов по всей базе:
+  // выставить MICRONUTRIENT_BACKFILL_ON_BOOT=500 (лимит продуктов за прогон) в env,
+  // задеплоить, дождаться "[micronutrient-backfill] finished" в логах и убрать переменную.
+  const backfillOnBoot = Number(process.env.MICRONUTRIENT_BACKFILL_ON_BOOT) || 0;
+  if (backfillOnBoot > 0) {
+    setTimeout(() => {
+      console.log(`[micronutrient-backfill] starting boot backfill (limit ${backfillOnBoot})`);
+      runMicronutrientBackfill(backfillOnBoot).catch((e) => logError("Boot backfill error:", e));
+    }, 30_000);
+  }
 }
 
 if (process.env.NODE_ENV !== "test") {
