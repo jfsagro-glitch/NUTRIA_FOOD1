@@ -534,6 +534,17 @@ function ensureSheetPopstateListener() {
 const BottomSheet = ({ isOpen, onClose, children, title }: { isOpen: boolean, onClose: () => void, children: React.ReactNode, title?: string }) => {
   const tokenRef = useRef<symbol | null>(null);
   const [keyboardInset, setKeyboardInset] = useState(0);
+  // Свайп вниз по «ручке»/заголовку закрывает sheet (жест ограничен шапкой, чтобы
+  // не конфликтовать со скроллом содержимого).
+  const dragStartYRef = useRef<number | null>(null);
+  const handleDragStart = (e: React.TouchEvent) => { dragStartYRef.current = e.touches[0]?.clientY ?? null; };
+  const handleDragEnd = (e: React.TouchEvent) => {
+    const startY = dragStartYRef.current;
+    dragStartYRef.current = null;
+    if (startY == null) return;
+    const endY = e.changedTouches[0]?.clientY ?? startY;
+    if (endY - startY > 70) onClose();
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -595,8 +606,15 @@ const BottomSheet = ({ isOpen, onClose, children, title }: { isOpen: boolean, on
             style={{ bottom: keyboardInset, maxHeight: keyboardInset > 0 ? `calc(90vh - ${keyboardInset}px)` : undefined }}
             className="fixed left-0 right-0 bg-zinc-900 border-t border-zinc-800 rounded-t-[32px] p-6 pb-12 z-[70] shadow-[0_-8px_40px_rgba(0,0,0,0.5)] max-h-[90vh] overflow-y-auto"
           >
-            <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6" />
-            {title && <h3 className="text-xl font-bold mb-6 text-center">{title}</h3>}
+            <div
+              onTouchStart={handleDragStart}
+              onTouchEnd={handleDragEnd}
+              className="-mt-6 -mx-6 pt-6 px-6"
+              style={{ touchAction: 'none' }}
+            >
+              <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6" />
+              {title && <h3 className="text-xl font-bold mb-6 text-center">{title}</h3>}
+            </div>
             {children}
           </motion.div>
         </>
@@ -1132,12 +1150,25 @@ const NutrientRow = ({ label, value, goal, unit, isLimit = false }: { label: str
       <div className="flex-1 mx-4 h-1 bg-zinc-800 rounded-full overflow-hidden">
         <div className={cn("h-full transition-all duration-500", barColorClass)} style={{ width: `${Math.min(100, pct)}%` }} />
       </div>
-      <span className={cn("w-20 text-right", valueColorClass)}>{Math.round(value * 10) / 10}{unit}</span>
+      {/* Проценты — основной показатель (как в свёрнутых чипах), граммы — вторичный:
+          иначе свёрнутый вид в %, раскрытый в граммах — путаница в единицах. */}
+      <span className={cn("w-24 text-right", valueColorClass)}>
+        {Math.round(pct)}%
+        <span className="text-zinc-500 text-[10px]"> · {Math.round(value * 10) / 10}{unit}</span>
+      </span>
     </div>
   );
 };
 
 const DIARY_DATE_STRIP_DAY_LABELS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+
+// БЖУ позиций показываем с точностью до 0.1 г: при округлении до целых видимые числа
+// не сходятся с итогом (Б16 + Б0 при факте 16.3 + 0.7 = Итого Б17 — выглядит как ошибка
+// подсчёта). Итог по приёму по-прежнему считается из сырых значений и округляется до целых.
+const fmtMacro = (value: number) => {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+};
 
 // Точные токены прототипа NUTRIA MVP (см. /tmp/blob_78821664-..., /tmp/blob_5951edb1-...) —
 // нужны как литералы инлайн-стилей, чтобы не зависеть от глобального .theme-light оверрайда
@@ -1169,15 +1200,20 @@ const PROTO = {
   waterBlueLt: '#93c5fd',
 };
 
-// 7-дневная полоса дней над дневником, как DateStrip в прототипе — окно из последних 7 дней,
-// заканчивающееся сегодня, с переключением выбранной даты дневника.
+// 7-дневная полоса дней над дневником — привычная календарная неделя с понедельника,
+// содержащая сегодняшний день (а не окно «последние 7 дней», где сегодня всегда в конце).
+// Будущие дни показываются, но неактивны.
 const DiaryDateStrip = ({ selectedDate, onSelect }: { selectedDate: string; onSelect: (dateKey: string) => void }) => {
   const days = useMemo(() => {
     const today = new Date();
+    const todayKey = toDateKey(today);
+    // getDay(): 0 = воскресенье; смещение до понедельника текущей недели
+    const mondayOffset = (today.getDay() + 6) % 7;
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(today);
-      d.setDate(today.getDate() - (6 - i));
-      return { key: toDateKey(d), label: DIARY_DATE_STRIP_DAY_LABELS[d.getDay()], num: d.getDate() };
+      d.setDate(today.getDate() - mondayOffset + i);
+      const key = toDateKey(d);
+      return { key, label: DIARY_DATE_STRIP_DAY_LABELS[d.getDay()], num: d.getDate(), isFuture: key > todayKey };
     });
   }, []);
 
@@ -1188,6 +1224,7 @@ const DiaryDateStrip = ({ selectedDate, onSelect }: { selectedDate: string; onSe
         return (
           <button
             key={d.key}
+            disabled={d.isFuture}
             onClick={() => onSelect(d.key)}
             className="flex-1 flex flex-col items-center justify-center gap-0.5 active:scale-95 transition-transform"
             style={{
@@ -1195,6 +1232,7 @@ const DiaryDateStrip = ({ selectedDate, onSelect }: { selectedDate: string; onSe
               borderRadius: 14,
               background: isActive ? `linear-gradient(180deg, ${PROTO.primaryMid}, ${PROTO.primary})` : 'transparent',
               boxShadow: isActive ? PROTO.tactileSoft : 'none',
+              opacity: d.isFuture ? 0.35 : undefined,
             }}
           >
             <span
@@ -1226,6 +1264,31 @@ const DiaryDateStrip = ({ selectedDate, onSelect }: { selectedDate: string; onSe
   );
 };
 
+// Суммирование КБЖУ и микроэлементов по списку приёмов пищи — используется и для всего дня,
+// и для одного приёма (в sheet «нутриенты приёма пищи» передаётся массив из одного meal).
+const computeNutrientTotals = (mealList: any[]): NutrientTotals => mealList.reduce((acc: NutrientTotals, meal: any) => {
+  meal.items.forEach((item: any) => {
+    if (!item.product) return;
+    const factor = item.amount / 100;
+    acc.calories += item.product.calories * factor;
+    acc.protein += item.product.protein * factor;
+    acc.fat += item.product.fat * factor;
+    acc.carbs += item.product.carbs * factor;
+    acc.fiber += (item.product.fiber || 0) * factor;
+
+    (['vitamins', 'minerals', 'aminoAcids', 'fattyAcids', 'carbohydrateTypes'] as const).forEach((group) => {
+      if (!item.product[group]) return;
+      Object.entries(item.product[group]).forEach(([k, v]) => {
+        acc[group][k] = (acc[group][k] || 0) + (v as number) * factor;
+      });
+    });
+  });
+  return acc;
+}, {
+  calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0,
+  vitamins: {}, minerals: {}, aminoAcids: {}, fattyAcids: {}, carbohydrateTypes: {}
+});
+
 const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, onHintClick, onDeleteItem, onEditItem, onOpenComposition, onUpdateWater, onUpdateGrams, mealDistribution, activities, weightKg, onAddActivity, onDeleteActivity }: { data: any, selectedDate: string, onChangeDate: (dateKey: string) => void, onAddClick: (type: string) => void, hints: Hint[], onHintClick: (cta: string) => void, onDeleteItem: (id: string) => void, onEditItem: (item: any) => void, onOpenComposition: (item: any) => void, onUpdateWater: (amount: number) => void, onUpdateGrams: (itemId: string, amount: number) => Promise<boolean>, mealDistribution: Record<'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK', number>, activities: any[], weightKg: number, onAddActivity: (activityName: string, durationMinutes: number, caloriesBurned: number) => Promise<void>, onDeleteActivity: (id: string) => Promise<void> }) => {
   const { meals = [], waterIntake = 0 } = data;
   const goals = mergeGoals(data.goals);
@@ -1241,47 +1304,15 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
     return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}, ${dayMonth}`;
   }, [data?.date]);
 
-  const totals = useMemo(() => meals.reduce((acc: NutrientTotals, meal: any) => {
-    meal.items.forEach((item: any) => {
-      if (!item.product) return;
-      const factor = item.amount / 100;
-      acc.calories += item.product.calories * factor;
-      acc.protein += item.product.protein * factor;
-      acc.fat += item.product.fat * factor;
-      acc.carbs += item.product.carbs * factor;
-      acc.fiber += (item.product.fiber || 0) * factor;
+  const totals = useMemo(() => computeNutrientTotals(meals), [meals]);
 
-      if (item.product.vitamins) {
-        Object.entries(item.product.vitamins).forEach(([k, v]) => {
-          acc.vitamins[k] = (acc.vitamins[k] || 0) + (v as number) * factor;
-        });
-      }
-      if (item.product.minerals) {
-        Object.entries(item.product.minerals).forEach(([k, v]) => {
-          acc.minerals[k] = (acc.minerals[k] || 0) + (v as number) * factor;
-        });
-      }
-      if (item.product.aminoAcids) {
-        Object.entries(item.product.aminoAcids).forEach(([k, v]) => {
-          acc.aminoAcids[k] = (acc.aminoAcids[k] || 0) + (v as number) * factor;
-        });
-      }
-      if (item.product.fattyAcids) {
-        Object.entries(item.product.fattyAcids).forEach(([k, v]) => {
-          acc.fattyAcids[k] = (acc.fattyAcids[k] || 0) + (v as number) * factor;
-        });
-      }
-      if (item.product.carbohydrateTypes) {
-        Object.entries(item.product.carbohydrateTypes).forEach(([k, v]) => {
-          acc.carbohydrateTypes[k] = (acc.carbohydrateTypes[k] || 0) + (v as number) * factor;
-        });
-      }
-    });
-    return acc;
-  }, {
-    calories: 0, protein: 0, fat: 0, carbs: 0, fiber: 0,
-    vitamins: {}, minerals: {}, aminoAcids: {}, fattyAcids: {}, carbohydrateTypes: {}
-  }), [meals]);
+  // Sheet «нутриенты одного приёма пищи» — по типу приёма (BREAKFAST/…); null — закрыт
+  const [mealNutrientsFor, setMealNutrientsFor] = useState<string | null>(null);
+  const mealNutrientTotals = useMemo(() => {
+    if (!mealNutrientsFor) return null;
+    const meal = meals.find((m: any) => m.type === mealNutrientsFor);
+    return meal ? computeNutrientTotals([meal]) : null;
+  }, [meals, mealNutrientsFor]);
 
   const mealTypes = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
   const mealLabels: any = { BREAKFAST: 'Завтрак', LUNCH: 'Обед', DINNER: 'Ужин', SNACK: 'Перекус' };
@@ -1614,7 +1645,7 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
                                 {item.product.source === 'quickadd' && <span style={{ fontSize: 10, color: PROTO.textLt, flexShrink: 0 }}>приблизительно</span>}
                               </p>
                               <p style={{ fontSize: 12, color: PROTO.textMid, marginTop: 2 }}>
-                                <InlineGramsInput item={item} onSave={onUpdateGrams} /> г · Б{Math.round((item.product.protein * item.amount) / 100)} · Ж{Math.round((item.product.fat * item.amount) / 100)} · У{Math.round((item.product.carbs * item.amount) / 100)}
+                                <InlineGramsInput item={item} onSave={onUpdateGrams} /> г · Б{fmtMacro((item.product.protein * item.amount) / 100)} · Ж{fmtMacro((item.product.fat * item.amount) / 100)} · У{fmtMacro((item.product.carbs * item.amount) / 100)}
                               </p>
                             </div>
                             <span style={{ fontSize: 13, color: PROTO.textMid, fontWeight: 600 }} className="flex-shrink-0">{Math.round((item.product.calories * item.amount) / 100)} ккал</span>
@@ -1632,9 +1663,16 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
                           </div>
                         ))}
                       </div>
-                      <div className="flex justify-between px-4 py-2.5" style={{ borderTop: `1px solid ${PROTO.softDivider}` }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: PROTO.textMid }}>Итого</span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: PROTO.text }}>{Math.round(mealTotal)} ккал · Б{Math.round(totalP)} / Ж{Math.round(totalF)} / У{Math.round(totalC)}</span>
+                      <div className="flex justify-between items-center px-4 py-2.5" style={{ borderTop: `1px solid ${PROTO.softDivider}` }}>
+                        <button
+                          onClick={() => setMealNutrientsFor(type)}
+                          className="flex items-center gap-1 active:scale-95 transition-transform"
+                          style={{ fontSize: 11, fontWeight: 700, color: PROTO.primaryDk }}
+                        >
+                          Итого · нутриенты
+                          <ArrowRight size={11} />
+                        </button>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: PROTO.text }}>{Math.round(mealTotal)} ккал · Б{fmtMacro(totalP)} / Ж{fmtMacro(totalF)} / У{fmtMacro(totalC)}</span>
                       </div>
                       <div className="flex justify-center px-4 py-3">
                         <button
@@ -1782,6 +1820,38 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
             Сохранить
           </button>
         </div>
+      </BottomSheet>
+
+      {/* Нутриенты одного приёма пищи */}
+      <BottomSheet
+        isOpen={!!mealNutrientsFor && !!mealNutrientTotals}
+        onClose={() => setMealNutrientsFor(null)}
+        title={mealNutrientsFor ? `${mealLabels[mealNutrientsFor]} — нутриенты` : undefined}
+      >
+        {mealNutrientTotals && (
+          <div className="space-y-5 max-h-[65vh] overflow-y-auto pr-1">
+            <p className="text-xs text-zinc-500 text-center">
+              {Math.round(mealNutrientTotals.calories)} ккал · Б{fmtMacro(mealNutrientTotals.protein)} / Ж{fmtMacro(mealNutrientTotals.fat)} / У{fmtMacro(mealNutrientTotals.carbs)}
+              <span className="block mt-1">Проценты — доля от дневной нормы</span>
+            </p>
+            {([
+              ['Витамины', VITAMIN_CONFIG.map((c) => ({ ...c, value: mealNutrientTotals.vitamins[c.key] || 0, goal: goals.vitamins[c.key] || 1 }))],
+              ['Минералы', MINERAL_CONFIG.map((c: any) => ({ ...c, value: mealNutrientTotals.minerals[c.key] || 0, goal: goals.minerals[c.key] || 1 }))],
+              ['Жиры', FATTY_ACID_CONFIG.map((c: any) => ({ ...c, value: mealNutrientTotals.fattyAcids[c.key] || 0, goal: goals.fattyAcids[c.key] || 1 }))],
+              ['Углеводы', CARB_TYPE_CONFIG.map((c) => ({ ...c, value: mealNutrientTotals.carbohydrateTypes[c.key] || 0, goal: goals.carbohydrateTypes[c.key] || 1 }))],
+              ['Аминокислоты', AMINO_CONFIG.map((c) => ({ ...c, unit: 'mg', value: mealNutrientTotals.aminoAcids[c.key] || 0, goal: goals.aminoAcids[c.key] || 1 }))],
+            ] as Array<[string, any[]]>).map(([sectionTitle, rows]) => (
+              <div key={sectionTitle}>
+                <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1">{sectionTitle}</p>
+                {rows.map((row) => (
+                  <React.Fragment key={row.key}>
+                    <NutrientRow label={row.label} value={row.value} goal={row.goal} unit={row.unit} isLimit={row.isLimit} />
+                  </React.Fragment>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
       </BottomSheet>
 
       {/* Качество питания / AI Hints */}
@@ -3233,6 +3303,8 @@ export default function App() {
   const [isLoadingMine, setIsLoadingMine] = useState(false);
   const [isAddCustomProductOpen, setIsAddCustomProductOpen] = useState(false);
   const [customProductForm, setCustomProductForm] = useState({ name: '', brand: '', barcode: '', calories: '', protein: '', fat: '', carbs: '' });
+  // id редактируемого своего продукта; null — форма создаёт новый
+  const [editingCustomProductId, setEditingCustomProductId] = useState<string | null>(null);
   const [isSavingCustomProduct, setIsSavingCustomProduct] = useState(false);
   const [quickAddForm, setQuickAddForm] = useState({ label: '', calories: '', protein: '', fat: '', carbs: '' });
   const [isSavingQuickAdd, setIsSavingQuickAdd] = useState(false);
@@ -3257,7 +3329,12 @@ export default function App() {
   const [editDishMealItemRecipeId, setEditDishMealItemRecipeId] = useState<string | null>(null);
   const [editingMealItem, setEditingMealItem] = useState<{ id: string; amount: number; name: string } | null>(null);
   const [editAmountValue, setEditAmountValue] = useState('');
-  const [selectedDiaryDate, setSelectedDiaryDate] = useState<string>(toDateKey(new Date()));
+  // Выбранный день переживает перезагрузку страницы (sessionStorage — в рамках текущей
+  // сессии/вкладки): без этого refresh молча перекидывал с прошедшего дня на сегодня.
+  const [selectedDiaryDate, setSelectedDiaryDate] = useState<string>(() => {
+    const saved = sessionStorage.getItem('nutria_diary_date') || '';
+    return /^\d{4}-\d{2}-\d{2}$/.test(saved) ? saved : toDateKey(new Date());
+  });
   const [diaryData, setDiaryData] = useState<DiaryData>({ meals: [], goals: null, waterIntake: 0, date: selectedDiaryDate });
   const [activities, setActivities] = useState<any[]>([]);
   const [weeklyHistory, setWeeklyHistory] = useState<DiaryHistoryPoint[]>([]);
@@ -3282,6 +3359,12 @@ export default function App() {
   const [photoCaptureMode, setPhotoCaptureMode] = useState<PhotoCaptureMode>('ingredients');
   const [barcodeQuery, setBarcodeQuery] = useState('');
   const [barcodeScannerError, setBarcodeScannerError] = useState('');
+  // Код считан/введён, но продукта нет ни в базе, ни во внешних источниках — предлагаем
+  // создать свой продукт с этим штрих-кодом (иначе созданный вручную продукт не привязан
+  // к коду и повторное сканирование его не находит).
+  const [barcodeNotFoundCode, setBarcodeNotFoundCode] = useState('');
+  // Откуда открыта форма «Свой продукт»: после сохранения из сканера сразу открываем ввод веса.
+  const customProductOriginRef = useRef<'mine' | 'barcode'>('mine');
   const [isBarcodeScanning, setIsBarcodeScanning] = useState(false);
   const [fastingMode, setFastingMode] = useState<FastingMode>('OFF');
   const [customFastingHours, setCustomFastingHours] = useState(14);
@@ -3310,6 +3393,9 @@ export default function App() {
   const fastingNotifiedRef = useRef(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Отдельный input с capture="environment": «Фото блюда/состава» должно открывать камеру,
+  // а не галерею. fileInputRef (без capture) остаётся для «Выбрать из галереи».
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const getHtml5QrcodeModule = async () => {
     if (!html5QrcodeModuleRef.current) {
@@ -3742,6 +3828,7 @@ export default function App() {
   const changeDiaryDate = (dateKey: string) => {
     if (dateKey === selectedDiaryDate) return;
     setSelectedDiaryDate(dateKey);
+    sessionStorage.setItem('nutria_diary_date', dateKey);
     fetchDiary(dateKey);
   };
 
@@ -4072,8 +4159,8 @@ export default function App() {
     if (!customProductForm.name.trim()) return;
     setIsSavingCustomProduct(true);
     try {
-      const res = await fetch('/api/products/custom', {
-        method: 'POST',
+      const res = await fetch(editingCustomProductId ? `/api/products/custom/${encodeURIComponent(editingCustomProductId)}` : '/api/products/custom', {
+        method: editingCustomProductId ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: customProductForm.name.trim(),
@@ -4086,14 +4173,53 @@ export default function App() {
         })
       });
       if (res.ok) {
+        const product = await res.json().catch(() => null);
         setIsAddCustomProductOpen(false);
         setCustomProductForm({ name: '', brand: '', barcode: '', calories: '', protein: '', fat: '', carbs: '' });
         fetchMine();
+        // Продукт создан из сканера — сразу предлагаем ввести вес и записать в дневник.
+        if (customProductOriginRef.current === 'barcode' && !editingCustomProductId && product?.id) {
+          setSelectedProductForAmount(product);
+          setFoodAmount('100');
+          setAmountEntryContext({ source: 'barcode' });
+        }
+        customProductOriginRef.current = 'mine';
+        setEditingCustomProductId(null);
       }
     } catch (e) {
       console.error(e);
     } finally {
       setIsSavingCustomProduct(false);
+    }
+  };
+
+  const startEditCustomProduct = (product: Product) => {
+    customProductOriginRef.current = 'mine';
+    setEditingCustomProductId(product.id);
+    setCustomProductForm({
+      name: product.name || '',
+      brand: product.brand || '',
+      barcode: (product as any).barcode || '',
+      calories: String(product.calories ?? ''),
+      protein: String(product.protein ?? ''),
+      fat: String(product.fat ?? ''),
+      carbs: String(product.carbs ?? ''),
+    });
+    setIsAddCustomProductOpen(true);
+  };
+
+  const deleteCustomProduct = async (product: Product) => {
+    if (!window.confirm(`Удалить «${product.name}» из ваших продуктов?`)) return;
+    try {
+      const res = await fetch(`/api/products/custom/${encodeURIComponent(product.id)}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchMine();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err?.error || 'Не удалось удалить продукт');
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -4394,7 +4520,10 @@ export default function App() {
     setPhotoDishEstimate(null);
     setPhotoCorrectionTarget(null);
     setIsActionSheetOpen(false);
-    fileInputRef.current?.click();
+    // Сразу открываем камеру; sheet с распознаванием открываем тоже — если пользователь
+    // отменит съёмку, он попадёт на экран с кнопками «Сделать фото» / «Из галереи».
+    setIsPhotoSheetOpen(true);
+    cameraInputRef.current?.click();
   };
 
   const savePhotoCorrection = async (item: RecognizedPhotoItem, product: Product) => {
@@ -4421,7 +4550,8 @@ export default function App() {
   const handleProductSelection = async (product: Product) => {
     if (!photoCorrectionTarget) {
       setSelectedProductForAmount(product);
-      setFoodAmount('100');
+      // Поле веса оставляем пустым: предзаполненные "100" приходилось стирать перед вводом
+      setFoodAmount('');
       setAmountEntryContext({ source: 'search' });
       return;
     }
@@ -4503,6 +4633,9 @@ export default function App() {
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+      if (cameraInputRef.current) {
+        cameraInputRef.current.value = '';
+      }
     }
   };
 
@@ -4523,6 +4656,7 @@ export default function App() {
         setAmountEntryContext({ source: 'barcode' });
         setBarcodeQuery('');
         setBarcodeScannerError('');
+        setBarcodeNotFoundCode('');
         return true;
       } catch (e) {
         console.error('Barcode lookup error:', e);
@@ -4537,11 +4671,23 @@ export default function App() {
     try {
       const found = await findProductByBarcode(barcodeQuery);
       if (!found) {
-        alert('Продукт не найден в базе');
+        setBarcodeScannerError('Продукт не найден в базе.');
+        setBarcodeNotFoundCode(barcodeQuery.trim());
       }
     } catch (e) {
       console.error(e);
     }
+  };
+
+  // Из «не найден» в один тап к созданию своего продукта с уже привязанным штрих-кодом —
+  // после сохранения повторное сканирование этого кода будет находить продукт.
+  const createProductForBarcode = () => {
+    customProductOriginRef.current = 'barcode';
+    setCustomProductForm({ name: '', brand: '', barcode: barcodeNotFoundCode, calories: '', protein: '', fat: '', carbs: '' });
+    setBarcodeNotFoundCode('');
+    setBarcodeScannerError('');
+    setIsBarcodeSheetOpen(false);
+    setIsAddCustomProductOpen(true);
   };
 
   useEffect(() => {
@@ -4593,7 +4739,8 @@ export default function App() {
           setBarcodeQuery(decodedText);
           const found = await findProductByBarcode(decodedText);
           if (!found) {
-            setBarcodeScannerError('Код считан, но продукт не найден. Попробуйте вручную.');
+            setBarcodeScannerError('Код считан, но продукт не найден.');
+            setBarcodeNotFoundCode(decodedText.trim());
             barcodeHandledRef.current = false;
           }
         };
@@ -4900,12 +5047,20 @@ export default function App() {
       )}
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} unreadMessages={unreadMessages} />
 
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        onChange={handlePhotoUpload} 
-        className="hidden" 
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handlePhotoUpload}
+        className="hidden"
         accept="image/*"
+      />
+      <input
+        type="file"
+        ref={cameraInputRef}
+        onChange={handlePhotoUpload}
+        className="hidden"
+        accept="image/*"
+        capture="environment"
       />
 
       {/* Быстрые действия */}
@@ -5015,17 +5170,28 @@ export default function App() {
 
         {(foodTab === 'all' || photoCorrectionTarget) && (
           <>
-            <div className="relative mb-6">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={20} />
-              <input
-                type="text"
-                placeholder="Поиск продукта или бренда..."
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl py-4 pl-12 pr-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
-                value={searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
-                autoFocus
-              />
-              {isSearching && <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-emerald-500" size={20} />}
+            <div className="flex gap-2 mb-6">
+              <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={20} />
+                <input
+                  type="text"
+                  placeholder="Поиск продукта или бренда..."
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl py-4 pl-12 pr-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  autoFocus
+                />
+                {isSearching && <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 animate-spin text-emerald-500" size={20} />}
+              </div>
+              {!photoCorrectionTarget && (
+                <button
+                  onClick={() => setIsBarcodeSheetOpen(true)}
+                  className="w-[56px] shrink-0 bg-zinc-800 border border-zinc-700 rounded-2xl flex items-center justify-center text-emerald-500 active:bg-zinc-700 transition-colors"
+                  aria-label="Сканировать штрих-код"
+                >
+                  <ScanBarcode size={22} />
+                </button>
+              )}
             </div>
 
             <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
@@ -5091,7 +5257,12 @@ export default function App() {
                 + Создать блюдо
               </button>
               <button
-                onClick={() => setIsAddCustomProductOpen(true)}
+                onClick={() => {
+                  customProductOriginRef.current = 'mine';
+                  setEditingCustomProductId(null);
+                  setCustomProductForm({ name: '', brand: '', barcode: '', calories: '', protein: '', fat: '', carbs: '' });
+                  setIsAddCustomProductOpen(true);
+                }}
                 className="flex-1 py-3 rounded-xl bg-zinc-800 text-zinc-200 text-sm font-semibold active:bg-zinc-700 transition-colors"
               >
                 + Свой продукт
@@ -5128,17 +5299,39 @@ export default function App() {
                   </button>
                 ))}
                 {mineProducts.map((product) => (
-                  <button
+                  <div
                     key={product.id}
-                    onClick={() => { void handleProductSelection(product); }}
-                    className="w-full bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center active:bg-zinc-800 transition-colors"
+                    className="w-full bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center gap-2"
                   >
-                    <div className="text-left">
-                      <p className="font-semibold text-zinc-200 text-[15px]">{product.name}</p>
+                    <button
+                      onClick={() => { void handleProductSelection(product); }}
+                      className="flex-1 min-w-0 text-left active:opacity-70 transition-opacity"
+                    >
+                      <p className="font-semibold text-zinc-200 text-[15px] truncate">{product.name}</p>
                       <p className="text-[11px] text-zinc-500">{product.brand || 'Свой продукт'} • {Math.round(product.calories)} ккал / 100 г</p>
-                    </div>
-                    <Plus size={20} className="text-emerald-500" />
-                  </button>
+                    </button>
+                    <button
+                      onClick={() => startEditCustomProduct(product)}
+                      className="p-2 text-zinc-500 active:text-zinc-300 shrink-0"
+                      aria-label="Редактировать продукт"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      onClick={() => { void deleteCustomProduct(product); }}
+                      className="p-2 text-zinc-500 active:text-red-400 shrink-0"
+                      aria-label="Удалить продукт"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                    <button
+                      onClick={() => { void handleProductSelection(product); }}
+                      className="p-2 shrink-0"
+                      aria-label="Добавить в дневник"
+                    >
+                      <Plus size={20} className="text-emerald-500" />
+                    </button>
+                  </div>
                 ))}
               </>
             )}
@@ -5184,7 +5377,7 @@ export default function App() {
       </BottomSheet>
 
       {/* "Мои" → Добавить свой продукт */}
-      <BottomSheet isOpen={isAddCustomProductOpen} onClose={() => setIsAddCustomProductOpen(false)} title="Добавить свой продукт">
+      <BottomSheet isOpen={isAddCustomProductOpen} onClose={() => { setIsAddCustomProductOpen(false); setEditingCustomProductId(null); }} title={editingCustomProductId ? 'Редактировать продукт' : 'Добавить свой продукт'}>
         <div className="space-y-3">
           <input
             type="text" placeholder="Название"
@@ -5220,7 +5413,7 @@ export default function App() {
             disabled={!customProductForm.name.trim() || isSavingCustomProduct}
             className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform disabled:opacity-40"
           >
-            {isSavingCustomProduct ? 'Сохранение...' : 'Сохранить в Мои'}
+            {isSavingCustomProduct ? 'Сохранение...' : editingCustomProductId ? 'Сохранить изменения' : 'Сохранить в Мои'}
           </button>
         </div>
       </BottomSheet>
@@ -5476,11 +5669,12 @@ export default function App() {
             </div>
 
             <div className="flex items-center justify-center gap-4">
-              <input 
-                type="number" 
+              <input
+                type="number"
                 value={foodAmount}
+                placeholder="100"
                 onChange={(e) => setFoodAmount(e.target.value)}
-                className="w-32 bg-zinc-800 border border-zinc-700 rounded-2xl py-4 text-center text-2xl font-bold text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                className="w-32 bg-zinc-800 border border-zinc-700 rounded-2xl py-4 text-center text-2xl font-bold text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                 autoFocus
               />
               <span className="text-xl font-bold text-zinc-500">грамм</span>
@@ -5509,11 +5703,12 @@ export default function App() {
                 Отмена
               </button>
               <button
+                disabled={!(Number(foodAmount) > 0)}
                 onClick={async () => {
                   if (!selectedProductForAmount) return;
 
                   const parsedAmount = Number(foodAmount);
-                  const safeAmount = Number.isFinite(parsedAmount) ? Math.max(1, parsedAmount) : 100;
+                  const safeAmount = Number.isFinite(parsedAmount) && parsedAmount > 0 ? parsedAmount : 100;
                   const usda = (selectedProductForAmount.isUsda || selectedProductForAmount.isAiEstimated) ? selectedProductForAmount : undefined;
 
                   if (amountEntryContext?.source === 'barcode') {
@@ -5537,7 +5732,7 @@ export default function App() {
                   setSelectedProductForAmount(null);
                   setAmountEntryContext(null);
                 }}
-                className="py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform"
+                className="py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform disabled:opacity-40"
               >
                 {amountEntryContext?.source === 'barcode' ? 'Сохранить' : 'Добавить'}
               </button>
@@ -5752,7 +5947,23 @@ export default function App() {
               </div>
             )}
             {recognizedItems.length === 0 && !photoDishEstimate && !photoRecognitionError && (
-              <p className="text-sm text-zinc-500 text-center">Загрузите четкое фото еды, и я попробую распознать состав блюда.</p>
+              <p className="text-sm text-zinc-500 text-center">Сделайте четкое фото еды, и я попробую распознать состав блюда.</p>
+            )}
+            {recognizedItems.length === 0 && !photoDishEstimate && (
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => cameraInputRef.current?.click()}
+                  className="py-3 bg-emerald-500 text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2"
+                >
+                  <Camera size={16} /> Сделать фото
+                </button>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="py-3 bg-zinc-800 text-zinc-300 text-sm font-bold rounded-xl border border-zinc-700"
+                >
+                  Из галереи
+                </button>
+              </div>
             )}
             {recognizedItems.map((item, i) => (
               <div key={i} className="bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center gap-3">
@@ -5805,7 +6016,7 @@ export default function App() {
       </BottomSheet>
 
       {/* Сканер штрих-кода */}
-      <BottomSheet isOpen={isBarcodeSheetOpen} onClose={() => setIsBarcodeSheetOpen(false)} title="Сканер штрих-кода">
+      <BottomSheet isOpen={isBarcodeSheetOpen} onClose={() => { setIsBarcodeSheetOpen(false); setBarcodeNotFoundCode(''); setBarcodeScannerError(''); }} title="Сканер штрих-кода">
         <div className="flex flex-col items-center py-6">
           <div className="w-full max-w-[280px] aspect-square border-2 border-emerald-500/30 rounded-3xl relative mb-8 overflow-hidden bg-zinc-800/50 flex items-center justify-center">
             <div id="barcode-reader" className="absolute inset-0 z-10" />
@@ -5817,8 +6028,16 @@ export default function App() {
           {barcodeScannerError && (
             <p className="text-xs text-orange-400 mb-3 text-center">{barcodeScannerError}</p>
           )}
-          <input 
-            type="text" 
+          {barcodeNotFoundCode && (
+            <button
+              onClick={createProductForBarcode}
+              className="w-full py-3 mb-4 bg-zinc-800 border border-emerald-500/40 text-emerald-400 text-sm font-bold rounded-2xl active:scale-95 transition-transform"
+            >
+              + Создать свой продукт с кодом {barcodeNotFoundCode}
+            </button>
+          )}
+          <input
+            type="text"
             placeholder="Введите штрих-код вручную..."
             className="w-full bg-zinc-800 border border-zinc-700 rounded-2xl py-4 px-6 text-zinc-100 mb-4 text-center font-mono tracking-widest"
             value={barcodeQuery}

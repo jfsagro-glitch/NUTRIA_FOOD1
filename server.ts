@@ -884,8 +884,8 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
   "fat": number,
   "carbs": number,
   "fiber": number,
-  "vitamins": { "C": number },
-  "minerals": { "Iron": number },
+  "vitamins": { "BetaCarotene": number, "B1": number, "B2": number, "B5": number, "B6": number, "B9": number, "B12": number, "C": number, "A": number, "D": number, "E": number, "K": number, "B3": number, "Biotin": number, "Choline": number },
+  "minerals": { "Potassium": number, "Calcium": number, "Magnesium": number, "Sodium": number, "Phosphorus": number, "Iron": number, "Iodine": number, "Manganese": number, "Copper": number, "Selenium": number, "Chromium": number, "Zinc": number },
   "fattyAcids": { "Omega3": number, "Omega6": number, "Omega9": number, "TransFats": number, "Cholesterol": number },
   "carbohydrateTypes": { "Glucose": number, "Fructose": number, "Galactose": number, "Sucrose": number, "Lactose": number, "Maltose": number, "Starch": number, "Fiber": number },
   "aminoAcids": { "Alanine": number, "Arginine": number, "Asparagine": number, "AsparticAcid": number, "Valine": number, "Histidine": number, "Glycine": number, "Glutamine": number, "GlutamicAcid": number, "Isoleucine": number, "Leucine": number, "Lysine": number, "Methionine": number, "Proline": number, "Serine": number, "Tyrosine": number, "Threonine": number, "Tryptophan": number, "Phenylalanine": number, "Cysteine": number },
@@ -1542,6 +1542,16 @@ function isMicronutrientDataEffectivelyEmpty(completeMicro: ReturnType<typeof bu
   );
 }
 
+// Продукт может иметь заполненные витамины/минералы, но полностью пустую группу
+// (чаще всего аминокислоты — старые записи и часть AI-оценок их не содержали).
+// Такой продукт тоже нуждается в фоновой докомплектации, иначе «Аминокислотный
+// профиль» в дневнике навсегда остаётся нулевым.
+function hasEmptyMicronutrientGroup(completeMicro: ReturnType<typeof buildCompleteMicronutrients>) {
+  return Object.values(completeMicro).some((group) =>
+    Object.values(group as Record<string, number>).every((value) => numberOrZero(value) <= 0)
+  );
+}
+
 function clampNutriScorePoints(value: number, max: number) {
   return Math.max(0, Math.min(max, Math.round(value)));
 }
@@ -1586,11 +1596,12 @@ function calcNutriScore(item: {
   return { score, grade };
 }
 
-// Точечная докомплектация: если у продукта нет вообще никаких сохранённых микроэлементов
-// (старые/сидинговые записи без реальных данных), асинхронно (не блокируя текущий запрос)
+// Точечная докомплектация: если у продукта нет сохранённых микроэлементов или пуста
+// целая группа (например, аминокислоты), асинхронно (не блокируя текущий запрос)
 // запрашиваем у AI оценку и сохраняем её в Product.micronutrients — следующий показ дневника/поиска
-// у этого же продукта будет уже с реальными значениями.
-async function enrichProductMicronutrientsInBackground(product: { id: string; name: string; fiber?: number | null }) {
+// у этого же продукта будет уже с реальными значениями. Уже заполненные группы
+// не перезаписываются: AI-оценка используется только для пустых групп.
+async function enrichProductMicronutrientsInBackground(product: { id: string; name: string; fiber?: number | null; micronutrients?: any }) {
   if (!isDatabaseConfigured() || micronutrientEnrichmentInFlight.has(product.id)) return;
   micronutrientEnrichmentInFlight.add(product.id);
 
@@ -1607,12 +1618,22 @@ async function enrichProductMicronutrientsInBackground(product: { id: string; na
 Единицы: витамины и большинство минералов в mg/mcg как принято в таблицах состава продуктов, аминокислоты и жирные кислоты в mg. Если нутриент отсутствует в продукте — укажи 0.`), 12000, "AI micronutrient enrichment");
 
     const estimateData = parseAiJsonPayload(estimateResponseText || "{}");
-    const completeMicro = buildCompleteMicronutrients(estimateData, product.fiber);
-    if (isMicronutrientDataEffectivelyEmpty(completeMicro)) return;
+    const estimatedMicro = buildCompleteMicronutrients(estimateData, product.fiber);
+    if (isMicronutrientDataEffectivelyEmpty(estimatedMicro)) return;
+
+    // Группы с реальными данными (из USDA/OFF/прошлых оценок) не трогаем — AI-оценка
+    // заполняет только пустые группы.
+    const existingMicro = buildCompleteMicronutrients(parseMicronutrients(product.micronutrients), product.fiber);
+    const mergedMicro = Object.fromEntries(
+      Object.entries(existingMicro).map(([groupKey, group]) => [
+        groupKey,
+        hasAnyPositiveValue(group as Record<string, any>) ? group : (estimatedMicro as any)[groupKey],
+      ])
+    );
 
     await prisma.product.update({
       where: { id: product.id },
-      data: { micronutrients: JSON.stringify(completeMicro) },
+      data: { micronutrients: JSON.stringify(mergedMicro) },
     });
   } catch (e) {
     logError("Background micronutrient enrichment error:", e);
@@ -2193,6 +2214,16 @@ export async function createApp(): Promise<express.Express> {
       const candidates = extractBarcodeCandidates(code);
       if (candidates.length === 0) return res.status(400).json({ error: "Invalid barcode" });
 
+      // Свои продукты пользователя с привязанным штрих-кодом (в memory-режиме
+      // resolveBarcodeProduct их не видит — он ищет только в Prisma и внешних источниках)
+      const userId = req.cookies.token;
+      if (!isDatabaseConfigured() && userId) {
+        const mine = getOrCreateInMemoryCustomProducts(userId).find(
+          (p: any) => p.barcode && candidates.includes(String(p.barcode))
+        );
+        if (mine) return res.json(mine);
+      }
+
       const { product } = await resolveBarcodeProduct(candidates);
       if (product) return res.json(product);
 
@@ -2472,6 +2503,40 @@ export async function createApp(): Promise<express.Express> {
     } catch (e: any) {
       logError("Create Custom Product Error:", e);
       res.status(500).json({ error: "Failed to create product", message: e.message });
+    }
+  });
+
+  // Редактирование своего продукта как карточки (не записи в дневнике): дневник хранит
+  // только productId+amount, поэтому обновлённые КБЖУ автоматически подхватятся во всех записях.
+  app.patch("/api/products/custom/:id", validateBody(customProductSchema), async (req, res) => {
+    const userId = req.cookies.token;
+    const { id } = req.params;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const { name, brand, barcode, calories, protein, fat, carbs } = req.body;
+
+    if (!isDatabaseConfigured()) {
+      const list = getOrCreateInMemoryCustomProducts(userId);
+      const product = list.find((p: any) => p.id === id);
+      if (!product) return res.status(404).json({ error: "Not found" });
+      Object.assign(product, { name, brand, barcode, calories, protein, fat, carbs });
+      return res.json(product);
+    }
+
+    const existing = await prisma.product.findUnique({ where: { id } });
+    if (!existing || existing.createdByUserId !== userId) {
+      return res.status(403).json({ error: "Forbidden or not found" });
+    }
+
+    try {
+      const product = await prisma.product.update({
+        where: { id },
+        data: { name, brand, barcode, calories, protein, fat, carbs }
+      });
+      res.json(product);
+    } catch (e: any) {
+      logError("Update Custom Product Error:", e);
+      res.status(500).json({ error: "Failed to update product", message: e.message });
     }
   });
 
@@ -2934,7 +2999,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
         ...m,
         items: m.items.map(i => {
           const micro = buildCompleteMicronutrients(parseMicronutrients(i.product.micronutrients), i.product.fiber);
-          if (isMicronutrientDataEffectivelyEmpty(micro)) {
+          if (hasEmptyMicronutrientGroup(micro)) {
             enrichProductMicronutrientsInBackground(i.product).catch(() => {});
           }
           return {
