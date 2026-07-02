@@ -1208,6 +1208,17 @@ const DiaryDateStrip = ({ selectedDate, onSelect }: { selectedDate: string; onSe
   // 0 — текущая неделя, отрицательные значения — недели в прошлом
   const [weekOffset, setWeekOffset] = useState(0);
   const touchStartXRef = useRef<number | null>(null);
+  // Направление последнего переключения недели — для анимации «пролистывания»:
+  // при уходе назад новая неделя выезжает слева, при возврате вперёд — справа.
+  const weekSlideDirRef = useRef(0);
+
+  const changeWeek = (delta: number) => {
+    setWeekOffset((o) => {
+      const next = Math.min(0, o + delta);
+      weekSlideDirRef.current = next - o;
+      return next;
+    });
+  };
 
   const days = useMemo(() => {
     const today = new Date();
@@ -1239,21 +1250,32 @@ const DiaryDateStrip = ({ selectedDate, onSelect }: { selectedDate: string; onSe
     const delta = (e.changedTouches[0]?.clientX ?? startX) - startX;
     if (Math.abs(delta) < 50) return;
     // свайп вправо — неделя назад, влево — вперёд (максимум до текущей)
-    setWeekOffset((o) => (delta > 0 ? o - 1 : Math.min(0, o + 1)));
+    changeWeek(delta > 0 ? -1 : 1);
   };
 
   return (
     <div onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd} style={{ touchAction: 'pan-y' }}>
       {weekCaption && (
         <button
-          onClick={() => setWeekOffset(0)}
+          onClick={() => changeWeek(-weekOffset)}
           className="w-full text-center"
           style={{ fontSize: 11, fontWeight: 600, color: PROTO.textMid, padding: '0 0 4px' }}
         >
           {weekCaption} · к текущей неделе
         </button>
       )}
-      <div className="flex gap-1" style={{ padding: '2px 0 10px' }}>
+      {/* overflow-hidden — уезжающая неделя не должна вылезать за края экрана во время слайда */}
+      <div style={{ overflow: 'hidden' }}>
+        <AnimatePresence initial={false} mode="popLayout">
+          <motion.div
+            key={weekOffset}
+            initial={{ x: weekSlideDirRef.current < 0 ? '-40%' : '40%', opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: weekSlideDirRef.current < 0 ? '40%' : '-40%', opacity: 0 }}
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            className="flex gap-1"
+            style={{ padding: '2px 0 10px' }}
+          >
       {days.map((d) => {
         const isActive = d.key === selectedDate;
         return (
@@ -1295,6 +1317,8 @@ const DiaryDateStrip = ({ selectedDate, onSelect }: { selectedDate: string; onSe
           </button>
         );
       })}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </div>
   );
