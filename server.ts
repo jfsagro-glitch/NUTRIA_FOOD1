@@ -3,6 +3,8 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import cookieParser from "cookie-parser";
 import crypto from "node:crypto";
+import dns from "node:dns";
+import net from "node:net";
 import path from "path";
 import { fileURLToPath } from "url";
 import { PrismaClient } from "@prisma/client";
@@ -394,6 +396,49 @@ function parseJsonStringArray(value: any) {
   }
 }
 
+// SSRF-защита для /api/recipes/import-url: без неё сервер можно заставить обратиться
+// к внутренней сети (127.0.0.1, 169.254.169.254 — метаданные облака, 10/8, 172.16/12,
+// 192.168/16 и т.п.) просто передав такой URL. Резолвим hostname и проверяем все
+// полученные адреса. Не защищает от DNS-rebinding (адрес может смениться между этой
+// проверкой и самим fetch) — для recipe-импорта (не платёжный/админский путь) это
+// приемлемый компромисс, а не полноценная защита уровня прод-периметра.
+function isPrivateOrReservedIp(ip: string): boolean {
+  if (net.isIPv4(ip)) {
+    const parts = ip.split(".").map(Number);
+    const [a, b] = parts;
+    if (a === 127) return true; // loopback
+    if (a === 10) return true; // private
+    if (a === 172 && b >= 16 && b <= 31) return true; // private
+    if (a === 192 && b === 168) return true; // private
+    if (a === 169 && b === 254) return true; // link-local, включая метаданные облака
+    if (a === 100 && b >= 64 && b <= 127) return true; // carrier-grade NAT
+    if (a === 0) return true; // "this network"
+    if (a >= 224) return true; // multicast/reserved
+    return false;
+  }
+  if (net.isIPv6(ip)) {
+    const lower = ip.toLowerCase();
+    if (lower === "::1") return true; // loopback
+    if (lower.startsWith("fe80:") || lower.startsWith("::ffff:127.")) return true; // link-local / mapped loopback
+    if (/^f[cd][0-9a-f]{2}:/.test(lower)) return true; // unique local (fc00::/7)
+    return false;
+  }
+  return true; // не распознали формат — считаем небезопасным
+}
+
+async function assertPublicHostname(hostname: string): Promise<void> {
+  if (net.isIP(hostname)) {
+    if (isPrivateOrReservedIp(hostname)) throw new Error("Ссылка указывает на внутренний адрес");
+    return;
+  }
+  if (hostname === "localhost") throw new Error("Ссылка указывает на внутренний адрес");
+  const addresses = await dns.promises.lookup(hostname, { all: true });
+  if (addresses.length === 0) throw new Error("Не удалось разрешить адрес");
+  for (const { address } of addresses) {
+    if (isPrivateOrReservedIp(address)) throw new Error("Ссылка указывает на внутренний адрес");
+  }
+}
+
 function isGeneratedProductId(productId: string) {
   const raw = String(productId || "");
   return raw.startsWith("usda-") || raw.startsWith("ai-est-") || raw.startsWith("ai-dish-");
@@ -422,19 +467,34 @@ async function ensureProductExistsLocally(productId: string, productData?: any) 
   });
 
   if (!product) {
-    product = await prisma.product.create({
-      data: {
-        name: localizedData.name,
-        brand: localizedData.brand,
-        calories: numberOrZero(localizedData.calories),
-        protein: numberOrZero(localizedData.protein),
-        fat: numberOrZero(localizedData.fat),
-        carbs: numberOrZero(localizedData.carbs),
-        fiber: numberOrZero(localizedData.fiber),
-        micronutrients: JSON.stringify(completeMicro)
+    try {
+      product = await prisma.product.create({
+        data: {
+          name: localizedData.name,
+          brand: localizedData.brand,
+          calories: numberOrZero(localizedData.calories),
+          protein: numberOrZero(localizedData.protein),
+          fat: numberOrZero(localizedData.fat),
+          carbs: numberOrZero(localizedData.carbs),
+          fiber: numberOrZero(localizedData.fiber),
+          micronutrients: JSON.stringify(completeMicro)
+        }
+      });
+    } catch (e: any) {
+      // Гонка: два параллельных запроса одновременно решили один и тот же AI/USDA-продукт
+      // (например, двойной тап "добавить") — оба прошли findFirst до появления строки, и
+      // второй create падает на @@unique([name, brand]). Вместо падения всего запроса
+      // (и зависшего /api/diary/add без try/catch выше по цепочке) — просто берём уже
+      // созданную конкурентом строку.
+      if (e?.code === "P2002") {
+        product = await prisma.product.findFirst({ where: { name: localizedData.name, brand: localizedData.brand } });
+        if (!product) throw e;
+      } else {
+        throw e;
       }
-    });
-  } else if (!product.micronutrients || product.micronutrients === '{}' || shouldRefreshMicronutrients(product.micronutrients, localizedData)) {
+    }
+  }
+  if (product && (!product.micronutrients || product.micronutrients === '{}' || shouldRefreshMicronutrients(product.micronutrients, localizedData))) {
     product = await prisma.product.update({
       where: { id: product.id },
       data: {
@@ -2287,7 +2347,9 @@ export async function createApp(): Promise<express.Express> {
   // ... rest of setup ...
   const app = express();
 
-  app.use(express.json());
+  // Дефолтный лимит body-parser (100kb) ломает /api/photo/recognize — фото в base64
+  // (даже уменьшенное клиентом до 1280px, JPEG q=0.86) обычно уже больше 100kb.
+  app.use(express.json({ limit: "10mb" }));
   app.use(cookieParser(resolveCookieSecret()));
 
   // Rate limiting: общий лимит на все /api/*, и более строгий — на эндпоинты входа/регистрации
@@ -2830,6 +2892,7 @@ export async function createApp(): Promise<express.Express> {
     try {
       parsedUrl = new URL(rawUrl);
       if (!["http:", "https:"].includes(parsedUrl.protocol)) throw new Error("bad protocol");
+      await assertPublicHostname(parsedUrl.hostname);
     } catch {
       return res.status(400).json({ error: "Некорректная ссылка" });
     }
@@ -2918,14 +2981,19 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       return res.json(recipe);
     }
 
-    const recipe = await prisma.recipe.findUnique({
-      where: { id },
-      include: { ingredients: { include: { product: true } }, product: true },
-    });
-    if (!recipe || recipe.userId !== userId) {
-      return res.status(403).json({ error: "Forbidden or not found" });
+    try {
+      const recipe = await prisma.recipe.findUnique({
+        where: { id },
+        include: { ingredients: { include: { product: true } }, product: true },
+      });
+      if (!recipe || recipe.userId !== userId) {
+        return res.status(403).json({ error: "Forbidden or not found" });
+      }
+      res.json(recipe);
+    } catch (e: any) {
+      logError("Get Recipe Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
-    res.json(recipe);
   });
 
   app.delete("/api/recipes/:id", async (req, res) => {
@@ -3394,18 +3462,23 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       return res.json({ success: true, mode: "memory" });
     }
 
-    // Verify ownership
-    const item = await prisma.mealItem.findUnique({
-      where: { id },
-      include: { meal: true }
-    });
+    try {
+      // Verify ownership
+      const item = await prisma.mealItem.findUnique({
+        where: { id },
+        include: { meal: true }
+      });
 
-    if (!item || item.meal.userId !== userId) {
-      return res.status(403).json({ error: "Forbidden or not found" });
+      if (!item || item.meal.userId !== userId) {
+        return res.status(403).json({ error: "Forbidden or not found" });
+      }
+
+      await prisma.mealItem.delete({ where: { id } });
+      res.json({ success: true });
+    } catch (e: any) {
+      logError("Delete Diary Item Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
-
-    await prisma.mealItem.delete({ where: { id } });
-    res.json({ success: true });
   });
 
   // Activity: List logged activities for a date
@@ -3485,13 +3558,18 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       return res.json({ success: true, mode: "memory" });
     }
 
-    const activity = await prisma.activityLog.findUnique({ where: { id } });
-    if (!activity || activity.userId !== userId) {
-      return res.status(403).json({ error: "Forbidden or not found" });
-    }
+    try {
+      const activity = await prisma.activityLog.findUnique({ where: { id } });
+      if (!activity || activity.userId !== userId) {
+        return res.status(403).json({ error: "Forbidden or not found" });
+      }
 
-    await prisma.activityLog.delete({ where: { id } });
-    res.json({ success: true });
+      await prisma.activityLog.delete({ where: { id } });
+      res.json({ success: true });
+    } catch (e: any) {
+      logError("Delete Activity Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
   });
 
   // Weight: Log today's (or a given date's) body weight — одна запись на день,
@@ -3653,45 +3731,50 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       return res.json({ ...mealItem, mode: "memory", date: targetDateKey });
     }
 
-    if (isGeneratedProductId(String(productId)) && usdaData) {
-      const product = await ensureProductExistsLocally(String(productId), usdaData);
-      if (!product) {
-        return res.status(400).json({ error: "Unable to persist generated product" });
-      }
-      productId = product.id;
-    }
-
-    const { start: startOfDay, end: endOfDay } = dayRangeFromDate(targetDate);
-
-    let meal = await prisma.meal.findFirst({
-      where: {
-        userId,
-        type,
-        date: { gte: startOfDay, lte: endOfDay }
-      }
-    });
-
-    if (!meal) {
-      meal = await prisma.meal.create({
-        data: { userId, type, date: startOfDay }
-      });
-    }
-
-    const mealItem = await prisma.mealItem.create({
-      data: {
-        mealId: meal.id,
-        productId,
-        amount: Number(amount)
-      }
-    });
-
     try {
-      await touchRecentFood(userId, productId, Number(amount));
-    } catch (e) {
-      logError("touchRecentFood error:", e);
-    }
+      if (isGeneratedProductId(String(productId)) && usdaData) {
+        const product = await ensureProductExistsLocally(String(productId), usdaData);
+        if (!product) {
+          return res.status(400).json({ error: "Unable to persist generated product" });
+        }
+        productId = product.id;
+      }
 
-    res.json(mealItem);
+      const { start: startOfDay, end: endOfDay } = dayRangeFromDate(targetDate);
+
+      let meal = await prisma.meal.findFirst({
+        where: {
+          userId,
+          type,
+          date: { gte: startOfDay, lte: endOfDay }
+        }
+      });
+
+      if (!meal) {
+        meal = await prisma.meal.create({
+          data: { userId, type, date: startOfDay }
+        });
+      }
+
+      const mealItem = await prisma.mealItem.create({
+        data: {
+          mealId: meal.id,
+          productId,
+          amount: Number(amount)
+        }
+      });
+
+      try {
+        await touchRecentFood(userId, productId, Number(amount));
+      } catch (e) {
+        logError("touchRecentFood error:", e);
+      }
+
+      res.json(mealItem);
+    } catch (e: any) {
+      logError("Diary Add Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
   });
 
   // Diary: Edit meal item weight (calories/macros recalculate on read from product x amount)
@@ -3716,13 +3799,18 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       return res.json({ success: true, mode: "memory" });
     }
 
-    const item = await prisma.mealItem.findUnique({ where: { id }, include: { meal: true } });
-    if (!item || item.meal.userId !== userId) {
-      return res.status(403).json({ error: "Forbidden or not found" });
-    }
+    try {
+      const item = await prisma.mealItem.findUnique({ where: { id }, include: { meal: true } });
+      if (!item || item.meal.userId !== userId) {
+        return res.status(403).json({ error: "Forbidden or not found" });
+      }
 
-    const updatedItem = await prisma.mealItem.update({ where: { id }, data: { amount } });
-    res.json(updatedItem);
+      const updatedItem = await prisma.mealItem.update({ where: { id }, data: { amount } });
+      res.json(updatedItem);
+    } catch (e: any) {
+      logError("Update Diary Item Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
   });
 
   // Quick Add: быстрая запись без поиска продукта — название + ккал/КБЖУ напрямую.
@@ -3769,23 +3857,28 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       return res.json({ ...mealItem, mode: "memory", date: targetDateKey });
     }
 
-    const product = await prisma.product.create({
-      data: { ...quickProductData, createdByUserId: userId },
-    });
+    try {
+      const product = await prisma.product.create({
+        data: { ...quickProductData, createdByUserId: userId },
+      });
 
-    const { start: startOfDay, end: endOfDay } = dayRangeFromDate(targetDate);
-    let meal = await prisma.meal.findFirst({
-      where: { userId, type, date: { gte: startOfDay, lte: endOfDay } },
-    });
-    if (!meal) {
-      meal = await prisma.meal.create({ data: { userId, type, date: startOfDay } });
+      const { start: startOfDay, end: endOfDay } = dayRangeFromDate(targetDate);
+      let meal = await prisma.meal.findFirst({
+        where: { userId, type, date: { gte: startOfDay, lte: endOfDay } },
+      });
+      if (!meal) {
+        meal = await prisma.meal.create({ data: { userId, type, date: startOfDay } });
+      }
+
+      const mealItem = await prisma.mealItem.create({
+        data: { mealId: meal.id, productId: product.id, amount: 100 },
+      });
+
+      res.json({ ...mealItem, product });
+    } catch (e: any) {
+      logError("Quick Add Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
-
-    const mealItem = await prisma.mealItem.create({
-      data: { mealId: meal.id, productId: product.id, amount: 100 },
-    });
-
-    res.json({ ...mealItem, product });
   });
 
   // Voice: Parse transcript into food items
@@ -3875,23 +3968,35 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
   // --- Admin Routes ---
   app.get("/api/admin/users", async (req, res) => {
-    const userId = req.signedCookies.token;
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (user?.role !== "ADMIN") return res.status(403).json({ error: "Forbidden" });
-    const users = await prisma.user.findMany({ include: { _count: { select: { meals: true } } } });
-    res.json(users);
+    try {
+      const userId = req.signedCookies.token;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (user?.role !== "ADMIN") return res.status(403).json({ error: "Forbidden" });
+      const users = await prisma.user.findMany({ include: { _count: { select: { meals: true } } } });
+      res.json(users);
+    } catch (e: any) {
+      logError("Admin Users Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
   });
 
   app.get("/api/admin/stats", async (req, res) => {
-    const userId = req.signedCookies.token;
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (user?.role !== "ADMIN") return res.status(403).json({ error: "Forbidden" });
-    
-    const userCount = await prisma.user.count();
-    const productCount = await prisma.product.count();
-    const mealCount = await prisma.meal.count();
-    
-    res.json({ userCount, productCount, mealCount });
+    try {
+      const userId = req.signedCookies.token;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (user?.role !== "ADMIN") return res.status(403).json({ error: "Forbidden" });
+
+      const userCount = await prisma.user.count();
+      const productCount = await prisma.product.count();
+      const mealCount = await prisma.meal.count();
+
+      res.json({ userCount, productCount, mealCount });
+    } catch (e: any) {
+      logError("Admin Stats Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
   });
 
 
