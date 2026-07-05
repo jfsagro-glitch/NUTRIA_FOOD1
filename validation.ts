@@ -41,10 +41,10 @@ export const customProductSchema = z.object({
   name: z.string().trim().min(1, "Название обязательно"),
   brand: z.string().trim().optional().nullable(),
   barcode: z.string().trim().optional().nullable(),
-  calories: z.coerce.number().optional().default(0),
-  protein: z.coerce.number().optional().default(0),
-  fat: z.coerce.number().optional().default(0),
-  carbs: z.coerce.number().optional().default(0),
+  calories: z.coerce.number().min(0, "Значение не может быть отрицательным").optional().default(0),
+  protein: z.coerce.number().min(0, "Значение не может быть отрицательным").optional().default(0),
+  fat: z.coerce.number().min(0, "Значение не может быть отрицательным").optional().default(0),
+  carbs: z.coerce.number().min(0, "Значение не может быть отрицательным").optional().default(0),
 });
 
 const recipeIngredientSchema = z
@@ -138,9 +138,9 @@ export const quickAddSchema = z.object({
   mealType: z.enum(["BREAKFAST", "LUNCH", "DINNER", "SNACK", "WATER"]).optional(),
   label: z.string().trim().min(1, "Invalid quick-add payload"),
   calories: z.coerce.number().min(0, "Invalid quick-add payload"),
-  protein: z.coerce.number().optional().default(0),
-  fat: z.coerce.number().optional().default(0),
-  carbs: z.coerce.number().optional().default(0),
+  protein: z.coerce.number().min(0, "Значение не может быть отрицательным").optional().default(0),
+  fat: z.coerce.number().min(0, "Значение не может быть отрицательным").optional().default(0),
+  carbs: z.coerce.number().min(0, "Значение не может быть отрицательным").optional().default(0),
 });
 
 export const voiceParseSchema = z.object({

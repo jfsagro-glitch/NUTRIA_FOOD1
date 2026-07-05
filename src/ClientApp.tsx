@@ -3568,12 +3568,6 @@ export default function App() {
   }, [goalOverrides]);
 
   useEffect(() => {
-    if (isLoggedIn && diaryData.meals.length > 0) {
-      fetchHints();
-    }
-  }, [diaryData, isLoggedIn]);
-
-  useEffect(() => {
     try {
       const raw = localStorage.getItem(FASTING_STATE_STORAGE_KEY);
       if (!raw) return;
@@ -4252,9 +4246,13 @@ export default function App() {
         setFoodTab('all');
         fetchDiary(selectedDiaryDate);
         fetchHints();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err?.error || 'Не удалось сохранить запись');
       }
     } catch (e) {
       console.error(e);
+      alert('Не удалось сохранить запись. Проверьте соединение.');
     } finally {
       setIsSavingQuickAdd(false);
     }
@@ -4290,9 +4288,13 @@ export default function App() {
         }
         customProductOriginRef.current = 'mine';
         setEditingCustomProductId(null);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err?.error || 'Не удалось сохранить продукт');
       }
     } catch (e) {
       console.error(e);
+      alert('Не удалось сохранить продукт. Проверьте соединение.');
     } finally {
       setIsSavingCustomProduct(false);
     }
@@ -4388,10 +4390,18 @@ export default function App() {
             fat: it.product!.fat,
             carbs: it.product!.carbs,
           }));
-        if (matched.length > 0) setDishIngredients(matched);
+        if (matched.length > 0) {
+          setDishIngredients(matched);
+        } else {
+          alert('Не удалось разобрать состав блюда. Попробуйте другое название или добавьте ингредиенты вручную.');
+        }
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err?.error || 'Не удалось разобрать состав блюда');
       }
     } catch (e) {
       console.error(e);
+      alert('Не удалось разобрать состав блюда. Проверьте соединение.');
     } finally {
       setIsAutoFillingDish(false);
     }
@@ -5453,7 +5463,7 @@ export default function App() {
               autoFocus
             />
             <input
-              type="number" placeholder="Калории (ккал)"
+              type="number" min="0" placeholder="Калории (ккал)"
               className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
               value={quickAddForm.calories}
               onChange={(e) => setQuickAddForm((p) => ({ ...p, calories: e.target.value }))}
@@ -5463,11 +5473,11 @@ export default function App() {
             )}
             <p className="text-[11px] text-zinc-500 uppercase tracking-wider pt-1">БЖУ (необязательно)</p>
             <div className="grid grid-cols-3 gap-3">
-              <input type="number" placeholder="Белки, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              <input type="number" min="0" placeholder="Белки, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                 value={quickAddForm.protein} onChange={(e) => setQuickAddForm((p) => ({ ...p, protein: e.target.value }))} />
-              <input type="number" placeholder="Жиры, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              <input type="number" min="0" placeholder="Жиры, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                 value={quickAddForm.fat} onChange={(e) => setQuickAddForm((p) => ({ ...p, fat: e.target.value }))} />
-              <input type="number" placeholder="Углеводы, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+              <input type="number" min="0" placeholder="Углеводы, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                 value={quickAddForm.carbs} onChange={(e) => setQuickAddForm((p) => ({ ...p, carbs: e.target.value }))} />
             </div>
             <button
@@ -5504,13 +5514,13 @@ export default function App() {
           />
           <p className="text-[11px] text-zinc-500 uppercase tracking-wider pt-1">КБЖУ на 100 г</p>
           <div className="grid grid-cols-2 gap-3">
-            <input type="number" placeholder="Калории" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            <input type="number" min="0" placeholder="Калории" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
               value={customProductForm.calories} onChange={(e) => setCustomProductForm((p) => ({ ...p, calories: e.target.value }))} />
-            <input type="number" placeholder="Белки, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            <input type="number" min="0" placeholder="Белки, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
               value={customProductForm.protein} onChange={(e) => setCustomProductForm((p) => ({ ...p, protein: e.target.value }))} />
-            <input type="number" placeholder="Жиры, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            <input type="number" min="0" placeholder="Жиры, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
               value={customProductForm.fat} onChange={(e) => setCustomProductForm((p) => ({ ...p, fat: e.target.value }))} />
-            <input type="number" placeholder="Углеводы, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            <input type="number" min="0" placeholder="Углеводы, г" className="bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
               value={customProductForm.carbs} onChange={(e) => setCustomProductForm((p) => ({ ...p, carbs: e.target.value }))} />
           </div>
           <button
