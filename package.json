@@ -18,6 +18,7 @@
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:backfill:micronutrients": "tsx prisma/backfill-micronutrients.ts",
+    "db:dedupe:meals": "tsx prisma/dedupe-meals.ts",
     "db:localize:ru": "tsx prisma/localize-ru.ts",
     "smoke:photo-correction": "powershell -ExecutionPolicy Bypass -File scripts/smoke-photo-correction.ps1",
     "smoke:photo-whole-dish": "powershell -ExecutionPolicy Bypass -File scripts/smoke-photo-whole-dish.ps1",

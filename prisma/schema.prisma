@@ -342,7 +342,7 @@ model RecentFood {
 model RecognitionCorrection {
   id                 String   @id @default(cuid())
   userId             String
-  user               User     @relation(fields: [userId], references: [id])
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   sourceName         String
   normalizedSource   String
   aliasesJson        String?
@@ -361,11 +361,17 @@ model RecognitionCorrection {
 model Meal {
   id        String     @id @default(cuid())
   userId    String
-  user      User       @relation(fields: [userId], references: [id])
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   type      String
   date      DateTime   @default(now())
   items     MealItem[]
   createdAt DateTime   @default(now())
+
+  // TODO: добавить @@unique([userId, type, date]) + @@index([userId, date]) — защитит
+  // от дублей Meal при параллельных клиентах (веб-вкладка + Telegram-бот, двойной тап),
+  // но требует ручного db:dedupe:meals + `prisma db push --accept-data-loss` на проде
+  // ПЕРЕД тем, как это попадёт в обычный автодеплой (см. prisma/dedupe-meals.ts) —
+  // иначе plain `db push` в scripts/start-server.mjs упадёт и уронит весь деплой.
 }
 
 model MealItem {
@@ -441,7 +447,7 @@ model MealPlanItem {
 model NutrientGoal {
   id       String @id @default(cuid())
   userId   String @unique
-  user     User   @relation(fields: [userId], references: [id])
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   calories Float
   protein  Float
   fat      Float

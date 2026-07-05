@@ -43,7 +43,9 @@ const env = { ...process.env };
 
 if (resolvedDatabaseUrl) {
   env.DATABASE_URL = resolvedDatabaseUrl;
-  console.log("[startup] DATABASE_URL resolved. Running prisma db push...");
+  console.log("[startup] DATABASE_URL resolved. Deduplicating Meal rows before schema push...");
+  runOrExit("npx", ["tsx", "prisma/dedupe-meals.ts"], env);
+  console.log("[startup] Running prisma db push...");
   runOrExit("npx", ["prisma", "db", "push"], env);
   console.log("[startup] Running prisma/seed.ts (upsert, safe to repeat on every deploy)...");
   runOrExit("npx", ["tsx", "prisma/seed.ts"], env);

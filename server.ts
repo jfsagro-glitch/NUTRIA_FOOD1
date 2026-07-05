@@ -3417,12 +3417,14 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       const { start: startOfDay, end: endOfDay } = dayRangeFromDate(targetDate);
 
       let meal = await prisma.meal.findFirst({
-        where: { userId, type: 'WATER', date: { gte: startOfDay, lte: endOfDay } }
+        where: { userId, type: 'WATER', date: { gte: startOfDay, lte: endOfDay } },
+        include: { items: true }
       });
 
       if (!meal) {
         meal = await prisma.meal.create({
-          data: { userId, type: 'WATER', date: startOfDay }
+          data: { userId, type: 'WATER', date: startOfDay },
+          include: { items: true }
         });
       }
 
@@ -3433,15 +3435,20 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
         });
       }
 
+      // Клэмпим, чтобы суммарный waterIntake за день не уходил в минус (симметрично
+      // in-memory режиму выше) — иначе списание больше выпитого даёт отрицательный итог.
+      const currentTotal = meal.items.reduce((sum, item) => sum + item.amount, 0);
+      const effectiveDelta = Math.max(-currentTotal, delta);
+
       await prisma.mealItem.create({
         data: {
           mealId: meal.id,
           productId: waterProduct.id,
-          amount: delta
+          amount: effectiveDelta
         }
       });
 
-      res.json({ success: true, date: targetDateKey });
+      res.json({ success: true, date: targetDateKey, waterIntake: currentTotal + effectiveDelta });
     } catch (e: any) {
       logError("Diary Water Error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
