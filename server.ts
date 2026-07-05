@@ -2480,7 +2480,7 @@ export async function createApp(): Promise<express.Express> {
     // настоящего (пригашённого через CRM) аккаунта повторное нажатие той же кнопки тут же
     // возвращало в общий демо-аккаунт, что выглядело как "выход не сработал".
     if (!isDatabaseConfigured()) {
-      res.cookie("token", DEMO_USER_ID, { httpOnly: true, signed: true, secure: true, sameSite: "none" });
+      res.cookie("token", DEMO_USER_ID, { httpOnly: true, signed: true, secure: true, sameSite: "lax" });
       return res.json({ success: true, user: { email: DEMO_USER.email, role: DEMO_USER.role }, mode: "memory" });
     }
 
@@ -2501,7 +2501,7 @@ export async function createApp(): Promise<express.Express> {
         return res.status(403).json({ error: "Аккаунт заблокирован", blockedBy });
       }
 
-      res.cookie("token", user.id, { httpOnly: true, signed: true, secure: true, sameSite: "none" });
+      res.cookie("token", user.id, { httpOnly: true, signed: true, secure: true, sameSite: "lax" });
       res.json({ success: true, user: { email: user.email, role: user.role } });
     } catch (e: any) {
       logError("Auth Login Error:", e);
@@ -2531,7 +2531,7 @@ export async function createApp(): Promise<express.Express> {
   });
 
   app.post("/api/auth/logout", async (req, res) => {
-    res.clearCookie("token", { httpOnly: true, signed: true, secure: true, sameSite: "none" });
+    res.clearCookie("token", { httpOnly: true, signed: true, secure: true, sameSite: "lax" });
     res.json({ success: true });
   });
 
