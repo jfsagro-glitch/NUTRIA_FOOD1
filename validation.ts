@@ -236,11 +236,22 @@ export const onboardLoginSchema = z.object({
 });
 
 export const onboardCompleteSchema = z.object({
-  secretPhrase: z.string().trim().min(1, "Неверная секретная фраза"),
+  // Обязательна только для CLIENT-приглашений (проверяется в обработчике, т.к. схема
+  // не знает роль на момент валидации). NUTRITIONIST/ADMIN вместо этого задают password.
+  secretPhrase: z.string().trim().optional(),
+  password: z.string().min(6, "Пароль должен быть не короче 6 символов").optional(),
+  firstName: z.string().trim().optional(),
+  lastName: z.string().trim().optional(),
   profile: z
     .object({
       ...crmProfileBaseSchema,
     })
     .partial()
     .optional(),
+});
+
+export const crmInviteSchema = z.object({
+  email: z.string().trim().toLowerCase().email("Некорректный email"),
+  name: z.string().trim().min(1, "Имя обязательно"),
+  role: z.enum(["CLIENT", "NUTRITIONIST", "ADMIN"], { error: "Некорректная роль" }),
 });

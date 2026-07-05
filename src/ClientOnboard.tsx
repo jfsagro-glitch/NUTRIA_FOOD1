@@ -6,7 +6,9 @@ interface Props {
   onComplete: (user: { id: string; email: string; role: string }, token: string) => void;
 }
 
-type Step = 'loading' | 'invalid' | 'phrase' | 'profile' | 'done';
+type Step = 'loading' | 'invalid' | 'phrase' | 'password' | 'profile' | 'done';
+
+const ROLE_LABEL: Record<string, string> = { CLIENT: 'клиента', NUTRITIONIST: 'нутрициолога', ADMIN: 'администратора' };
 
 const ACTIVITY_LABELS: Record<string, string> = {
   low: 'Низкая (сидячая работа)',
@@ -29,6 +31,7 @@ export function ClientOnboard({ token, onComplete }: Props) {
   const [loading, setLoading] = useState(false);
 
   const [secretPhrase, setSecretPhrase] = useState('');
+  const [password, setPassword] = useState('');
   const [profile, setProfile] = useState({
     firstName: '',
     lastName: '',
@@ -55,8 +58,9 @@ export function ClientOnboard({ token, onComplete }: Props) {
           return;
         }
         setInviteInfo(data);
-        // Если уже активировано — сразу на шаг ввода фразы
-        setStep('phrase');
+        // Приглашения с email (созданы админом — любая роль) регистрируются по паролю,
+        // без секретной фразы — она для них никому не сообщается.
+        setStep(data.email ? 'password' : 'phrase');
       } catch {
         setError('Не удалось загрузить приглашение');
         setStep('invalid');
@@ -93,6 +97,50 @@ export function ClientOnboard({ token, onComplete }: Props) {
     }
   }
 
+  // Приглашения с email (админ выбрал роль CLIENT/NUTRITIONIST/ADMIN): регистрация
+  // паролем вместо секретной фразы. Для CLIENT после этого шага ещё идёт анкета
+  // здоровья ('profile'); для NUTRITIONIST/ADMIN регистрация завершается сразу здесь.
+  async function handlePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      if (inviteInfo?.alreadyUsed) {
+        const res = await fetch(`/api/onboard/${token}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password }),
+          credentials: 'include',
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Неверный пароль');
+        onComplete(data.user, data.token);
+        return;
+      }
+
+      if (inviteInfo?.role === 'CLIENT') {
+        setStep('profile');
+        return;
+      }
+
+      const res = await fetch(`/api/onboard/${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password, firstName: profile.firstName, lastName: profile.lastName }),
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Ошибка регистрации');
+      setStep('done');
+      setTimeout(() => onComplete(data.user, data.token), 1500);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleProfile(e: React.FormEvent) {
     e.preventDefault();
     setError('');
@@ -103,7 +151,8 @@ export function ClientOnboard({ token, onComplete }: Props) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          secretPhrase,
+          secretPhrase: inviteInfo?.email ? undefined : secretPhrase,
+          password: inviteInfo?.email ? password : undefined,
           profile: {
             ...profile,
             birthYear: profile.birthYear ? Number(profile.birthYear) : undefined,
@@ -158,7 +207,9 @@ export function ClientOnboard({ token, onComplete }: Props) {
         <div className="text-center max-w-sm">
           <CheckCircle2 size={56} className="text-emerald-500 mx-auto mb-4" />
           <h2 className="text-white text-xl font-semibold mb-2">Готово!</h2>
-          <p className="text-zinc-400 text-sm">Переходим к вашему дневнику питания…</p>
+          <p className="text-zinc-400 text-sm">
+            {inviteInfo?.role === 'CLIENT' ? 'Переходим к вашему дневнику питания…' : 'Переходим в CRM…'}
+          </p>
         </div>
       </div>
     );
@@ -217,6 +268,62 @@ export function ClientOnboard({ token, onComplete }: Props) {
                 >
                   {loading ? <Loader2 size={16} className="animate-spin" /> : <ChevronRight size={16} />}
                   {inviteInfo?.alreadyUsed ? 'Войти' : 'Продолжить'}
+                </button>
+              </form>
+            </>
+          )}
+
+          {/* Шаг 1 (альтернатива): регистрация паролем — для приглашений с email
+              (любая роль: клиент/нутрициолог/администратор) */}
+          {step === 'password' && (
+            <>
+              <div className="mb-5">
+                <p className="text-zinc-400 text-sm mb-1">Приглашение от</p>
+                <p className="text-white font-medium">{inviteInfo?.nutritionistName}</p>
+                <p className="text-emerald-400 text-sm mt-1">
+                  Роль: {ROLE_LABEL[inviteInfo?.role] || inviteInfo?.role}
+                </p>
+              </div>
+
+              <h2 className="text-white text-lg font-semibold mb-1">
+                {inviteInfo?.alreadyUsed ? 'Добро пожаловать обратно' : 'Добро пожаловать в Nütria'}
+              </h2>
+              <p className="text-zinc-400 text-sm mb-5">
+                {inviteInfo?.alreadyUsed
+                  ? 'Введите пароль для входа'
+                  : `Придумайте пароль, чтобы завершить регистрацию (${inviteInfo?.email})`}
+              </p>
+
+              <form onSubmit={handlePassword} className="space-y-4">
+                {!inviteInfo?.alreadyUsed && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <input type="text" value={profile.firstName} onChange={e => setP('firstName', e.target.value)}
+                      placeholder="Имя" required
+                      className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500" />
+                    <input type="text" value={profile.lastName} onChange={e => setP('lastName', e.target.value)}
+                      placeholder="Фамилия"
+                      className="bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500" />
+                  </div>
+                )}
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="Пароль"
+                  minLength={6}
+                  required
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500"
+                />
+
+                {error && <p className="text-red-400 text-sm">{error}</p>}
+
+                <button
+                  type="submit"
+                  disabled={loading || password.length < 6 || (!inviteInfo?.alreadyUsed && !profile.firstName.trim())}
+                  className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white font-medium py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
+                >
+                  {loading ? <Loader2 size={16} className="animate-spin" /> : <ChevronRight size={16} />}
+                  {inviteInfo?.alreadyUsed ? 'Войти' : inviteInfo?.role === 'CLIENT' ? 'Продолжить' : 'Завершить регистрацию'}
                 </button>
               </form>
             </>

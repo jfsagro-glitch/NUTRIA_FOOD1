@@ -74,20 +74,31 @@ model NutritionistProfile {
 
 // ─── Приглашение клиента ─────────────────────────────────────────────────────
 
+// Приглашение — универсальное: раньше только для клиента, теперь админ может пригласить
+// пользователя с любой ролью (CLIENT/NUTRITIONIST/ADMIN) по email. Название модели/поля
+// nutritionistId сохранены как есть (кто пригласил — не обязательно нутрициолог, может
+// быть админ), чтобы не переименовывать таблицу лишний раз.
 model ClientInvite {
   id              String    @id @default(cuid())
-  // Нутрициолог, создавший приглашение
+  // Кто создал приглашение (нутрициолог — для клиентских инвайтов, админ — для любых)
   nutritionistId  String
   nutritionist    User      @relation("InvitedBy", fields: [nutritionistId], references: [id], onDelete: Cascade)
-  // Клиент (заполняется после онбординга)
+  // Приглашённый пользователь (заполняется после онбординга)
   clientId        String?   @unique
   client          User?     @relation("InvitedClient", fields: [clientId], references: [id])
   // Уникальный токен в ссылке: /onboard/:token
   token           String    @unique @default(cuid())
-  // Секретная фраза для входа клиента
+  // Секретная фраза для входа клиента (для CLIENT-приглашений; для NUTRITIONIST/ADMIN
+  // генерируется случайно и не используется — там вход по email+паролю после онбординга)
   secretPhrase    String
-  // Имя клиента (может быть задано нутрициологом заранее)
+  // Имя приглашённого (может быть задано заранее)
   clientName      String?
+  // Email приглашённого — обязателен для NUTRITIONIST/ADMIN-приглашений (используется как
+  // email создаваемого User), опционален для CLIENT (если не задан — используется
+  // синтетический client-<id>@nutria.internal, как раньше)
+  email           String?
+  // Роль, которую получит приглашённый после онбординга: CLIENT | NUTRITIONIST | ADMIN
+  role            String    @default("CLIENT")
   // Теги
   tagsJson        String?   @default("[]")
   // Статус

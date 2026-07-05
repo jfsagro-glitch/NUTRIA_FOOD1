@@ -2495,7 +2495,10 @@ export async function createApp(): Promise<express.Express> {
         return res.json({ user: DEMO_USER, mode: "memory" });
       }
 
-      const user = await prisma.user.findUnique({ where: { id: userId } });
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, email: true, role: true, createdAt: true, updatedAt: true },
+      });
       res.json({ user });
     } catch (e: any) {
       logError("Auth Me Error:", e);

@@ -6,7 +6,7 @@ import {
   AlertCircle, RefreshCw, Leaf, ChevronLeft, Tag,
   User, Activity, Scale, Ruler, Target, Zap, Flame,
   Download, Copy, ExternalLink, Send, Smartphone,
-  Utensils, ShoppingCart
+  Utensils, ShoppingCart, Shield
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -1474,6 +1474,280 @@ function Dashboard({ user, onSelectClient }: { user: NutritionistUser; onSelectC
   );
 }
 
+// ─── Админ: приглашение пользователя (любая роль) ─────────────────────────
+
+const INVITE_ROLE_LABEL: Record<string, string> = { CLIENT: 'Клиент', NUTRITIONIST: 'Нутрициолог', ADMIN: 'Администратор' };
+
+function InviteUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const api = useApi();
+  const [form, setForm] = useState({ email: '', name: '', role: 'CLIENT' as 'CLIENT' | 'NUTRITIONIST' | 'ADMIN' });
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+  const [created, setCreated] = useState<{ url: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault(); setErr(''); setLoading(true);
+    try {
+      const data = await api.post('/api/crm/invites', form);
+      setCreated({ url: data.inviteUrl });
+    } catch (e: any) { setErr(e.message); }
+    finally { setLoading(false); }
+  }
+
+  function copy() {
+    navigator.clipboard.writeText(created!.url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-zinc-900 rounded-2xl border border-zinc-800 w-full max-w-md">
+        <div className="flex items-center justify-between p-6 border-b border-zinc-800">
+          <h3 className="text-white font-semibold">Пригласить пользователя</h3>
+          <button onClick={onClose} className="text-zinc-400 hover:text-white"><X size={20}/></button>
+        </div>
+
+        {!created ? (
+          <form onSubmit={submit} className="p-6 space-y-4">
+            <div>
+              <label className="text-xs text-zinc-400 mb-1 block">Email *</label>
+              <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                placeholder="user@example.com" required
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500" />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 mb-1 block">Имя *</label>
+              <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="Анна Иванова" required
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500" />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 mb-1 block">Роль *</label>
+              <div className="flex gap-2">
+                {(['CLIENT', 'NUTRITIONIST', 'ADMIN'] as const).map(r => (
+                  <button key={r} type="button" onClick={() => setForm(f => ({ ...f, role: r }))}
+                    className={cn("flex-1 px-2 py-2 rounded-lg text-xs border transition-colors",
+                      form.role === r ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-zinc-700 text-zinc-400 hover:text-white')}>
+                    {INVITE_ROLE_LABEL[r]}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {err && <p className="text-red-400 text-sm">{err}</p>}
+            <button type="submit" disabled={loading || !form.email || !form.name}
+              className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2">
+              {loading ? <Loader2 size={16} className="animate-spin"/> : <Plus size={16}/>} Создать приглашение
+            </button>
+          </form>
+        ) : (
+          <div className="p-6 space-y-4">
+            <div className="flex items-center gap-2 text-emerald-400">
+              <Check size={20}/><span className="font-medium">Приглашение создано!</span>
+            </div>
+            <p className="text-zinc-400 text-sm">
+              Отправка письма пока не подключена — скопируйте ссылку и отправьте {form.email} вручную.
+            </p>
+            <div className="bg-zinc-800 rounded-xl p-3 border border-zinc-700">
+              <p className="text-white text-xs break-all">{created.url}</p>
+            </div>
+            <button onClick={copy} className={cn("w-full py-2.5 rounded-xl text-sm flex items-center justify-center gap-2 border transition-colors",
+              copied ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-zinc-700 text-zinc-300 hover:border-emerald-500 hover:text-emerald-400')}>
+              {copied ? <><Check size={14}/> Скопировано!</> : <><Copy size={14}/> Скопировать ссылку</>}
+            </button>
+            <button onClick={() => { onCreated(); onClose(); }}
+              className="w-full bg-zinc-800 hover:bg-zinc-700 text-white py-2.5 rounded-xl text-sm">
+              Готово
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Админ-панель: статистика, пользователи, приглашения ──────────────────
+
+interface AdminStats {
+  totalUsers: number;
+  usersByRole: { client: number; nutritionist: number; admin: number };
+  totalProducts: number;
+  totalMeals: number;
+  invites: { pending: number; active: number };
+  newUsers: { last7d: number; last30d: number };
+  activeUsersLast7d: number;
+}
+
+interface AdminUserRow {
+  id: string; email: string; role: string; createdAt: string; name: string | null; mealCount: number;
+}
+
+interface AdminInviteRow {
+  id: string; email: string | null; clientName: string | null; role: string; status: string;
+  createdAt: string; usedAt: string | null; acceptedUser: { id: string; email: string; role: string } | null;
+}
+
+function AdminStatCard({ label, value, icon }: { label: string; value: React.ReactNode; icon: React.ReactNode }) {
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex items-center gap-3">
+      <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0">
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-zinc-500 text-xs">{label}</p>
+        <p className="text-white text-lg font-semibold truncate">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function AdminPanel() {
+  const api = useApi();
+  const [stats, setStats] = useState<AdminStats | null>(null);
+  const [users, setUsers] = useState<AdminUserRow[]>([]);
+  const [invites, setInvites] = useState<AdminInviteRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showInvite, setShowInvite] = useState(false);
+  const [tab, setTab] = useState<'overview' | 'users' | 'invites'>('overview');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [s, u, i] = await Promise.all([
+        api.get('/api/crm/admin/stats'),
+        api.get('/api/crm/admin/users'),
+        api.get('/api/crm/invites'),
+      ]);
+      setStats(s);
+      setUsers(u.users || []);
+      setInvites(i.invites || []);
+    } catch {} finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function revokeInvite(id: string) {
+    if (!window.confirm('Отозвать это приглашение?')) return;
+    try { await api.del(`/api/crm/invites/${id}`); load(); } catch (e: any) { alert(e.message); }
+  }
+
+  const ROLE_LABEL: Record<string, string> = { CLIENT: 'Клиент', NUTRITIONIST: 'Нутрициолог', ADMIN: 'Администратор', USER: 'Клиент (демо)' };
+  const INVITE_STATUS_LABEL: Record<string, string> = { PENDING: 'Ожидает', ACTIVE: 'Принято', ARCHIVED: 'Отозвано' };
+  const INVITE_STATUS_COLOR: Record<string, string> = { PENDING: 'text-yellow-400 bg-yellow-400/10', ACTIVE: 'text-emerald-400 bg-emerald-400/10', ARCHIVED: 'text-zinc-500 bg-zinc-800' };
+
+  return (
+    <>
+      {showInvite && <InviteUserDialog onClose={() => setShowInvite(false)} onCreated={() => load()} />}
+
+      <div className="flex flex-col h-full">
+        <div className="border-b border-zinc-800 px-6 py-4 flex items-center gap-4">
+          <div className="flex-1">
+            <h1 className="text-white font-display text-xl font-semibold">Администрирование</h1>
+            <p className="text-zinc-500 text-xs">Статистика платформы, пользователи, приглашения</p>
+          </div>
+          <div className="flex gap-1">
+            {([['overview', 'Обзор'], ['users', 'Пользователи'], ['invites', 'Приглашения']] as const).map(([id, label]) => (
+              <button key={id} onClick={() => setTab(id)}
+                className={cn("px-3 py-1.5 rounded-lg text-xs border transition-colors",
+                  tab === id ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-zinc-700 text-zinc-400 hover:text-white')}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setShowInvite(true)}
+            className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-white text-sm px-4 py-2 rounded-lg shrink-0">
+            <Plus size={16}/> Пригласить
+          </button>
+          <button onClick={load} className="text-zinc-500 hover:text-white"><RefreshCw size={16}/></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6">
+          {loading ? (
+            <div className="flex justify-center pt-16"><Loader2 size={24} className="animate-spin text-zinc-500"/></div>
+          ) : tab === 'overview' ? (
+            <div className="space-y-6 max-w-4xl">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <AdminStatCard label="Всего пользователей" value={stats?.totalUsers ?? '—'} icon={<Users size={18}/>} />
+                <AdminStatCard label="Клиентов" value={stats?.usersByRole.client ?? '—'} icon={<User size={18}/>} />
+                <AdminStatCard label="Нутрициологов" value={stats?.usersByRole.nutritionist ?? '—'} icon={<Star size={18}/>} />
+                <AdminStatCard label="Администраторов" value={stats?.usersByRole.admin ?? '—'} icon={<Target size={18}/>} />
+                <AdminStatCard label="Продуктов в базе" value={stats?.totalProducts ?? '—'} icon={<Utensils size={18}/>} />
+                <AdminStatCard label="Записей в дневниках" value={stats?.totalMeals ?? '—'} icon={<Clipboard size={18}/>} />
+                <AdminStatCard label="Активны за 7 дней" value={stats?.activeUsersLast7d ?? '—'} icon={<Activity size={18}/>} />
+                <AdminStatCard label="Новых за 7 / 30 дней" value={`${stats?.newUsers.last7d ?? '—'} / ${stats?.newUsers.last30d ?? '—'}`} icon={<Zap size={18}/>} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <AdminStatCard label="Приглашения: ожидают" value={stats?.invites.pending ?? '—'} icon={<Send size={18}/>} />
+                <AdminStatCard label="Приглашения: приняты" value={stats?.invites.active ?? '—'} icon={<Check size={18}/>} />
+              </div>
+            </div>
+          ) : tab === 'users' ? (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
+                  <th className="text-left px-4 py-3 font-medium">Пользователь</th>
+                  <th className="text-left px-4 py-3 font-medium">Роль</th>
+                  <th className="text-left px-4 py-3 font-medium">Записей в дневнике</th>
+                  <th className="text-left px-4 py-3 font-medium">Регистрация</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800/50">
+                {users.map(u => (
+                  <tr key={u.id}>
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-white">{u.name || '—'}</div>
+                      <div className="text-zinc-500 text-xs">{u.email}</div>
+                    </td>
+                    <td className="px-4 py-3 text-zinc-300">{ROLE_LABEL[u.role] || u.role}</td>
+                    <td className="px-4 py-3 text-zinc-300">{u.mealCount}</td>
+                    <td className="px-4 py-3 text-zinc-500 text-xs">{new Date(u.createdAt).toLocaleDateString('ru-RU')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
+                  <th className="text-left px-4 py-3 font-medium">Приглашённый</th>
+                  <th className="text-left px-4 py-3 font-medium">Роль</th>
+                  <th className="text-left px-4 py-3 font-medium">Статус</th>
+                  <th className="text-left px-4 py-3 font-medium">Создано</th>
+                  <th className="px-4 py-3"/>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800/50">
+                {invites.map(inv => (
+                  <tr key={inv.id}>
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-white">{inv.clientName || '—'}</div>
+                      <div className="text-zinc-500 text-xs">{inv.email || '—'}</div>
+                    </td>
+                    <td className="px-4 py-3 text-zinc-300">{ROLE_LABEL[inv.role] || inv.role}</td>
+                    <td className="px-4 py-3">
+                      <span className={cn("px-2 py-1 rounded-full text-xs font-medium", INVITE_STATUS_COLOR[inv.status])}>
+                        {INVITE_STATUS_LABEL[inv.status] || inv.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-zinc-500 text-xs">{new Date(inv.createdAt).toLocaleDateString('ru-RU')}</td>
+                    <td className="px-4 py-3 text-right">
+                      {inv.status === 'PENDING' && (
+                        <button onClick={() => revokeInvite(inv.id)} title="Отозвать"
+                          className="text-zinc-500 hover:text-red-400">
+                          <Trash2 size={14}/>
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── Главный CRM компонент ────────────────────────────────────────────────
 
 interface CrmAppProps {
@@ -1484,10 +1758,19 @@ interface CrmAppProps {
 export function CrmApp({ user, onLogout }: CrmAppProps) {
   const api = useApi();
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  // Раздел "Админ" виден только администраторам, но CRM в остальном одна и та же —
+  // админ получает полный функционал нутрициолога (клиенты) плюс этот доп. раздел.
+  const [view, setView] = useState<'clients' | 'admin'>('clients');
+  const isAdmin = user.role === 'ADMIN';
 
   async function handleLogout() {
     try { await api.post('/api/crm/auth/logout', {}); } catch {}
     onLogout();
+  }
+
+  function selectClientsView() {
+    setView('clients');
+    setSelectedClient(null);
   }
 
   return (
@@ -1498,12 +1781,20 @@ export function CrmApp({ user, onLogout }: CrmAppProps) {
           <Leaf size={18} className="text-white"/>
         </div>
         <nav className="flex flex-col items-center gap-2 flex-1">
-          <button onClick={() => setSelectedClient(null)}
+          <button onClick={selectClientsView}
             title="Клиенты"
             className={cn("w-10 h-10 rounded-xl flex items-center justify-center transition-colors",
-              !selectedClient ? 'bg-emerald-500/20 text-emerald-400' : 'text-zinc-500 hover:text-white hover:bg-zinc-800')}>
+              view === 'clients' ? 'bg-emerald-500/20 text-emerald-400' : 'text-zinc-500 hover:text-white hover:bg-zinc-800')}>
             <Users size={18}/>
           </button>
+          {isAdmin && (
+            <button onClick={() => setView('admin')}
+              title="Администрирование"
+              className={cn("w-10 h-10 rounded-xl flex items-center justify-center transition-colors",
+                view === 'admin' ? 'bg-emerald-500/20 text-emerald-400' : 'text-zinc-500 hover:text-white hover:bg-zinc-800')}>
+              <Shield size={18}/>
+            </button>
+          )}
         </nav>
         <div className="mt-auto space-y-2">
           <div title={`${user.profile?.firstName || ''} ${user.profile?.lastName || ''}`.trim() || user.email}
@@ -1519,7 +1810,9 @@ export function CrmApp({ user, onLogout }: CrmAppProps) {
 
       {/* Основной контент */}
       <main className="flex-1 overflow-hidden">
-        {selectedClient ? (
+        {view === 'admin' ? (
+          <AdminPanel />
+        ) : selectedClient ? (
           <ClientCard
             clientId={selectedClient.clientId}
             inviteToken={selectedClient.token}

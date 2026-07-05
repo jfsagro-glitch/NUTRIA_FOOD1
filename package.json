@@ -17,6 +17,7 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:admin": "tsx prisma/seed-admin.ts",
     "db:backfill:micronutrients": "tsx prisma/backfill-micronutrients.ts",
     "db:dedupe:meals": "tsx prisma/dedupe-meals.ts",
     "db:localize:ru": "tsx prisma/localize-ru.ts",

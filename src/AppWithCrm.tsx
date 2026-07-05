@@ -60,8 +60,9 @@ export default function AppWithCrm() {
     );
   }
 
-  // Нутрициолог → CRM
-  if (user?.role === 'NUTRITIONIST') {
+  // Нутрициолог/администратор → CRM (админ получает полный функционал нутрициолога
+  // плюс собственный раздел "Админ" внутри CrmApp, см. CrmApp.tsx)
+  if (user?.role === 'NUTRITIONIST' || user?.role === 'ADMIN') {
     return <CrmApp user={user} onLogout={handleLogout} />;
   }
 

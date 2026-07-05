@@ -27,6 +27,7 @@ import {
   crmClientProfilePatchSchema,
   onboardLoginSchema,
   onboardCompleteSchema,
+  crmInviteSchema,
 } from "./validation.ts";
 import { logError } from "./logging.ts";
 
@@ -71,20 +72,31 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+// Сотрудники (нутрициологи/админы) — все остальные роли считаются клиентами
+// дневника питания, включая общий демо-аккаунт ("USER") и любые будущие значения.
+const STAFF_ROLES = ["NUTRITIONIST", "ADMIN"];
+function isClientRole(role: string | null | undefined) {
+  return !!role && !STAFF_ROLES.includes(role);
+}
+
+// Админ имеет полный функционал нутрициолога (плюс собственные админ-роуты ниже) —
+// поэтому requireNutritionist пропускает обе роли, а не только NUTRITIONIST.
 function requireNutritionist(req: Request, res: Response, next: NextFunction) {
   requireAuth(req, res, () => {
-    if ((req as any).user?.role !== "NUTRITIONIST") {
+    if (!STAFF_ROLES.includes((req as any).user?.role)) {
       return res.status(403).json({ error: "Forbidden: nutritionist role required" });
     }
     next();
   });
 }
 
-// Сотрудники (нутрициологи/админы) — все остальные роли считаются клиентами
-// дневника питания, включая общий демо-аккаунт ("USER") и любые будущие значения.
-const STAFF_ROLES = ["NUTRITIONIST", "ADMIN"];
-function isClientRole(role: string | null | undefined) {
-  return !!role && !STAFF_ROLES.includes(role);
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  requireAuth(req, res, () => {
+    if ((req as any).user?.role !== "ADMIN") {
+      return res.status(403).json({ error: "Forbidden: admin role required" });
+    }
+    next();
+  });
 }
 
 // Новые ClientInvite.secretPhrase хранятся как bcrypt-хэш. Записи, созданные до
@@ -94,6 +106,15 @@ const BCRYPT_HASH_RE = /^\$2[aby]\$/;
 async function verifySecretPhrase(plain: string, stored: string): Promise<boolean> {
   if (BCRYPT_HASH_RE.test(stored)) return bcrypt.compare(plain, stored);
   return plain === stored;
+}
+
+// Отправка письма с приглашением пока не подключена (нет провайдера/SMTP-ключей) —
+// ссылка отдаётся в ответе API и показывается в CRM для ручной отправки. Когда появится
+// провайдер (SMTP/SendGrid/Resend/...), реализовать отправку здесь — вызовы уже
+// подготовлены во всех местах, где создаётся приглашение.
+async function sendInviteEmail(params: { to: string; name: string; role: string; inviteUrl: string }): Promise<void> {
+  // eslint-disable-next-line no-console
+  console.log(`[invite-email] (не отправлено — провайдер не настроен) кому=${params.to} роль=${params.role} ссылка=${params.inviteUrl}`);
 }
 
 // ─── BMR / TDEE расчёты ──────────────────────────────────────────────────────
@@ -205,7 +226,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
         where: { email: email.toLowerCase() },
         include: { nutritionistProfile: true },
       });
-      if (!user || user.role !== "NUTRITIONIST") {
+      if (!user || !STAFF_ROLES.includes(user.role)) {
         return res.status(401).json({ error: "Неверный email или пароль" });
       }
 
@@ -245,6 +266,156 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
   app.post("/api/crm/auth/logout", (_req: Request, res: Response) => {
     res.clearCookie("jwtToken");
     res.json({ success: true });
+  });
+
+  // ── АДМИН: приглашения (любая роль — клиент/нутрициолог/админ) ────────────
+  // Только админ создаёт приглашения с выбором роли; нутрициологи по-прежнему
+  // приглашают клиентов через POST /api/crm/clients (ниже) — это не заменяет,
+  // а дополняет существующий способ.
+
+  app.post("/api/crm/invites", requireAdmin, validateBody(crmInviteSchema), async (req: Request, res: Response) => {
+    try {
+      const adminId = (req as any).user.id;
+      const { email, name, role } = req.body;
+
+      const existingUser = await prisma.user.findUnique({ where: { email } });
+      if (existingUser) return res.status(409).json({ error: "Пользователь с таким email уже зарегистрирован" });
+
+      const existingInvite = await (prisma as any).clientInvite.findFirst({ where: { email, status: "PENDING" } });
+      if (existingInvite) return res.status(409).json({ error: "Приглашение на этот email уже отправлено и ожидает регистрации" });
+
+      // secretPhrase не используется для NUTRITIONIST/ADMIN (там вход по email+паролю
+      // после онбординга), но поле в схеме обязательно — генерируем случайное служебное значение.
+      const secretPhrase = crypto.randomBytes(16).toString("hex");
+
+      const invite = await (prisma as any).clientInvite.create({
+        data: { nutritionistId: adminId, clientName: name, email, role, secretPhrase, status: "PENDING" },
+      });
+
+      const inviteUrl = `${req.protocol}://${req.get("host")}/onboard/${invite.token}`;
+      await sendInviteEmail({ to: email, name, role, inviteUrl }).catch((e) => logError("sendInviteEmail error:", e));
+
+      return res.json({ invite: { id: invite.id, email, clientName: name, role, status: invite.status, createdAt: invite.createdAt }, inviteUrl });
+    } catch (e: any) {
+      logError("Create invite error:", e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/crm/invites", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const invites = await (prisma as any).clientInvite.findMany({
+        include: { client: { select: { id: true, email: true, role: true } } },
+        orderBy: { createdAt: "desc" },
+      });
+      return res.json({
+        invites: invites.map((inv: any) => ({
+          id: inv.id,
+          email: inv.email,
+          clientName: inv.clientName,
+          role: inv.role,
+          status: inv.status,
+          createdAt: inv.createdAt,
+          usedAt: inv.usedAt,
+          acceptedUser: inv.client ? { id: inv.client.id, email: inv.client.email, role: inv.client.role } : null,
+        })),
+      });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.delete("/api/crm/invites/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const invite = await (prisma as any).clientInvite.findUnique({ where: { id: req.params.id } });
+      if (!invite) return res.status(404).json({ error: "Приглашение не найдено" });
+      if (invite.status !== "PENDING") return res.status(400).json({ error: "Можно отозвать только ожидающее приглашение" });
+      await (prisma as any).clientInvite.update({ where: { id: req.params.id }, data: { status: "ARCHIVED" } });
+      return res.json({ success: true });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── АДМИН: статистика и список пользователей ───────────────────────────────
+  // (server.ts тоже содержит /api/admin/users и /api/admin/stats, но они читают
+  // старую cookie "token" консьюмер-приложения — CRM-сессия администратора живёт в
+  // jwtToken, поэтому для админ-панели CRM нужны отдельные, JWT-защищённые роуты.)
+
+  app.get("/api/crm/admin/stats", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const since7d = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+      const since30d = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+
+      const [
+        totalUsers,
+        clientCount,
+        nutritionistCount,
+        adminCount,
+        totalProducts,
+        totalMeals,
+        pendingInvites,
+        activeInvites,
+        newUsers7d,
+        newUsers30d,
+        activeUserIds,
+      ] = await Promise.all([
+        prisma.user.count(),
+        prisma.user.count({ where: { role: { notIn: STAFF_ROLES } } }),
+        prisma.user.count({ where: { role: "NUTRITIONIST" } }),
+        prisma.user.count({ where: { role: "ADMIN" } }),
+        prisma.product.count(),
+        prisma.meal.count(),
+        (prisma as any).clientInvite.count({ where: { status: "PENDING" } }),
+        (prisma as any).clientInvite.count({ where: { status: "ACTIVE" } }),
+        prisma.user.count({ where: { createdAt: { gte: since7d } } }),
+        prisma.user.count({ where: { createdAt: { gte: since30d } } }),
+        prisma.meal.findMany({ where: { date: { gte: since7d } }, select: { userId: true }, distinct: ["userId"] }),
+      ]);
+
+      return res.json({
+        totalUsers,
+        usersByRole: { client: clientCount, nutritionist: nutritionistCount, admin: adminCount },
+        totalProducts,
+        totalMeals,
+        invites: { pending: pendingInvites, active: activeInvites },
+        newUsers: { last7d: newUsers7d, last30d: newUsers30d },
+        activeUsersLast7d: activeUserIds.length,
+      });
+    } catch (e: any) {
+      logError("Admin stats error:", e);
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.get("/api/crm/admin/users", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const users = await prisma.user.findMany({
+        select: {
+          id: true, email: true, role: true, createdAt: true,
+          nutritionistProfile: { select: { firstName: true, lastName: true } },
+          clientProfile: { select: { firstName: true, lastName: true } },
+          _count: { select: { meals: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      return res.json({
+        users: users.map((u: any) => ({
+          id: u.id,
+          email: u.email,
+          role: u.role,
+          createdAt: u.createdAt,
+          name: u.nutritionistProfile
+            ? `${u.nutritionistProfile.firstName} ${u.nutritionistProfile.lastName}`.trim()
+            : u.clientProfile
+            ? `${u.clientProfile.firstName || ""} ${u.clientProfile.lastName || ""}`.trim()
+            : null,
+          mealCount: u._count.meals,
+        })),
+      });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
   });
 
   // ── КЛИЕНТЫ: список ────────────────────────────────────────────────────────
@@ -1021,6 +1192,8 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       return res.json({
         valid: true,
         clientName: invite.clientName,
+        email: invite.email,
+        role: invite.role || "CLIENT",
         nutritionistName: invite.nutritionist?.nutritionistProfile
           ? `${invite.nutritionist.nutritionistProfile.firstName} ${invite.nutritionist.nutritionistProfile.lastName}`
           : "Ваш нутрициолог",
@@ -1070,7 +1243,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   app.post("/api/onboard/:token", validateBody(onboardCompleteSchema), async (req: Request, res: Response) => {
     try {
-      const { secretPhrase, profile } = req.body;
+      const { secretPhrase, password, firstName, lastName, profile } = req.body;
       // profile: { firstName, lastName, birthYear, sex, heightCm, weightKg, goal, activity, dietRestrictions, allergies, complaints }
 
       const invite = await (prisma as any).clientInvite.findUnique({
@@ -1079,6 +1252,90 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
       if (!invite) return res.status(404).json({ error: "Приглашение не найдено" });
       if (invite.status === "ARCHIVED") return res.status(410).json({ error: "Ссылка недействительна" });
+
+      const inviteRole = invite.role || "CLIENT";
+
+      // Приглашения с указанным email (созданы через админский флоу — /api/crm/invites)
+      // используют регистрацию по email+паролю вместо секретной фразы: фраза для них
+      // генерируется случайно и никому не сообщается, так что ввести её всё равно
+      // невозможно. Работает для любой роли, включая CLIENT (тогда дополнительно
+      // собираем анкету здоровья, как и раньше).
+      if (invite.email) {
+        // Уже зарегистрирован — повторный переход по ссылке требует ввода пароля
+        // заново (иначе кто угодно с URL приглашения мог бы войти без пароля).
+        if (invite.clientId) {
+          const existingUser = await prisma.user.findUnique({ where: { id: invite.clientId } });
+          if (existingUser) {
+            if (!password) return res.status(400).json({ error: "Укажите пароль" });
+            const ok = await bcrypt.compare(password, existingUser.passwordHash);
+            if (!ok) return res.status(401).json({ error: "Неверный пароль" });
+
+            const jwtToken = signToken({ id: existingUser.id, role: existingUser.role, email: existingUser.email });
+            res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
+            if (existingUser.role === "CLIENT") {
+              res.cookie("token", existingUser.id, { httpOnly: true, signed: true, secure: true, sameSite: "none" });
+            }
+            return res.json({ user: { id: existingUser.id, email: existingUser.email, role: existingUser.role }, token: jwtToken });
+          }
+        }
+
+        if (!password) return res.status(400).json({ error: "Укажите пароль" });
+
+        const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+        const newUser = await prisma.user.create({
+          data: inviteRole === "CLIENT"
+            ? {
+                email: invite.email,
+                passwordHash,
+                role: "CLIENT",
+                clientProfile: {
+                  create: {
+                    firstName: profile?.firstName || firstName || invite.clientName || null,
+                    lastName: profile?.lastName || lastName || null,
+                    birthYear: profile?.birthYear ? Number(profile.birthYear) : null,
+                    sex: profile?.sex || null,
+                    heightCm: profile?.heightCm ? Number(profile.heightCm) : null,
+                    weightKg: profile?.weightKg ? Number(profile.weightKg) : null,
+                    goal: profile?.goal || null,
+                    activity: profile?.activity || null,
+                    dietRestrictions: profile?.dietRestrictions || null,
+                    allergiesJson: JSON.stringify(profile?.allergies || []),
+                    complaints: profile?.complaints || null,
+                    weightHistoryJson: profile?.weightKg
+                      ? JSON.stringify([{ date: new Date().toISOString().split("T")[0], kg: Number(profile.weightKg) }])
+                      : "[]",
+                  },
+                },
+              }
+            : {
+                email: invite.email,
+                passwordHash,
+                role: inviteRole,
+                nutritionistProfile: {
+                  create: {
+                    firstName: firstName || invite.clientName || "",
+                    lastName: lastName || "",
+                  },
+                },
+              },
+        });
+
+        await (prisma as any).clientInvite.update({
+          where: { id: invite.id },
+          data: { clientId: newUser.id, status: "ACTIVE", usedAt: new Date() },
+        });
+
+        const jwtToken = signToken({ id: newUser.id, role: newUser.role, email: newUser.email });
+        res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
+        if (newUser.role === "CLIENT") {
+          res.cookie("token", newUser.id, { httpOnly: true, signed: true, secure: true, sameSite: "none" });
+        }
+        return res.json({ user: { id: newUser.id, email: newUser.email, role: newUser.role }, token: jwtToken });
+      }
+
+      // Приглашения без email (старый флоу — нутрициолог сам придумывает и сообщает
+      // клиенту секретную фразу вручную) — всегда CLIENT, поведение не изменилось.
+      if (!secretPhrase) return res.status(400).json({ error: "Укажите секретную фразу" });
       if (!(await verifySecretPhrase(secretPhrase, invite.secretPhrase))) {
         return res.status(401).json({ error: "Неверная секретная фраза" });
       }
@@ -1098,8 +1355,9 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
         }
       }
 
-      // Создаём клиента
-      const email = `client-${invite.id}@nutria.internal`;
+      // Создаём клиента — используем реальный email, если он был указан при создании
+      // приглашения (новый admin-флоу), иначе синтетический (старый флоу без email).
+      const email = invite.email || `client-${invite.id}@nutria.internal`;
       const passwordHash = await bcrypt.hash(secretPhrase.trim(), SALT_ROUNDS);
 
       const clientUser = await prisma.user.create({
