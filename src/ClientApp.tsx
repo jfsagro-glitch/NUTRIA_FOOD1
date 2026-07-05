@@ -3445,6 +3445,9 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [authUser, setAuthUser] = useState<{ email: string; role: string } | null>(null);
   const [blockedInfo, setBlockedInfo] = useState<{ name: string; email: string; phone: string | null } | null>(null);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [recognizedItems, setRecognizedItems] = useState<RecognizedPhotoItem[]>([]);
@@ -3850,14 +3853,24 @@ export default function App() {
     }
   };
 
-  const login = async () => {
+  const login = async (email?: string, password?: string) => {
     try {
-      const res = await fetch('/api/auth/login', { method: 'POST' });
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
+        if (err?.error === 'Аккаунт заблокирован') {
+          setBlockedInfo(err.blockedBy || null);
+          return;
+        }
         alert(err?.error || 'Не удалось выполнить вход. Проверьте настройки сервера.');
         return;
       }
+      const data = await res.json().catch(() => ({}));
+      if (data?.user) setAuthUser({ email: data.user.email, role: data.user.role });
       setIsLoggedIn(true);
       fetchDiary();
       fetchUnreadMessages();
@@ -5142,19 +5155,55 @@ export default function App() {
   }
 
   if (!isLoggedIn) {
+    const handleLoginSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!loginEmail.trim() || !loginPassword) {
+        alert('Введите email и пароль');
+        return;
+      }
+      setIsLoggingIn(true);
+      try {
+        await login(loginEmail.trim(), loginPassword);
+      } finally {
+        setIsLoggingIn(false);
+      }
+    };
     return (
       <div className="min-h-screen bg-bg-dark flex flex-col items-center justify-center p-6 text-center">
         <div className="w-24 h-24 bg-emerald-500/10 rounded-3xl flex items-center justify-center mb-8 border border-emerald-500/20">
           <img src="/logo.png" alt="NUTRIA logo" className="w-16 h-16 object-contain" />
         </div>
         <h1 className="text-4xl font-black tracking-tighter mb-2 italic">NUTRIA</h1>
-        <p className="text-zinc-500 mb-12 max-w-[240px]">Ваш персональный гид в мире осознанного питания</p>
-        <button
-          onClick={login}
-          className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-[0_8px_24px_rgba(0,115,112,0.3)] active:scale-95 transition-transform"
-        >
-          Начать путешествие
-        </button>
+        <p className="text-zinc-500 mb-8 max-w-[240px]">Ваш персональный гид в мире осознанного питания</p>
+        <form onSubmit={handleLoginSubmit} className="w-full max-w-[320px] space-y-3">
+          <input
+            type="email"
+            inputMode="email"
+            autoComplete="username"
+            placeholder="Email"
+            value={loginEmail}
+            onChange={(e) => setLoginEmail(e.target.value)}
+            className="w-full px-4 py-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder-zinc-600 outline-none focus:border-emerald-500"
+          />
+          <input
+            type="password"
+            autoComplete="current-password"
+            placeholder="Пароль"
+            value={loginPassword}
+            onChange={(e) => setLoginPassword(e.target.value)}
+            className="w-full px-4 py-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder-zinc-600 outline-none focus:border-emerald-500"
+          />
+          <button
+            type="submit"
+            disabled={isLoggingIn}
+            className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-[0_8px_24px_rgba(0,115,112,0.3)] active:scale-95 transition-transform disabled:opacity-60"
+          >
+            {isLoggingIn ? 'Входим…' : 'Войти'}
+          </button>
+        </form>
+        <p className="text-zinc-600 text-xs mt-6 max-w-[280px]">
+          Доступ по приглашению от вашего нутрициолога. Если у вас ещё нет аккаунта — обратитесь к своему нутрициологу за ссылкой на регистрацию.
+        </p>
       </div>
     );
   }

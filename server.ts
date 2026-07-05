@@ -13,6 +13,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import Levenshtein from "fast-levenshtein";
 import OpenAI from "openai";
 import { ProxyAgent } from "undici";
+import bcrypt from "bcryptjs";
 import { ZipArchive } from "archiver";
 import { rateLimit } from "express-rate-limit";
 import {
@@ -2471,31 +2472,34 @@ export async function createApp(): Promise<express.Express> {
 
   // Auth Placeholder (Mock)
   app.post("/api/auth/login", async (req, res) => {
+    // Локальный dev без базы (memory-режим) — оставляем старый демо-вход без пароля,
+    // персистентных аккаунтов там всё равно нет. В продакшене (БД настроена) обязателен
+    // реальный email+пароль: раньше эта кнопка без единого запроса пароля пускала ЛЮБОГО
+    // в один и тот же общий mock-аккаунт "user@nutria.app" — из-за этого после выхода из
+    // настоящего (пригашённого через CRM) аккаунта повторное нажатие той же кнопки тут же
+    // возвращало в общий демо-аккаунт, что выглядело как "выход не сработал".
     if (!isDatabaseConfigured()) {
       res.cookie("token", DEMO_USER_ID, { httpOnly: true, signed: true, secure: true, sameSite: "none" });
       return res.json({ success: true, user: { email: DEMO_USER.email, role: DEMO_USER.role }, mode: "memory" });
     }
 
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ error: "Введите email и пароль" });
+    }
+
     try {
-      let user = await prisma.user.findFirst({ where: { email: "user@nutria.app" } });
-      if (!user) {
-        user = await prisma.user.create({
-          data: {
-            email: "user@nutria.app",
-            passwordHash: "mock-hash",
-            role: "USER",
-            nutrientGoals: {
-              create: {
-                calories: 2100,
-                protein: 120,
-                fat: 70,
-                carbs: 250,
-                fiber: 30
-              }
-            }
-          }
-        });
+      const user = await prisma.user.findUnique({ where: { email: String(email).toLowerCase().trim() } });
+      if (!user) return res.status(401).json({ error: "Неверный email или пароль" });
+
+      const ok = await bcrypt.compare(password, user.passwordHash);
+      if (!ok) return res.status(401).json({ error: "Неверный email или пароль" });
+
+      if (user.status === "BLOCKED") {
+        const blockedBy = await getBlockerContactInfo(prisma, user.blockedByUserId);
+        return res.status(403).json({ error: "Аккаунт заблокирован", blockedBy });
       }
+
       res.cookie("token", user.id, { httpOnly: true, signed: true, secure: true, sameSite: "none" });
       res.json({ success: true, user: { email: user.email, role: user.role } });
     } catch (e: any) {
