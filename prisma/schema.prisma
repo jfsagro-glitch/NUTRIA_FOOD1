@@ -18,6 +18,9 @@ model User {
   passwordHash String
   // NUTRITIONIST — нутрициолог (CRM), CLIENT — клиент, ADMIN — администратор
   role         String   @default("CLIENT")
+  // ACTIVE | BLOCKED — заблокированный пользователь не может войти и все его запросы
+  // с уже действующей сессией отклоняются (см. глобальные проверки в server.ts/crm-routes.ts)
+  status       String   @default("ACTIVE")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -85,7 +88,7 @@ model ClientInvite {
   nutritionist    User      @relation("InvitedBy", fields: [nutritionistId], references: [id], onDelete: Cascade)
   // Приглашённый пользователь (заполняется после онбординга)
   clientId        String?   @unique
-  client          User?     @relation("InvitedClient", fields: [clientId], references: [id])
+  client          User?     @relation("InvitedClient", fields: [clientId], references: [id], onDelete: Cascade)
   // Уникальный токен в ссылке: /onboard/:token
   token           String    @unique @default(cuid())
   // Секретная фраза для входа клиента (для CLIENT-приглашений; для NUTRITIONIST/ADMIN
@@ -388,7 +391,7 @@ model Meal {
 model MealItem {
   id        String  @id @default(cuid())
   mealId    String
-  meal      Meal    @relation(fields: [mealId], references: [id])
+  meal      Meal    @relation(fields: [mealId], references: [id], onDelete: Cascade)
   productId String
   product   Product @relation(fields: [productId], references: [id])
   amount    Float

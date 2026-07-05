@@ -6,7 +6,7 @@ import {
   AlertCircle, RefreshCw, Leaf, ChevronLeft, Tag,
   User, Activity, Scale, Ruler, Target, Zap, Flame,
   Download, Copy, ExternalLink, Send, Smartphone,
-  Utensils, ShoppingCart, Shield
+  Utensils, ShoppingCart, Shield, Ban, Unlock
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -26,12 +26,15 @@ type ClientStatus = 'PENDING' | 'ACTIVE' | 'ARCHIVED';
 type ClientTab = 'questionnaire' | 'diary' | 'weight' | 'analytics' | 'mealplans' | 'analyses' | 'notes' | 'recommendations' | 'messages';
 type ClientSource = 'invite' | 'telegram' | 'self';
 
+type AccountStatus = 'ACTIVE' | 'BLOCKED';
+
 interface Client {
   inviteId: string | null;
   token: string | null;
   clientId: string | null;
   clientName: string;
   status: ClientStatus;
+  accountStatus?: AccountStatus;
   tagsJson: string;
   createdAt: string;
   usedAt?: string;
@@ -45,6 +48,7 @@ interface Client {
 interface ClientDetail {
   invite: any;
   profile: any;
+  accountStatus?: AccountStatus;
   calculations: {
     bmi: number; bmr: number; tdee: number;
     calories: number; protein: number; fat: number; carbs: number; fiber: number;
@@ -1142,6 +1146,7 @@ function ClientCard({ clientId, inviteToken, onBack }: { clientId: string | null
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ClientTab>('questionnaire');
   const [copied, setCopied] = useState(false);
+  const [isUpdatingAccount, setIsUpdatingAccount] = useState(false);
 
   const inviteUrl = inviteToken ? `${window.location.origin}/onboard/${inviteToken}` : '';
 
@@ -1156,6 +1161,31 @@ function ClientCard({ clientId, inviteToken, onBack }: { clientId: string | null
 
   function copyLink() {
     navigator.clipboard.writeText(inviteUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  }
+
+  async function toggleBlock() {
+    if (!clientId || !detail) return;
+    const nextStatus = detail.accountStatus === 'BLOCKED' ? 'ACTIVE' : 'BLOCKED';
+    const confirmMsg = nextStatus === 'BLOCKED'
+      ? 'Заблокировать клиента? Он не сможет войти в приложение, пока вы не разблокируете аккаунт.'
+      : 'Разблокировать клиента?';
+    if (!window.confirm(confirmMsg)) return;
+    setIsUpdatingAccount(true);
+    try {
+      await api.patch(`/api/crm/clients/${clientId}/account-status`, { status: nextStatus });
+      await loadDetail();
+    } catch (e: any) { alert(e.message); }
+    finally { setIsUpdatingAccount(false); }
+  }
+
+  async function deleteClient() {
+    if (!clientId) return;
+    if (!window.confirm('Удалить клиента навсегда? Это удалит весь его дневник питания и профиль. Действие необратимо.')) return;
+    setIsUpdatingAccount(true);
+    try {
+      await api.del(`/api/crm/clients/${clientId}`);
+      onBack();
+    } catch (e: any) { alert(e.message); setIsUpdatingAccount(false); }
   }
 
   const TABS: { id: ClientTab; label: string; icon: React.ReactNode }[] = [
@@ -1195,6 +1225,23 @@ function ClientCard({ clientId, inviteToken, onBack }: { clientId: string | null
             <button onClick={copyLink} className={cn("flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border transition-colors",
               copied ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-600')}>
               {copied ? <><Check size={12}/> Скопировано</> : <><Copy size={12}/> Скопировать ссылку</>}
+            </button>
+          </div>
+        )}
+        {clientId && detail && (
+          <div className="flex items-center gap-2">
+            {detail.accountStatus === 'BLOCKED' && (
+              <span className="px-2 py-1 rounded-full text-xs font-medium text-red-400 bg-red-400/10">Заблокирован</span>
+            )}
+            <button onClick={toggleBlock} disabled={isUpdatingAccount}
+              title={detail.accountStatus === 'BLOCKED' ? 'Разблокировать' : 'Заблокировать'}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-600 transition-colors disabled:opacity-50">
+              {detail.accountStatus === 'BLOCKED' ? <Unlock size={13}/> : <Ban size={13}/>}
+              {detail.accountStatus === 'BLOCKED' ? 'Разблокировать' : 'Заблокировать'}
+            </button>
+            <button onClick={deleteClient} disabled={isUpdatingAccount} title="Удалить клиента"
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-red-400 hover:bg-red-400/10 hover:border-red-400/50 transition-colors disabled:opacity-50">
+              <Trash2 size={13}/> Удалить
             </button>
           </div>
         )}
@@ -1441,9 +1488,14 @@ function Dashboard({ user, onSelectClient }: { user: NutritionistUser; onSelectC
                       )}
                     </td>
                     <td className="px-4 py-4">
-                      <span className={cn("px-2 py-1 rounded-full text-xs font-medium", STATUS_COLOR[c.status])}>
-                        {STATUS_LABEL[c.status]}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={cn("px-2 py-1 rounded-full text-xs font-medium", STATUS_COLOR[c.status])}>
+                          {STATUS_LABEL[c.status]}
+                        </span>
+                        {c.accountStatus === 'BLOCKED' && (
+                          <span className="px-2 py-1 rounded-full text-xs font-medium text-red-400 bg-red-400/10">Заблокирован</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-4">
                       <span className="inline-flex items-center gap-1 text-zinc-400 text-xs" title={c.nutritionistName ? `Пригласил: ${c.nutritionistName}` : undefined}>
@@ -1578,7 +1630,7 @@ interface AdminStats {
 }
 
 interface AdminUserRow {
-  id: string; email: string; role: string; createdAt: string; name: string | null; mealCount: number;
+  id: string; email: string; role: string; status: AccountStatus; createdAt: string; name: string | null; mealCount: number;
 }
 
 interface AdminInviteRow {
@@ -1628,6 +1680,26 @@ function AdminPanel() {
   async function revokeInvite(id: string) {
     if (!window.confirm('Отозвать это приглашение?')) return;
     try { await api.del(`/api/crm/invites/${id}`); load(); } catch (e: any) { alert(e.message); }
+  }
+
+  async function toggleUserBlock(u: AdminUserRow) {
+    const nextStatus = u.status === 'BLOCKED' ? 'ACTIVE' : 'BLOCKED';
+    const confirmMsg = nextStatus === 'BLOCKED'
+      ? `Заблокировать ${u.email}? Пользователь не сможет войти, пока вы не разблокируете аккаунт.`
+      : `Разблокировать ${u.email}?`;
+    if (!window.confirm(confirmMsg)) return;
+    try {
+      await api.patch(`/api/crm/admin/users/${u.id}/status`, { status: nextStatus });
+      load();
+    } catch (e: any) { alert(e.message); }
+  }
+
+  async function deleteUser(u: AdminUserRow) {
+    if (!window.confirm(`Удалить ${u.email} навсегда? Это удалит весь его дневник/данные. Действие необратимо.`)) return;
+    try {
+      await api.del(`/api/crm/admin/users/${u.id}`);
+      load();
+    } catch (e: any) { alert(e.message); }
   }
 
   const ROLE_LABEL: Record<string, string> = { CLIENT: 'Клиент', NUTRITIONIST: 'Нутрициолог', ADMIN: 'Администратор', USER: 'Клиент (демо)' };
@@ -1686,8 +1758,10 @@ function AdminPanel() {
                 <tr className="border-b border-zinc-800 text-zinc-500 text-xs uppercase tracking-wider">
                   <th className="text-left px-4 py-3 font-medium">Пользователь</th>
                   <th className="text-left px-4 py-3 font-medium">Роль</th>
+                  <th className="text-left px-4 py-3 font-medium">Статус</th>
                   <th className="text-left px-4 py-3 font-medium">Записей в дневнике</th>
                   <th className="text-left px-4 py-3 font-medium">Регистрация</th>
+                  <th className="px-4 py-3"/>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-800/50">
@@ -1698,8 +1772,26 @@ function AdminPanel() {
                       <div className="text-zinc-500 text-xs">{u.email}</div>
                     </td>
                     <td className="px-4 py-3 text-zinc-300">{ROLE_LABEL[u.role] || u.role}</td>
+                    <td className="px-4 py-3">
+                      {u.status === 'BLOCKED' ? (
+                        <span className="px-2 py-1 rounded-full text-xs font-medium text-red-400 bg-red-400/10">Заблокирован</span>
+                      ) : (
+                        <span className="px-2 py-1 rounded-full text-xs font-medium text-emerald-400 bg-emerald-400/10">Активен</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-zinc-300">{u.mealCount}</td>
                     <td className="px-4 py-3 text-zinc-500 text-xs">{new Date(u.createdAt).toLocaleDateString('ru-RU')}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => toggleUserBlock(u)} title={u.status === 'BLOCKED' ? 'Разблокировать' : 'Заблокировать'}
+                          className="text-zinc-500 hover:text-white">
+                          {u.status === 'BLOCKED' ? <Unlock size={14}/> : <Ban size={14}/>}
+                        </button>
+                        <button onClick={() => deleteUser(u)} title="Удалить" className="text-zinc-500 hover:text-red-400">
+                          <Trash2 size={14}/>
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

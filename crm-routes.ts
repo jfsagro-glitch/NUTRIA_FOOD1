@@ -63,12 +63,26 @@ function verifyToken(token: string): any {
 
 // ─── Auth middleware ──────────────────────────────────────────────────────────
 
-function requireAuth(req: Request, res: Response, next: NextFunction) {
+// Установится один раз в registerCrmRoutes (вызывается ровно один раз за процесс) —
+// нужен requireAuth, чтобы на каждый запрос проверять актуальный статус (BLOCKED)
+// пользователя в БД, а не только доверять роли из самого JWT.
+let prismaRef: PrismaClient;
+
+async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const raw = req.cookies?.jwtToken || req.headers.authorization?.replace("Bearer ", "");
   if (!raw) return res.status(401).json({ error: "Unauthorized" });
   const payload = verifyToken(raw);
   if (!payload) return res.status(401).json({ error: "Invalid token" });
-  (req as any).user = payload;
+  try {
+    const user = await prismaRef.user.findUnique({ where: { id: payload.id }, select: { status: true, role: true } });
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    if (user.status === "BLOCKED") return res.status(403).json({ error: "Аккаунт заблокирован" });
+    // Роль берём из БД, а не из JWT — если админ сменил роль пользователю, старый
+    // JWT (действует до 30 дней) не должен продолжать работать со старыми правами.
+    (req as any).user = { ...payload, role: user.role };
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
   next();
 }
 
@@ -106,6 +120,17 @@ const BCRYPT_HASH_RE = /^\$2[aby]\$/;
 async function verifySecretPhrase(plain: string, stored: string): Promise<boolean> {
   if (BCRYPT_HASH_RE.test(stored)) return bcrypt.compare(plain, stored);
   return plain === stored;
+}
+
+// Полное удаление аккаунта вместе с дневником. Product.createdByUserId не каскадируется
+// намеренно (продукт мог быть добавлен и в чужой дневник как AI/USDA-совпадение или
+// использован в общем каталоге) — просто отвязываем авторство, сам продукт остаётся.
+// Всё остальное (Meal→MealItem, ClientInvite как приглашённый, профили, вес, активность,
+// сообщения/заметки/анализы как нутрициолог и т.п.) каскадируется через onDelete: Cascade
+// в схеме.
+async function deleteUserAccount(prisma: PrismaClient, userId: string): Promise<void> {
+  await (prisma as any).product.updateMany({ where: { createdByUserId: userId }, data: { createdByUserId: null } });
+  await prisma.user.delete({ where: { id: userId } });
 }
 
 // Отправка письма с приглашением пока не подключена (нет провайдера/SMTP-ключей) —
@@ -162,6 +187,7 @@ function calcTargetKbzhu(
 // ─── Регистрация маршрутов ────────────────────────────────────────────────────
 
 export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
+  prismaRef = prisma;
 
   // Проверяет, что :clientId НЕ закреплён приглашением за ДРУГИМ нутрициологом
   // (ClientInvite.clientId уникален — у клиента не может быть больше одного
@@ -232,6 +258,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
       const ok = await bcrypt.compare(password, user.passwordHash);
       if (!ok) return res.status(401).json({ error: "Неверный email или пароль" });
+      if (user.status === "BLOCKED") return res.status(403).json({ error: "Аккаунт заблокирован" });
 
       const token = signToken({ id: user.id, role: user.role, email: user.email });
       res.cookie("jwtToken", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
@@ -392,7 +419,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
     try {
       const users = await prisma.user.findMany({
         select: {
-          id: true, email: true, role: true, createdAt: true,
+          id: true, email: true, role: true, status: true, createdAt: true,
           nutritionistProfile: { select: { firstName: true, lastName: true } },
           clientProfile: { select: { firstName: true, lastName: true } },
           _count: { select: { meals: true } },
@@ -404,6 +431,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
           id: u.id,
           email: u.email,
           role: u.role,
+          status: u.status,
           createdAt: u.createdAt,
           name: u.nutritionistProfile
             ? `${u.nutritionistProfile.firstName} ${u.nutritionistProfile.lastName}`.trim()
@@ -415,6 +443,61 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── АДМИН: заблокировать/разблокировать любого пользователя ────────────────
+
+  app.patch("/api/crm/admin/users/:id/status", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const adminId = (req as any).user.id;
+      const { id } = req.params;
+      const { status } = req.body;
+      if (status !== "ACTIVE" && status !== "BLOCKED") {
+        return res.status(400).json({ error: "Некорректный статус" });
+      }
+      if (id === adminId) return res.status(400).json({ error: "Нельзя заблокировать собственный аккаунт" });
+
+      const target = await prisma.user.findUnique({ where: { id } });
+      if (!target) return res.status(404).json({ error: "Пользователь не найден" });
+
+      if (status === "BLOCKED" && target.role === "ADMIN") {
+        const otherActiveAdmins = await prisma.user.count({ where: { role: "ADMIN", status: "ACTIVE", id: { not: id } } });
+        if (otherActiveAdmins === 0) {
+          return res.status(400).json({ error: "Нельзя заблокировать единственного активного администратора" });
+        }
+      }
+
+      const updated = await prisma.user.update({ where: { id }, data: { status } });
+      return res.json({ user: { id: updated.id, status: updated.status } });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── АДМИН: удалить любого пользователя (полностью, с дневником) ────────────
+
+  app.delete("/api/crm/admin/users/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const adminId = (req as any).user.id;
+      const { id } = req.params;
+      if (id === adminId) return res.status(400).json({ error: "Нельзя удалить собственный аккаунт" });
+
+      const target = await prisma.user.findUnique({ where: { id } });
+      if (!target) return res.status(404).json({ error: "Пользователь не найден" });
+
+      if (target.role === "ADMIN") {
+        const otherAdmins = await prisma.user.count({ where: { role: "ADMIN", id: { not: id } } });
+        if (otherAdmins === 0) {
+          return res.status(400).json({ error: "Нельзя удалить единственного администратора" });
+        }
+      }
+
+      await deleteUserAccount(prisma, id);
+      return res.json({ success: true });
+    } catch (e: any) {
+      logError("Admin delete user error:", e);
+      return res.status(500).json({ error: e.code === "P2003" ? "Не удалось удалить: пользователь ещё связан с другими данными" : e.message });
     }
   });
 
@@ -451,6 +534,9 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
             ? `${profile.firstName || ""} ${profile.lastName || ""}`.trim() || invite?.clientName || "Без имени"
             : invite?.clientName || "Без имени",
           status: invite?.status || "ACTIVE",
+          // Статус самого аккаунта (ACTIVE/BLOCKED) — не путать с status выше, это статус
+          // ПРИГЛАШЕНИЯ (PENDING/ACTIVE/ARCHIVED).
+          accountStatus: u.status,
           tagsJson: invite?.tagsJson || "[]",
           createdAt: u.createdAt,
           usedAt: invite?.usedAt || null,
@@ -538,6 +624,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
           : null,
         profile: user?.clientProfile || null,
         calculations,
+        accountStatus: user.status,
       });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
@@ -584,6 +671,42 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       return res.json({ invite: updated });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── КЛИЕНТ: заблокировать/разблокировать (нутрициолог — только своего клиента) ─
+
+  app.patch("/api/crm/clients/:clientId/account-status", requireNutritionist, requireOwnClient, async (req: Request, res: Response) => {
+    try {
+      const { clientId } = req.params;
+      const { status } = req.body;
+      if (status !== "ACTIVE" && status !== "BLOCKED") {
+        return res.status(400).json({ error: "Некорректный статус" });
+      }
+
+      const clientUser = await prisma.user.findUnique({ where: { id: clientId } });
+      if (!clientUser || !isClientRole(clientUser.role)) return res.status(404).json({ error: "Клиент не найден" });
+
+      const updated = await prisma.user.update({ where: { id: clientId }, data: { status } });
+      return res.json({ user: { id: updated.id, status: updated.status } });
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ── КЛИЕНТ: удалить аккаунт целиком (нутрициолог — только своего клиента) ─────
+
+  app.delete("/api/crm/clients/:clientId", requireNutritionist, requireOwnClient, async (req: Request, res: Response) => {
+    try {
+      const { clientId } = req.params;
+      const clientUser = await prisma.user.findUnique({ where: { id: clientId } });
+      if (!clientUser || !isClientRole(clientUser.role)) return res.status(404).json({ error: "Клиент не найден" });
+
+      await deleteUserAccount(prisma, clientId);
+      return res.json({ success: true });
+    } catch (e: any) {
+      logError("Delete client error:", e);
+      return res.status(500).json({ error: e.code === "P2003" ? "Не удалось удалить: клиент ещё связан с другими данными" : e.message });
     }
   });
 
@@ -1227,6 +1350,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       if (!invite.clientId || !invite.client) {
         return res.status(400).json({ error: "Сначала завершите онбординг" });
       }
+      if (invite.client.status === "BLOCKED") return res.status(403).json({ error: "Аккаунт заблокирован" });
 
       const jwtToken = signToken({ id: invite.client.id, role: invite.client.role, email: invite.client.email });
       res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
@@ -1269,6 +1393,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
             if (!password) return res.status(400).json({ error: "Укажите пароль" });
             const ok = await bcrypt.compare(password, existingUser.passwordHash);
             if (!ok) return res.status(401).json({ error: "Неверный пароль" });
+            if (existingUser.status === "BLOCKED") return res.status(403).json({ error: "Аккаунт заблокирован" });
 
             const jwtToken = signToken({ id: existingUser.id, role: existingUser.role, email: existingUser.email });
             res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
@@ -1348,6 +1473,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       if (invite.clientId) {
         const existingUser = await prisma.user.findUnique({ where: { id: invite.clientId } });
         if (existingUser) {
+          if (existingUser.status === "BLOCKED") return res.status(403).json({ error: "Аккаунт заблокирован" });
           const jwtToken = signToken({ id: existingUser.id, role: existingUser.role, email: existingUser.email });
           res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
           res.cookie("token", existingUser.id, { httpOnly: true, signed: true, secure: true, sameSite: "none" });

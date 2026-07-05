@@ -2352,6 +2352,22 @@ export async function createApp(): Promise<express.Express> {
   app.use(express.json({ limit: "10mb" }));
   app.use(cookieParser(resolveCookieSecret()));
 
+  // Заблокированный пользователь (status=BLOCKED) не должен продолжать работать даже
+  // с уже действующей cookie — проверяем на каждый запрос, а не только при логине.
+  // CRM-сессия (jwtToken) проверяется отдельно в crm-routes.ts (requireAuth).
+  app.use(async (req, res, next) => {
+    const userId = req.signedCookies?.token;
+    if (userId && isDatabaseConfigured()) {
+      try {
+        const user = await prisma.user.findUnique({ where: { id: userId }, select: { status: true } });
+        if (user?.status === "BLOCKED") return res.status(403).json({ error: "Аккаунт заблокирован" });
+      } catch (e) {
+        logError("Blocked-status check error:", e);
+      }
+    }
+    next();
+  });
+
   // Rate limiting: общий лимит на все /api/*, и более строгий — на эндпоинты входа/регистрации
   // (защита от брутфорса пароля). Отключаем в тестах, чтобы повторные вызовы не падали по лимиту.
   const skipRateLimitInTest = () => process.env.NODE_ENV === "test";
