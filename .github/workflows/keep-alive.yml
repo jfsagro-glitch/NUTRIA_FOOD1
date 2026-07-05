@@ -1,0 +1,17 @@
+name: Keep-alive ping
+
+# Render (бесплатный тариф) усыпляет сервис после ~15 минут простоя, из-за чего
+# следующий запрос показывает экран "Загрузка приложения" (cold start на 20-60 сек).
+# Пингуем /api/health каждые 10 минут, чтобы сервис не засыпал.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          curl -sS -o /dev/null -w "HTTP %{http_code}\n" --max-time 30 https://cms.nutria.one/api/health || true

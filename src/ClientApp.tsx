@@ -5169,13 +5169,45 @@ export default function App() {
       }
     };
     return (
-      <div className="min-h-screen bg-bg-dark flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-24 h-24 bg-emerald-500/10 rounded-3xl flex items-center justify-center mb-8 border border-emerald-500/20">
-          <img src="/logo.png" alt="NUTRIA logo" className="w-16 h-16 object-contain" />
-        </div>
-        <h1 className="text-4xl font-black tracking-tighter mb-2 italic">NUTRIA</h1>
-        <p className="text-zinc-500 mb-8 max-w-[240px]">Ваш персональный гид в мире осознанного питания</p>
-        <form onSubmit={handleLoginSubmit} className="w-full max-w-[320px] space-y-3">
+      <div className="min-h-screen bg-bg-dark flex flex-col items-center justify-center p-6 text-center overflow-hidden">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.7, rotate: -8 }}
+          animate={{ opacity: 1, scale: 1, rotate: 0 }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className="relative w-24 h-24 mb-8"
+        >
+          <motion.div
+            className="absolute inset-0 rounded-3xl bg-emerald-500/20"
+            animate={{ scale: [1, 1.15, 1], opacity: [0.5, 0.15, 0.5] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+          />
+          <div className="relative w-24 h-24 bg-emerald-500/10 rounded-3xl flex items-center justify-center border border-emerald-500/20">
+            <img src="/logo.png" alt="NUTRIA logo" className="w-16 h-16 object-contain" />
+          </div>
+        </motion.div>
+        <motion.h1
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.15, ease: 'easeOut' }}
+          className="text-4xl font-black tracking-tighter mb-2 italic"
+        >
+          NUTRIA
+        </motion.h1>
+        <motion.p
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.25, ease: 'easeOut' }}
+          className="text-zinc-500 mb-8 max-w-[240px]"
+        >
+          Ваш персональный гид в мире осознанного питания
+        </motion.p>
+        <motion.form
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.35, ease: 'easeOut' }}
+          onSubmit={handleLoginSubmit}
+          className="w-full max-w-[320px] space-y-3"
+        >
           <input
             type="email"
             inputMode="email"
@@ -5183,7 +5215,7 @@ export default function App() {
             placeholder="Email"
             value={loginEmail}
             onChange={(e) => setLoginEmail(e.target.value)}
-            className="w-full px-4 py-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder-zinc-600 outline-none focus:border-emerald-500"
+            className="w-full px-4 py-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder-zinc-600 outline-none focus:border-emerald-500 transition-colors"
           />
           <input
             type="password"
@@ -5191,19 +5223,26 @@ export default function App() {
             placeholder="Пароль"
             value={loginPassword}
             onChange={(e) => setLoginPassword(e.target.value)}
-            className="w-full px-4 py-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder-zinc-600 outline-none focus:border-emerald-500"
+            className="w-full px-4 py-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-100 placeholder-zinc-600 outline-none focus:border-emerald-500 transition-colors"
           />
-          <button
+          <motion.button
             type="submit"
             disabled={isLoggingIn}
-            className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-[0_8px_24px_rgba(0,115,112,0.3)] active:scale-95 transition-transform disabled:opacity-60"
+            whileTap={{ scale: 0.95 }}
+            className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-[0_8px_24px_rgba(0,115,112,0.3)] transition-opacity disabled:opacity-60 flex items-center justify-center gap-2"
           >
+            {isLoggingIn && <Loader2 size={18} className="animate-spin" />}
             {isLoggingIn ? 'Входим…' : 'Войти'}
-          </button>
-        </form>
-        <p className="text-zinc-600 text-xs mt-6 max-w-[280px]">
+          </motion.button>
+        </motion.form>
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.4, delay: 0.5 }}
+          className="text-zinc-600 text-xs mt-6 max-w-[280px]"
+        >
           Доступ по приглашению от вашего нутрициолога. Если у вас ещё нет аккаунта — обратитесь к своему нутрициологу за ссылкой на регистрацию.
-        </p>
+        </motion.p>
       </div>
     );
   }
