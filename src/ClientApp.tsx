@@ -503,7 +503,11 @@ function reconcileSheetHistory() {
   const target = sheetStack.length;
   if (target > historyDepth) {
     for (let i = historyDepth; i < target; i++) {
-      window.history.pushState({ sheetOpen: true }, '');
+      // depth в state нужен, чтобы popstate-листенер мог отличить "назад на один шаг"
+      // (ожидаемое закрытие верхнего sheet) от навигации "вперёд" (свайп/кнопка вперёд
+      // на десктопе) — оба случая физически неотличимы одним lastEvent без этого поля,
+      // а закрывать sheet на навигацию "вперёд" неверно.
+      window.history.pushState({ sheetOpen: true, depth: i + 1 }, '');
     }
     historyDepth = target;
   } else if (target < historyDepth) {
@@ -519,12 +523,19 @@ function reconcileSheetHistory() {
 function ensureSheetPopstateListener() {
   if (popstateAttached) return;
   popstateAttached = true;
-  window.addEventListener('popstate', () => {
+  window.addEventListener('popstate', (e: PopStateEvent) => {
     if (pendingProgrammaticBacks > 0) {
       pendingProgrammaticBacks -= 1;
       return;
     }
     if (historyDepth <= 0) return;
+    const landedDepth = (e.state && typeof e.state.depth === 'number') ? e.state.depth : 0;
+    if (landedDepth !== historyDepth - 1) {
+      // Не обычный шаг "назад" на один sheet (например, навигация "вперёд") — не наша
+      // ситуация для закрытия sheet'а, просто синхронизируем глубину с фактической позицией.
+      historyDepth = landedDepth;
+      return;
+    }
     historyDepth -= 1;
     const top = sheetStack.pop();
     top?.onClose();
@@ -3436,6 +3447,7 @@ export default function App() {
   const [selectedProductForAmount, setSelectedProductForAmount] = useState<Product | null>(null);
   const [foodAmount, setFoodAmount] = useState('100');
   const [amountEntryContext, setAmountEntryContext] = useState<{ source: 'search' | 'photo' | 'barcode' } | null>(null);
+  const [isSubmittingAmount, setIsSubmittingAmount] = useState(false);
   const [photoCorrectionTarget, setPhotoCorrectionTarget] = useState<{ index: number; item: RecognizedPhotoItem } | null>(null);
 
   // «Проверьте результат» — единый черновик-список перед сохранением в дневник
@@ -3448,6 +3460,7 @@ export default function App() {
   const recognitionRef = useRef<any>(null);
   const barcodeScannerRef = useRef<Html5QrcodeType | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
+  const diaryAbortRef = useRef<AbortController | null>(null);
   const html5QrcodeModuleRef = useRef<typeof import('html5-qrcode') | null>(null);
   const barcodeHandledRef = useRef(false);
   const fastingNotifiedRef = useRef(false);
@@ -3832,8 +3845,17 @@ export default function App() {
   };
 
   const fetchDiary = async (targetDate = selectedDiaryDate) => {
+    // Отменяем предыдущий незавершённый запрос — иначе быстрое переключение дат
+    // (день A → день B) могло применить более медленный ответ дня A ПОСЛЕ ответа
+    // дня B, и дневник показывал бы данные не той даты, что выбрана в UI.
+    if (diaryAbortRef.current) {
+      diaryAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    diaryAbortRef.current = controller;
+
     try {
-      const res = await fetch(`/api/diary?date=${encodeURIComponent(targetDate)}`);
+      const res = await fetch(`/api/diary?date=${encodeURIComponent(targetDate)}`, { signal: controller.signal });
       if (res.ok) {
         const data = await res.json();
         setDiaryData(data);
@@ -3846,8 +3868,12 @@ export default function App() {
         const err = await res.json().catch(() => ({}));
         console.warn('Diary fetch error:', err);
       }
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') {
+        console.error(e);
+      } else {
+        return;
+      }
     }
     fetchActivities(targetDate);
   };
@@ -3920,27 +3946,37 @@ export default function App() {
   };
 
   const saveProfileAndGoals = async (nextProfile: UserProfileSettings, nextGoals: NutrientGoalSet) => {
+    const previousProfile = profileSettings;
+    const previousGoals = goalOverrides;
     setProfileSettings(nextProfile);
     setGoalOverrides(nextGoals);
 
-    const res = await fetch('/api/diary/goals', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        calories: nextGoals.calories,
-        protein: nextGoals.protein,
-        fat: nextGoals.fat,
-        carbs: nextGoals.carbs,
-        fiber: nextGoals.fiber,
-      })
-    });
+    try {
+      const res = await fetch('/api/diary/goals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          calories: nextGoals.calories,
+          protein: nextGoals.protein,
+          fat: nextGoals.fat,
+          carbs: nextGoals.carbs,
+          fiber: nextGoals.fiber,
+        })
+      });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error || 'Не удалось обновить цели');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || 'Не удалось обновить цели');
+      }
+
+      await fetchDiary(selectedDiaryDate);
+    } catch (e) {
+      // Откатываем оптимистичное обновление — иначе пользователь видел бы новые
+      // (несохранённые) цели, хотя сервер их отклонил.
+      setProfileSettings(previousProfile);
+      setGoalOverrides(previousGoals);
+      throw e;
     }
-
-    await fetchDiary(selectedDiaryDate);
   };
 
   const fetchHints = async (dataOverride?: any) => {
@@ -4132,13 +4168,22 @@ export default function App() {
     if (reviewItems.length === 0) return;
     setIsSavingReview(true);
     try {
+      const failedItems: typeof reviewItems = [];
       for (const item of reviewItems) {
-        await addFood(item.product.id, item.amount, item.usdaData, true);
+        const ok = await addFood(item.product.id, item.amount, item.usdaData, true);
+        if (!ok) failedItems.push(item);
       }
       fetchDiary(selectedDiaryDate);
       fetchHints();
-      setReviewItems([]);
-      setIsReviewSheetOpen(false);
+      // Оставляем в черновике только позиции, которые не сохранились — иначе при
+      // частичном сбое (сеть/сервер) они молча пропадали бы, а дневник тихо
+      // недосчитывался калорий.
+      setReviewItems(failedItems);
+      if (failedItems.length === 0) {
+        setIsReviewSheetOpen(false);
+      } else {
+        alert(`Не удалось сохранить: ${failedItems.map((it) => it.product.name).join(', ')}. Попробуйте ещё раз.`);
+      }
     } finally {
       setIsSavingReview(false);
     }
@@ -5763,37 +5808,43 @@ export default function App() {
                 Отмена
               </button>
               <button
-                disabled={!(Number(foodAmount) > 0)}
+                disabled={!(Number(foodAmount) > 0) || isSubmittingAmount}
                 onClick={async () => {
-                  if (!selectedProductForAmount) return;
+                  if (!selectedProductForAmount || isSubmittingAmount) return;
+                  setIsSubmittingAmount(true);
 
-                  const parsedAmount = Number(foodAmount);
-                  const safeAmount = Number.isFinite(parsedAmount) && parsedAmount > 0 ? parsedAmount : 100;
-                  const usda = (selectedProductForAmount.isUsda || selectedProductForAmount.isAiEstimated) ? selectedProductForAmount : undefined;
+                  try {
+                    const parsedAmount = Number(foodAmount);
+                    const safeAmount = Number.isFinite(parsedAmount) && parsedAmount > 0 ? parsedAmount : 100;
+                    const usda = (selectedProductForAmount.isUsda || selectedProductForAmount.isAiEstimated) ? selectedProductForAmount : undefined;
 
-                  if (amountEntryContext?.source === 'barcode') {
-                    // Штрихкод найден — сохраняем сразу, минуя «Проверьте результат»
-                    await addFood(selectedProductForAmount.id, safeAmount, usda);
-                    setIsBarcodeSheetOpen(false);
-                  } else {
-                    addToReviewDraft(selectedProductForAmount, safeAmount, usda);
+                    if (amountEntryContext?.source === 'barcode') {
+                      // Штрихкод найден — сохраняем сразу, минуя «Проверьте результат»
+                      await addFood(selectedProductForAmount.id, safeAmount, usda);
+                      setIsBarcodeSheetOpen(false);
+                    } else {
+                      addToReviewDraft(selectedProductForAmount, safeAmount, usda);
 
-                    if (amountEntryContext?.source === 'search') {
-                      setIsSearchSheetOpen(false);
-                      setSearchQuery('');
-                      setSearchResults([]);
+                      if (amountEntryContext?.source === 'search') {
+                        setIsSearchSheetOpen(false);
+                        setSearchQuery('');
+                        setSearchResults([]);
+                      }
+
+                      if (amountEntryContext?.source === 'photo') {
+                        setIsPhotoSheetOpen(false);
+                      }
                     }
 
-                    if (amountEntryContext?.source === 'photo') {
-                      setIsPhotoSheetOpen(false);
-                    }
+                    setSelectedProductForAmount(null);
+                    setAmountEntryContext(null);
+                  } finally {
+                    setIsSubmittingAmount(false);
                   }
-
-                  setSelectedProductForAmount(null);
-                  setAmountEntryContext(null);
                 }}
-                className="py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform disabled:opacity-40"
+                className="py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform disabled:opacity-40 flex items-center justify-center gap-2"
               >
+                {isSubmittingAmount && <Loader2 className="animate-spin" size={18} />}
                 {amountEntryContext?.source === 'barcode' ? 'Сохранить' : 'Добавить'}
               </button>
             </div>
