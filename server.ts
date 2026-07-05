@@ -16,6 +16,7 @@ import { ProxyAgent } from "undici";
 import bcrypt from "bcryptjs";
 import { ZipArchive } from "archiver";
 import { rateLimit } from "express-rate-limit";
+import helmet from "helmet";
 import {
   validateBody,
   aiGenerateSchema,
@@ -2348,6 +2349,35 @@ function resolveCookieSecret(): string {
 export async function createApp(): Promise<express.Express> {
   // ... rest of setup ...
   const app = express();
+
+  // Security-заголовки (helmet). CSP включаем только в production — в dev Vite HMR
+  // использует inline-скрипты/websocket, которые пришлось бы отдельно разрешать,
+  // а в проде фронтенд — статическая сборка без внешних скриптов (index.html грузит
+  // только Google Fonts CSS, все API-запросы same-origin).
+  app.use(
+    helmet({
+      // Google Fonts CSS отдаётся без Cross-Origin-Resource-Policy — с дефолтным
+      // require-corp браузер блокирует его загрузку.
+      crossOriginEmbedderPolicy: false,
+      contentSecurityPolicy:
+        process.env.NODE_ENV === "production"
+          ? {
+              directives: {
+                defaultSrc: ["'self'"],
+                scriptSrc: ["'self'"],
+                styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+                fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+                imgSrc: ["'self'", "data:", "blob:"],
+                connectSrc: ["'self'"],
+                objectSrc: ["'none'"],
+                baseUri: ["'self'"],
+                formAction: ["'self'"],
+                frameAncestors: ["'self'"],
+              },
+            }
+          : false,
+    })
+  );
 
   // Дефолтный лимит body-parser (100kb) ломает /api/photo/recognize — фото в base64
   // (даже уменьшенное клиентом до 1280px, JPEG q=0.86) обычно уже больше 100kb.
