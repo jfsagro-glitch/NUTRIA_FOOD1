@@ -33,6 +33,7 @@ import {
   diaryItemAmountSchema,
   quickAddSchema,
   voiceParseSchema,
+  changePasswordSchema,
 } from "./validation.ts";
 import { registerCrmRoutes, getBlockerContactInfo } from "./crm-routes.ts";
 import { registerTelegramBot } from "./telegram-bot.ts";
@@ -2532,6 +2533,28 @@ export async function createApp(): Promise<express.Express> {
   app.post("/api/auth/logout", async (req, res) => {
     res.clearCookie("token", { httpOnly: true, signed: true, secure: true, sameSite: "none" });
     res.json({ success: true });
+  });
+
+  app.post("/api/auth/change-password", validateBody(changePasswordSchema), async (req, res) => {
+    const userId = req.signedCookies?.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+    if (!isDatabaseConfigured()) return res.status(400).json({ error: "Недоступно в демо-режиме" });
+
+    try {
+      const { currentPassword, newPassword } = req.body;
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) return res.status(404).json({ error: "Пользователь не найден" });
+
+      const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!ok) return res.status(401).json({ error: "Неверный текущий пароль" });
+
+      const newHash = await bcrypt.hash(newPassword, 10);
+      await prisma.user.update({ where: { id: userId }, data: { passwordHash: newHash } });
+      res.json({ success: true });
+    } catch (e: any) {
+      logError("Change Password Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
   });
 
   // Сообщения от нутрициолога: список переписки (клиентская сторона)

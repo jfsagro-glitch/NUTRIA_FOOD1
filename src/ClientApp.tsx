@@ -36,7 +36,8 @@ import {
   Link2,
   Download,
   Ban,
-  LogOut
+  LogOut,
+  KeyRound
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -2191,6 +2192,10 @@ const SummaryScreen = ({
   const [goalEditorGroup, setGoalEditorGroup] = useState<GoalEditorGroup>('macros');
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [selectedHistoryDate, setSelectedHistoryDate] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
   const [isFastingCollapsed, setIsFastingCollapsed] = useState(() => localStorage.getItem('collapse_summary_fasting') === 'true');
   const [isRecommendationsCollapsed, setIsRecommendationsCollapsed] = useState(() => localStorage.getItem('collapse_summary_recommendations') === 'true');
   const [isProgramsCollapsed, setIsProgramsCollapsed] = useState(() => {
@@ -2206,6 +2211,35 @@ const SummaryScreen = ({
   const [weightHistory, setWeightHistory] = useState<{ date: string; weightKg: number }[]>([]);
   const [weightInput, setWeightInput] = useState(() => (profile.weightKg ? String(Math.round(profile.weightKg * 10) / 10) : ''));
   const [isSavingWeight, setIsSavingWeight] = useState(false);
+
+  const submitChangePassword = async () => {
+    if (newPasswordInput.length < 6) {
+      alert('Новый пароль должен содержать минимум 6 символов');
+      return;
+    }
+    setIsSavingPassword(true);
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: currentPasswordInput, newPassword: newPasswordInput }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(err?.error || 'Не удалось сменить пароль');
+        return;
+      }
+      alert('Пароль изменён');
+      setIsChangingPassword(false);
+      setCurrentPasswordInput('');
+      setNewPasswordInput('');
+    } catch (e) {
+      console.error(e);
+      alert('Сервер недоступен. Попробуйте позже.');
+    } finally {
+      setIsSavingPassword(false);
+    }
+  };
 
   useEffect(() => {
     if (view !== 'profile') return;
@@ -2918,14 +2952,49 @@ const SummaryScreen = ({
                   {authUser?.email && (
                     <p className="text-sm text-zinc-400 mb-3">Вы вошли как {authUser.email}</p>
                   )}
-                  <button
-                    onClick={() => {
-                      if (window.confirm('Выйти из аккаунта?')) onLogout?.();
-                    }}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-sm font-medium transition-colors"
-                  >
-                    <LogOut size={16} /> Выйти из аккаунта
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setIsChangingPassword((prev) => !prev)}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-sm font-medium transition-colors"
+                    >
+                      <KeyRound size={16} /> Сменить пароль
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (window.confirm('Выйти из аккаунта?')) onLogout?.();
+                      }}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-sm font-medium transition-colors"
+                    >
+                      <LogOut size={16} /> Выйти из аккаунта
+                    </button>
+                  </div>
+                  {isChangingPassword && (
+                    <div className="mt-3 space-y-2">
+                      <input
+                        type="password"
+                        placeholder="Текущий пароль"
+                        autoComplete="current-password"
+                        value={currentPasswordInput}
+                        onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm outline-none focus:border-emerald-500"
+                      />
+                      <input
+                        type="password"
+                        placeholder="Новый пароль"
+                        autoComplete="new-password"
+                        value={newPasswordInput}
+                        onChange={(e) => setNewPasswordInput(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm outline-none focus:border-emerald-500"
+                      />
+                      <button
+                        onClick={submitChangePassword}
+                        disabled={isSavingPassword || !currentPasswordInput || !newPasswordInput}
+                        className="w-full py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white text-sm font-medium transition-colors"
+                      >
+                        {isSavingPassword ? 'Сохраняем…' : 'Сохранить новый пароль'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </motion.div>

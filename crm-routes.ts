@@ -28,6 +28,7 @@ import {
   onboardLoginSchema,
   onboardCompleteSchema,
   crmInviteSchema,
+  changePasswordSchema,
 } from "./validation.ts";
 import { logError } from "./logging.ts";
 
@@ -319,6 +320,32 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
     res.clearCookie("jwtToken");
     res.json({ success: true });
   });
+
+  // ── AUTH: смена пароля (любой залогиненный сотрудник — свой пароль) ────────
+
+  app.post(
+    "/api/crm/auth/change-password",
+    requireAuth,
+    validateBody(changePasswordSchema),
+    async (req: Request, res: Response) => {
+      try {
+        const userId = (req as any).user.id;
+        const { currentPassword, newPassword } = req.body;
+
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        if (!user) return res.status(404).json({ error: "Пользователь не найден" });
+
+        const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+        if (!ok) return res.status(401).json({ error: "Неверный текущий пароль" });
+
+        const newHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+        await prisma.user.update({ where: { id: userId }, data: { passwordHash: newHash } });
+        return res.json({ success: true });
+      } catch (e: any) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+  );
 
   // ── АДМИН: приглашения (любая роль — клиент/нутрициолог/админ) ────────────
   // Только админ создаёт приглашения с выбором роли; нутрициологи по-прежнему

@@ -162,6 +162,11 @@ export const crmLoginSchema = z.object({
   password: z.string().min(1, "Email и пароль обязательны"),
 });
 
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Введите текущий пароль"),
+  newPassword: z.string().min(6, "Новый пароль должен содержать минимум 6 символов"),
+});
+
 export const crmCreateClientSchema = z.object({
   clientName: z.string().trim().optional().nullable(),
   secretPhrase: z.string().trim().min(3, "Секретная фраза должна содержать минимум 3 символа"),

@@ -6,7 +6,7 @@ import {
   AlertCircle, RefreshCw, Leaf, ChevronLeft, Tag,
   User, Activity, Scale, Ruler, Target, Zap, Flame,
   Download, Copy, ExternalLink, Send, Smartphone,
-  Utensils, ShoppingCart, Shield, Ban, Unlock
+  Utensils, ShoppingCart, Shield, Ban, Unlock, KeyRound
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -1526,6 +1526,79 @@ function Dashboard({ user, onSelectClient }: { user: NutritionistUser; onSelectC
   );
 }
 
+// ─── Смена пароля (любой залогиненный сотрудник — свой пароль) ────────────
+
+function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
+  const api = useApi();
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState('');
+  const [done, setDone] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setErr('');
+    if (newPassword.length < 6) { setErr('Новый пароль должен содержать минимум 6 символов'); return; }
+    if (newPassword !== confirmPassword) { setErr('Пароли не совпадают'); return; }
+    setLoading(true);
+    try {
+      await api.post('/api/crm/auth/change-password', { currentPassword, newPassword });
+      setDone(true);
+    } catch (e: any) { setErr(e.message); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+      <div className="bg-zinc-900 rounded-2xl border border-zinc-800 w-full max-w-md">
+        <div className="flex items-center justify-between p-6 border-b border-zinc-800">
+          <h3 className="text-white font-semibold">Сменить пароль</h3>
+          <button onClick={onClose} className="text-zinc-400 hover:text-white"><X size={20}/></button>
+        </div>
+
+        {!done ? (
+          <form onSubmit={submit} className="p-6 space-y-4">
+            <div>
+              <label className="text-xs text-zinc-400 mb-1 block">Текущий пароль</label>
+              <input type="password" value={currentPassword} onChange={e => setCurrentPassword(e.target.value)}
+                required autoComplete="current-password"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500" />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 mb-1 block">Новый пароль</label>
+              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                required autoComplete="new-password" minLength={6}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500" />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 mb-1 block">Повторите новый пароль</label>
+              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                required autoComplete="new-password" minLength={6}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500" />
+            </div>
+            {err && <p className="text-red-400 text-sm">{err}</p>}
+            <button type="submit" disabled={loading || !currentPassword || !newPassword || !confirmPassword}
+              className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-white font-medium py-3 rounded-xl flex items-center justify-center gap-2">
+              {loading ? <Loader2 size={16} className="animate-spin"/> : <KeyRound size={16}/>} Сменить пароль
+            </button>
+          </form>
+        ) : (
+          <div className="p-6 space-y-4">
+            <div className="flex items-center gap-2 text-emerald-400">
+              <Check size={20}/><span className="font-medium">Пароль изменён!</span>
+            </div>
+            <button onClick={onClose} className="w-full bg-zinc-800 hover:bg-zinc-700 text-white py-2.5 rounded-xl text-sm">
+              Готово
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Админ: приглашение пользователя (любая роль) ─────────────────────────
 
 const INVITE_ROLE_LABEL: Record<string, string> = { CLIENT: 'Клиент', NUTRITIONIST: 'Нутрициолог', ADMIN: 'Администратор' };
@@ -1853,6 +1926,7 @@ export function CrmApp({ user, onLogout }: CrmAppProps) {
   // Раздел "Админ" виден только администраторам, но CRM в остальном одна и та же —
   // админ получает полный функционал нутрициолога (клиенты) плюс этот доп. раздел.
   const [view, setView] = useState<'clients' | 'admin'>('clients');
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const isAdmin = user.role === 'ADMIN';
 
   async function handleLogout() {
@@ -1889,16 +1963,18 @@ export function CrmApp({ user, onLogout }: CrmAppProps) {
           )}
         </nav>
         <div className="mt-auto space-y-2">
-          <div title={`${user.profile?.firstName || ''} ${user.profile?.lastName || ''}`.trim() || user.email}
-            className="w-9 h-9 rounded-full bg-zinc-700 flex items-center justify-center text-sm font-medium text-white">
+          <button onClick={() => setShowChangePassword(true)}
+            title={`${user.profile?.firstName || ''} ${user.profile?.lastName || ''}`.trim() || user.email}
+            className="w-9 h-9 rounded-full bg-zinc-700 hover:bg-zinc-600 flex items-center justify-center text-sm font-medium text-white transition-colors">
             {(user.profile?.firstName?.[0] || user.email[0]).toUpperCase()}
-          </div>
+          </button>
           <button onClick={handleLogout} title="Выйти"
             className="w-10 h-10 rounded-xl flex items-center justify-center text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors">
             <LogOut size={18}/>
           </button>
         </div>
       </aside>
+      {showChangePassword && <ChangePasswordDialog onClose={() => setShowChangePassword(false)} />}
 
       {/* Основной контент */}
       <main className="flex-1 overflow-hidden">
