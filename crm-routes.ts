@@ -12,6 +12,7 @@ import type { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import multer from "multer";
+import crypto from "node:crypto";
 import {
   validateBody,
   crmRegisterSchema,
@@ -31,7 +32,17 @@ import { logError } from "./logging.ts";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-const JWT_SECRET = process.env.JWT_SECRET || "nutria-jwt-secret-change-in-prod";
+function resolveJwtSecret(): string {
+  const fromEnv = process.env.JWT_SECRET;
+  if (fromEnv) return fromEnv;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("JWT_SECRET не задан — обязателен в production (иначе можно подделать сессию нутрициолога/клиента)");
+  }
+  // eslint-disable-next-line no-console
+  console.warn("[crm-routes] JWT_SECRET не задан — используется случайный секрет на время процесса (все сессии слетят при рестарте). Задайте JWT_SECRET в .env.");
+  return crypto.randomBytes(32).toString("hex");
+}
+const JWT_SECRET = resolveJwtSecret();
 const JWT_EXPIRES = "30d";
 const SALT_ROUNDS = 10;
 
@@ -74,6 +85,15 @@ function requireNutritionist(req: Request, res: Response, next: NextFunction) {
 const STAFF_ROLES = ["NUTRITIONIST", "ADMIN"];
 function isClientRole(role: string | null | undefined) {
   return !!role && !STAFF_ROLES.includes(role);
+}
+
+// Новые ClientInvite.secretPhrase хранятся как bcrypt-хэш. Записи, созданные до
+// этого фикса, всё ещё хранят фразу в открытом виде — поддерживаем сравнение с обоими
+// форматами, чтобы не сломать уже разосланные ссылки на онбординг.
+const BCRYPT_HASH_RE = /^\$2[aby]\$/;
+async function verifySecretPhrase(plain: string, stored: string): Promise<boolean> {
+  if (BCRYPT_HASH_RE.test(stored)) return bcrypt.compare(plain, stored);
+  return plain === stored;
 }
 
 // ─── BMR / TDEE расчёты ──────────────────────────────────────────────────────
@@ -121,6 +141,25 @@ function calcTargetKbzhu(
 // ─── Регистрация маршрутов ────────────────────────────────────────────────────
 
 export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
+
+  // Проверяет, что :clientId НЕ закреплён приглашением за ДРУГИМ нутрициологом
+  // (ClientInvite.clientId уникален — у клиента не может быть больше одного
+  // владеющего нутрициолога). Ещё не закреплённых клиентов (пришли сами/через
+  // Telegram-бота) пропускает — их можно "усыновить" через PATCH .../clients/:clientId.
+  // 404 вместо 403, чтобы не подтверждать существование чужого clientId в ответе.
+  async function requireOwnClient(req: Request, res: Response, next: NextFunction) {
+    try {
+      const nutritionistId = (req as any).user.id;
+      const { clientId } = req.params;
+      const invite = await (prisma as any).clientInvite.findFirst({ where: { clientId } });
+      if (invite && invite.nutritionistId !== nutritionistId) {
+        return res.status(404).json({ error: "Клиент не найден" });
+      }
+      next();
+    } catch (e: any) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
 
   // ── AUTH: регистрация нутрициолога ─────────────────────────────────────────
 
@@ -214,12 +253,12 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
     try {
       const nutritionistId = (req as any).user.id;
 
-      // Показываем ВСЕХ зарегистрированных клиентов дневника питания (app.nutria.one),
-      // а не только тех, кого пригласил именно этот нутрициолог. Клиент — любой
-      // пользователь, кроме сотрудников (нутрициологов/админов), включая общий
-      // демо-аккаунт веб-приложения и аккаунты, созданные через Telegram-бота.
+      // Показываем клиентов, закреплённых приглашением именно за этим нутрициологом,
+      // плюс ещё никем не закреплённых (пришли сами/через Telegram-бота — их можно
+      // "усыновить" через PATCH). Клиентов, закреплённых за ДРУГИМ нутрициологом,
+      // не показываем — иначе один нутрициолог видел бы медданные клиентов всех остальных.
       const clientUsers = await prisma.user.findMany({
-        where: { role: { notIn: STAFF_ROLES } },
+        where: { role: { notIn: STAFF_ROLES }, OR: [{ inviteReceived: { nutritionistId } }, { inviteReceived: null }] },
         include: {
           clientProfile: true,
           inviteReceived: { include: { nutritionist: { include: { nutritionistProfile: true } } } },
@@ -275,11 +314,14 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       const nutritionistId = (req as any).user.id;
       const { clientName, secretPhrase, tags } = req.body;
 
+      // Храним только bcrypt-хэш фразы — саму фразу возвращаем нутрициологу
+      // один раз в ответе ниже (для отправки клиенту), но нигде не сохраняем в открытом виде.
+      const secretPhraseHash = await bcrypt.hash(secretPhrase, SALT_ROUNDS);
       const invite = await (prisma as any).clientInvite.create({
         data: {
           nutritionistId,
           clientName: clientName || null,
-          secretPhrase,
+          secretPhrase: secretPhraseHash,
           tagsJson: JSON.stringify(tags || []),
           status: "PENDING",
         },
@@ -287,7 +329,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
       const inviteUrl = `${req.protocol}://${req.get("host")}/onboard/${invite.token}`;
 
-      return res.json({ invite, inviteUrl });
+      return res.json({ invite: { ...invite, secretPhrase }, inviteUrl });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
     }
@@ -295,7 +337,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── КЛИЕНТ: детальная карточка ─────────────────────────────────────────────
 
-  app.get("/api/crm/clients/:clientId", requireNutritionist, async (req: Request, res: Response) => {
+  app.get("/api/crm/clients/:clientId", requireNutritionist, requireOwnClient, async (req: Request, res: Response) => {
     try {
       const { clientId } = req.params;
 
@@ -333,7 +375,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── КЛИЕНТ: обновить теги/статус/имя ─────────────────────────────────────
 
-  app.patch("/api/crm/clients/:clientId", requireNutritionist, validateBody(crmUpdateClientSchema), async (req: Request, res: Response) => {
+  app.patch("/api/crm/clients/:clientId", requireNutritionist, requireOwnClient, validateBody(crmUpdateClientSchema), async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
@@ -345,7 +387,8 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       let invite = await (prisma as any).clientInvite.findFirst({ where: { clientId } });
       if (!invite) {
         // Клиент пришёл не через приглашение этого нутрициолога (например, через Telegram-бота)
-        // — создаём служебную запись приглашения, чтобы хранить теги/статус.
+        // — создаём служебную запись приглашения, чтобы хранить теги/статус, и тем самым
+        // закрепляем клиента за этим нутрициологом (первый, кто его "трогает", становится владельцем).
         invite = await (prisma as any).clientInvite.create({
           data: {
             nutritionistId,
@@ -375,7 +418,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── ДНЕВНИК КЛИЕНТА (просмотр для нутрициолога) ───────────────────────────
 
-  app.get("/api/crm/clients/:clientId/diary", requireNutritionist, async (req: Request, res: Response) => {
+  app.get("/api/crm/clients/:clientId/diary", requireNutritionist, requireOwnClient, async (req: Request, res: Response) => {
     try {
       const { clientId } = req.params;
       const { date, days = "7" } = req.query;
@@ -408,7 +451,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── ВЕС КЛИЕНТА (просмотр для нутрициолога) ───────────────────────────────
 
-  app.get("/api/crm/clients/:clientId/weight-history", requireNutritionist, async (req: Request, res: Response) => {
+  app.get("/api/crm/clients/:clientId/weight-history", requireNutritionist, requireOwnClient, async (req: Request, res: Response) => {
     try {
       const { clientId } = req.params;
       const { days = "90" } = req.query;
@@ -432,7 +475,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── АНАЛИТИКА КЛИЕНТА ЗА ПЕРИОД ────────────────────────────────────────────
 
-  app.get("/api/crm/clients/:clientId/analytics", requireNutritionist, async (req: Request, res: Response) => {
+  app.get("/api/crm/clients/:clientId/analytics", requireNutritionist, requireOwnClient, async (req: Request, res: Response) => {
     try {
       const { clientId } = req.params;
       const days = Math.min(180, Math.max(1, parseInt(String(req.query.days ?? "30"), 10) || 30));
@@ -498,7 +541,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── ЗАМЕТКИ: список ────────────────────────────────────────────────────────
 
-  app.get("/api/crm/clients/:clientId/notes", requireNutritionist, async (req: Request, res: Response) => {
+  app.get("/api/crm/clients/:clientId/notes", requireNutritionist, requireOwnClient, async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
@@ -516,7 +559,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── ЗАМЕТКИ: создать ───────────────────────────────────────────────────────
 
-  app.post("/api/crm/clients/:clientId/notes", requireNutritionist, validateBody(crmNoteSchema), async (req: Request, res: Response) => {
+  app.post("/api/crm/clients/:clientId/notes", requireNutritionist, requireOwnClient, validateBody(crmNoteSchema), async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
@@ -539,7 +582,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── ЗАМЕТКИ: удалить ───────────────────────────────────────────────────────
 
-  app.delete("/api/crm/clients/:clientId/notes/:noteId", requireNutritionist, async (req: Request, res: Response) => {
+  app.delete("/api/crm/clients/:clientId/notes/:noteId", requireNutritionist, requireOwnClient, async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId, noteId } = req.params;
@@ -558,7 +601,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── АНАЛИЗЫ: список ────────────────────────────────────────────────────────
 
-  app.get("/api/crm/clients/:clientId/analyses", requireNutritionist, async (req: Request, res: Response) => {
+  app.get("/api/crm/clients/:clientId/analyses", requireNutritionist, requireOwnClient, async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
@@ -621,7 +664,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── АНАЛИЗЫ: скачать файл ─────────────────────────────────────────────────
 
-  app.get("/api/crm/clients/:clientId/analyses/:analysisId/download", requireNutritionist, async (req: Request, res: Response) => {
+  app.get("/api/crm/clients/:clientId/analyses/:analysisId/download", requireNutritionist, requireOwnClient, async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId, analysisId } = req.params;
@@ -642,7 +685,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── АНАЛИЗЫ: удалить ──────────────────────────────────────────────────────
 
-  app.delete("/api/crm/clients/:clientId/analyses/:analysisId", requireNutritionist, async (req: Request, res: Response) => {
+  app.delete("/api/crm/clients/:clientId/analyses/:analysisId", requireNutritionist, requireOwnClient, async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId, analysisId } = req.params;
@@ -661,7 +704,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── РЕКОМЕНДАЦИИ: список ──────────────────────────────────────────────────
 
-  app.get("/api/crm/clients/:clientId/recommendations", requireNutritionist, async (req: Request, res: Response) => {
+  app.get("/api/crm/clients/:clientId/recommendations", requireNutritionist, requireOwnClient, async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
@@ -679,7 +722,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── РЕКОМЕНДАЦИИ: создать ─────────────────────────────────────────────────
 
-  app.post("/api/crm/clients/:clientId/recommendations", requireNutritionist, validateBody(crmRecommendationSchema), async (req: Request, res: Response) => {
+  app.post("/api/crm/clients/:clientId/recommendations", requireNutritionist, requireOwnClient, validateBody(crmRecommendationSchema), async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
@@ -697,7 +740,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── РЕКОМЕНДАЦИИ: удалить ─────────────────────────────────────────────────
 
-  app.delete("/api/crm/clients/:clientId/recommendations/:recId", requireNutritionist, async (req: Request, res: Response) => {
+  app.delete("/api/crm/clients/:clientId/recommendations/:recId", requireNutritionist, requireOwnClient, async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId, recId } = req.params;
@@ -733,7 +776,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── КОНСУЛЬТАЦИИ: добавить ────────────────────────────────────────────────
 
-  app.post("/api/crm/clients/:clientId/consultations", requireNutritionist, validateBody(crmConsultationSchema), async (req: Request, res: Response) => {
+  app.post("/api/crm/clients/:clientId/consultations", requireNutritionist, requireOwnClient, validateBody(crmConsultationSchema), async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
@@ -756,7 +799,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── ПЛАНЫ ПИТАНИЯ: список для клиента ──────────────────────────────────────
 
-  app.get("/api/crm/clients/:clientId/meal-plans", requireNutritionist, async (req: Request, res: Response) => {
+  app.get("/api/crm/clients/:clientId/meal-plans", requireNutritionist, requireOwnClient, async (req: Request, res: Response) => {
     try {
       const { clientId } = req.params;
       const clientUser = await prisma.user.findUnique({ where: { id: clientId } });
@@ -775,7 +818,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── ПЛАНЫ ПИТАНИЯ: создать ──────────────────────────────────────────────────
 
-  app.post("/api/crm/clients/:clientId/meal-plans", requireNutritionist, validateBody(crmMealPlanSchema), async (req: Request, res: Response) => {
+  app.post("/api/crm/clients/:clientId/meal-plans", requireNutritionist, requireOwnClient, validateBody(crmMealPlanSchema), async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
@@ -896,7 +939,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── СООБЩЕНИЯ: список переписки с клиентом ────────────────────────────────
 
-  app.get("/api/crm/clients/:clientId/messages", requireNutritionist, async (req: Request, res: Response) => {
+  app.get("/api/crm/clients/:clientId/messages", requireNutritionist, requireOwnClient, async (req: Request, res: Response) => {
     try {
       const { clientId } = req.params;
 
@@ -924,7 +967,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── СООБЩЕНИЯ: отправить клиенту ───────────────────────────────────────────
 
-  app.post("/api/crm/clients/:clientId/messages", requireNutritionist, validateBody(crmClientMessageSchema), async (req: Request, res: Response) => {
+  app.post("/api/crm/clients/:clientId/messages", requireNutritionist, requireOwnClient, validateBody(crmClientMessageSchema), async (req: Request, res: Response) => {
     try {
       const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
@@ -1001,8 +1044,12 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       });
 
       if (!invite) return res.status(404).json({ error: "Приглашение не найдено" });
-      if (invite.secretPhrase !== secretPhrase) {
+      if (!(await verifySecretPhrase(secretPhrase, invite.secretPhrase))) {
         return res.status(401).json({ error: "Неверная секретная фраза" });
+      }
+      if (!BCRYPT_HASH_RE.test(invite.secretPhrase)) {
+        const migratedHash = await bcrypt.hash(secretPhrase, SALT_ROUNDS);
+        await (prisma as any).clientInvite.update({ where: { id: invite.id }, data: { secretPhrase: migratedHash } });
       }
       if (!invite.clientId || !invite.client) {
         return res.status(400).json({ error: "Сначала завершите онбординг" });
@@ -1011,7 +1058,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       const jwtToken = signToken({ id: invite.client.id, role: invite.client.role, email: invite.client.email });
       res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
       // Также ставим "token" — куки, которую использует основной дневник питания (server.ts / ClientApp.tsx)
-      res.cookie("token", invite.client.id, { httpOnly: true, secure: true, sameSite: "none" });
+      res.cookie("token", invite.client.id, { httpOnly: true, signed: true, secure: true, sameSite: "none" });
 
       return res.json({ user: { id: invite.client.id, email: invite.client.email, role: invite.client.role }, token: jwtToken });
     } catch (e: any) {
@@ -1032,8 +1079,12 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
       if (!invite) return res.status(404).json({ error: "Приглашение не найдено" });
       if (invite.status === "ARCHIVED") return res.status(410).json({ error: "Ссылка недействительна" });
-      if (invite.secretPhrase !== secretPhrase) {
+      if (!(await verifySecretPhrase(secretPhrase, invite.secretPhrase))) {
         return res.status(401).json({ error: "Неверная секретная фраза" });
+      }
+      if (!BCRYPT_HASH_RE.test(invite.secretPhrase)) {
+        const migratedHash = await bcrypt.hash(secretPhrase, SALT_ROUNDS);
+        await (prisma as any).clientInvite.update({ where: { id: invite.id }, data: { secretPhrase: migratedHash } });
       }
 
       // Если клиент уже создан — просто логиним
@@ -1042,7 +1093,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
         if (existingUser) {
           const jwtToken = signToken({ id: existingUser.id, role: existingUser.role, email: existingUser.email });
           res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
-          res.cookie("token", existingUser.id, { httpOnly: true, secure: true, sameSite: "none" });
+          res.cookie("token", existingUser.id, { httpOnly: true, signed: true, secure: true, sameSite: "none" });
           return res.json({ user: { id: existingUser.id, email: existingUser.email, role: existingUser.role }, token: jwtToken });
         }
       }
@@ -1089,7 +1140,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
       const jwtToken = signToken({ id: clientUser.id, role: clientUser.role, email: clientUser.email });
       res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
-      res.cookie("token", clientUser.id, { httpOnly: true, secure: true, sameSite: "none" });
+      res.cookie("token", clientUser.id, { httpOnly: true, signed: true, secure: true, sameSite: "none" });
 
       return res.json({ user: { id: clientUser.id, email: clientUser.email, role: clientUser.role }, token: jwtToken });
     } catch (e: any) {
@@ -1100,7 +1151,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   // ── АНКЕТА КЛИЕНТА: обновить ──────────────────────────────────────────────
 
-  app.patch("/api/crm/clients/:clientId/profile", requireNutritionist, validateBody(crmClientProfilePatchSchema), async (req: Request, res: Response) => {
+  app.patch("/api/crm/clients/:clientId/profile", requireNutritionist, requireOwnClient, validateBody(crmClientProfilePatchSchema), async (req: Request, res: Response) => {
     try {
       const { clientId } = req.params;
 

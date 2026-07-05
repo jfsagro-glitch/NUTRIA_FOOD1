@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import cookieParser from "cookie-parser";
+import crypto from "node:crypto";
 import path from "path";
 import { fileURLToPath } from "url";
 import { PrismaClient } from "@prisma/client";
@@ -2268,12 +2269,26 @@ async function generateAI(prompt: string, responseMimeType: string = "applicatio
   throw new Error("All AI models failed or keys are missing.");
 }
 
+// Секрет для подписи cookie "token" (cookie-parser). Без подписи любой клиент мог
+// прислать Cookie: token=<чужой userId> и сервер доверял бы этому значению напрямую —
+// signed cookies гарантируют, что значение реально было выдано этим сервером.
+function resolveCookieSecret(): string {
+  const fromEnv = process.env.COOKIE_SECRET;
+  if (fromEnv) return fromEnv;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("COOKIE_SECRET не задан — обязателен в production (иначе сессионную cookie можно подделать)");
+  }
+  // eslint-disable-next-line no-console
+  console.warn("[server] COOKIE_SECRET не задан — используется случайный секрет на время процесса (все сессии слетят при рестарте). Задайте COOKIE_SECRET в .env.");
+  return crypto.randomBytes(32).toString("hex");
+}
+
 export async function createApp(): Promise<express.Express> {
   // ... rest of setup ...
   const app = express();
 
   app.use(express.json());
-  app.use(cookieParser());
+  app.use(cookieParser(resolveCookieSecret()));
 
   // Rate limiting: общий лимит на все /api/*, и более строгий — на эндпоинты входа/регистрации
   // (защита от брутфорса пароля). Отключаем в тестах, чтобы повторные вызовы не падали по лимиту.
@@ -2296,7 +2311,7 @@ export async function createApp(): Promise<express.Express> {
     message: { error: "Слишком много попыток. Попробуйте позже." },
   });
   app.use(
-    ["/api/auth/login", "/api/crm/auth/login", "/api/crm/auth/register", "/api/onboard/:token/login"],
+    ["/api/auth/login", "/api/crm/auth/login", "/api/crm/auth/register", "/api/onboard/:token/login", "/api/onboard/:token"],
     authLimiter
   );
 
@@ -2304,6 +2319,9 @@ export async function createApp(): Promise<express.Express> {
 
   // AI Proxy: Unified generation with fallback
   app.post("/api/ai/generate", validateBody(aiGenerateSchema), async (req, res) => {
+    // Требуем сессию — иначе это бесплатный анонимный прокси на платные AI-провайдеры
+    // приложения (см. аудит), защищённый только общим rate-limit'ом на все /api/*.
+    if (!req.signedCookies.token) return res.status(401).json({ error: "Unauthorized" });
     const { prompt, responseMimeType, image } = req.body;
 
     try {
@@ -2373,7 +2391,7 @@ export async function createApp(): Promise<express.Express> {
   // Auth Placeholder (Mock)
   app.post("/api/auth/login", async (req, res) => {
     if (!isDatabaseConfigured()) {
-      res.cookie("token", DEMO_USER_ID, { httpOnly: true, secure: true, sameSite: "none" });
+      res.cookie("token", DEMO_USER_ID, { httpOnly: true, signed: true, secure: true, sameSite: "none" });
       return res.json({ success: true, user: { email: DEMO_USER.email, role: DEMO_USER.role }, mode: "memory" });
     }
 
@@ -2397,7 +2415,7 @@ export async function createApp(): Promise<express.Express> {
           }
         });
       }
-      res.cookie("token", user.id, { httpOnly: true, secure: true, sameSite: "none" });
+      res.cookie("token", user.id, { httpOnly: true, signed: true, secure: true, sameSite: "none" });
       res.json({ success: true, user: { email: user.email, role: user.role } });
     } catch (e: any) {
       logError("Auth Login Error:", e);
@@ -2407,7 +2425,7 @@ export async function createApp(): Promise<express.Express> {
 
   app.get("/api/auth/me", async (req, res) => {
     try {
-      const userId = req.cookies.token;
+      const userId = req.signedCookies.token;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
       if (!isDatabaseConfigured()) {
@@ -2426,7 +2444,7 @@ export async function createApp(): Promise<express.Express> {
   // Сообщения от нутрициолога: список переписки (клиентская сторона)
   app.get("/api/messages", async (req, res) => {
     try {
-      const userId = req.cookies.token;
+      const userId = req.signedCookies.token;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
       const messages = await (prisma as any).message.findMany({
@@ -2461,7 +2479,7 @@ export async function createApp(): Promise<express.Express> {
   // Сообщения от нутрициолога: счётчик непрочитанных (для бейджа, не помечает прочитанным)
   app.get("/api/messages/unread-count", async (req, res) => {
     try {
-      const userId = req.cookies.token;
+      const userId = req.signedCookies.token;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
       const count = await (prisma as any).message.count({
@@ -2477,7 +2495,7 @@ export async function createApp(): Promise<express.Express> {
   // Сообщения от нутрициолога: отправить ответ (клиентская сторона)
   app.post("/api/messages", validateBody(sendMessageSchema), async (req, res) => {
     try {
-      const userId = req.cookies.token;
+      const userId = req.signedCookies.token;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
       const { content, nutritionistId } = req.body;
@@ -2538,7 +2556,7 @@ export async function createApp(): Promise<express.Express> {
 
   // "Недавние" — список недавно использованных продуктов/блюд пользователя (без дублей)
   app.get("/api/products/recent", async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     if (!isDatabaseConfigured()) {
@@ -2584,7 +2602,7 @@ export async function createApp(): Promise<express.Express> {
 
   // "Мои" — собственные продукты и блюда пользователя
   app.get("/api/products/mine", async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     if (!isDatabaseConfigured()) {
@@ -2615,7 +2633,7 @@ export async function createApp(): Promise<express.Express> {
 
   // "Мои" → добавить свой продукт (КБЖУ хранится на 100 г)
   app.post("/api/products/custom", validateBody(customProductSchema), async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const { name, brand, barcode, calories, protein, fat, carbs } = req.body;
@@ -2677,7 +2695,7 @@ export async function createApp(): Promise<express.Express> {
   });
 
   app.delete("/api/products/custom/:id", async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     const { id } = req.params;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -2704,7 +2722,7 @@ export async function createApp(): Promise<express.Express> {
 
   // "Мои блюда" — создать блюдо из ингредиентов (вес ингредиентов + вес готового блюда → КБЖУ на 100 г)
   app.post("/api/recipes", validateBody(recipeSchema), async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const name = req.body.name;
@@ -2804,7 +2822,7 @@ export async function createApp(): Promise<express.Express> {
   // логики матчинга). Ничего не сохраняет — отдаёт предпросмотр, сохранение идёт через
   // уже существующий POST /api/recipes тем же payload-форматом, что и ручное создание блюда.
   app.post("/api/recipes/import-url", validateBody(recipeImportUrlSchema), async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const rawUrl = req.body.url.trim();
@@ -2890,7 +2908,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   // отдаёт ингредиенты с подгруженным продуктом, чтобы показать название/КБЖУ без
   // дополнительных запросов к поиску.
   app.get("/api/recipes/:id", async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     const { id } = req.params;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -2911,7 +2929,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   });
 
   app.delete("/api/recipes/:id", async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     const { id } = req.params;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -2940,7 +2958,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   // ингредиент, поменять граммовку. Пересчитывает агрегированный снимок-продукт по той же
   // логике, что и создание блюда (POST /api/recipes).
   app.patch("/api/recipes/:id", validateBody(recipeSchema), async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     const { id } = req.params;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -3068,7 +3086,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   });
 
   app.post("/api/photo/corrections", validateBody(photoCorrectionSchema), async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     try {
@@ -3093,7 +3111,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
   // Diary: Get daily meals and aggregates
   app.get("/api/diary", async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const targetDate = dateFromQuery(req.query.date);
@@ -3154,7 +3172,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
   // Diary: History for analytics (last N days)
   app.get("/api/diary/history", async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const days = Math.max(1, Math.min(31, Number(req.query.days) || 7));
@@ -3267,7 +3285,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
   // Diary: Update nutrient goals
   app.post("/api/diary/goals", validateBody(diaryGoalsSchema), async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     const nextGoals = req.body;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -3312,7 +3330,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
   // Diary: Update water intake
   app.post("/api/diary/water", validateBody(diaryWaterSchema), async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     const { amount, date } = req.body; // amount can be positive or negative
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -3364,7 +3382,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
   // Diary: Delete meal item
   app.delete("/api/diary/item/:id", async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     const { id } = req.params;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -3394,7 +3412,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   // caloriesBurned приходит уже посчитанным с клиента (MET × вес × часы из профиля
   // в localStorage) — сервер не знает вес пользователя, только хранит результат.
   app.get("/api/activities/:date", async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const targetDate = dateFromQuery(req.params.date);
@@ -3422,7 +3440,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
   // Activity: Log a new activity
   app.post("/api/activities", validateBody(activitySchema), async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const { date, activityName, durationMinutes, caloriesBurned } = req.body;
@@ -3457,7 +3475,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
   // Activity: Delete a logged activity
   app.delete("/api/activities/:id", async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     const { id } = req.params;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -3479,7 +3497,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   // Weight: Log today's (or a given date's) body weight — одна запись на день,
   // повторная запись в тот же день обновляет значение (upsert по [userId, date]).
   app.post("/api/weight", validateBody(weightSchema), async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const { date, weightKg } = req.body;
@@ -3509,7 +3527,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
   // Weight: History for the last N days
   app.get("/api/weight/history", async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const days = Math.min(365, Math.max(1, parseInt(String(req.query.days ?? "30"), 10) || 30));
@@ -3540,7 +3558,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
   // Экспорт личных данных пользователя в zip (GDPR-style)
   app.get("/api/export", async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     let diary: any[];
@@ -3595,7 +3613,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
   // Diary: Add meal item
   app.post("/api/diary/add", validateBody(diaryAddSchema), async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     let { productId, amount, type, usdaData, date } = req.body;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -3678,7 +3696,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
   // Diary: Edit meal item weight (calories/macros recalculate on read from product x amount)
   app.patch("/api/diary/item/:id", validateBody(diaryItemAmountSchema), async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     const { id } = req.params;
     const { amount } = req.body;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -3712,7 +3730,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   // с введёнными значениями как "на 100г" и MealItem с amount: 100, чтобы они отражали
   // ровно ту порцию, которую пользователь указал.
   app.post("/api/diary/quick-add", validateBody(quickAddSchema), async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const { date, mealType, label, calories, protein, fat, carbs } = req.body;
@@ -3857,7 +3875,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
   // --- Admin Routes ---
   app.get("/api/admin/users", async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (user?.role !== "ADMIN") return res.status(403).json({ error: "Forbidden" });
     const users = await prisma.user.findMany({ include: { _count: { select: { meals: true } } } });
@@ -3865,7 +3883,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   });
 
   app.get("/api/admin/stats", async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies.token;
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (user?.role !== "ADMIN") return res.status(403).json({ error: "Forbidden" });
     
