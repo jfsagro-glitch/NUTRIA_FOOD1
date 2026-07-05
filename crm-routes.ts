@@ -133,6 +133,28 @@ async function deleteUserAccount(prisma: PrismaClient, userId: string): Promise<
   await prisma.user.delete({ where: { id: userId } });
 }
 
+// Контакты того, кто заблокировал аккаунт — показываются клиенту при попытке входа,
+// чтобы он знал, к кому обратиться для разблокировки.
+export async function getBlockerContactInfo(
+  prisma: PrismaClient,
+  blockedByUserId: string | null | undefined
+): Promise<{ name: string; email: string; phone: string | null; role: string } | null> {
+  if (!blockedByUserId) return null;
+  const blocker = await prisma.user.findUnique({
+    where: { id: blockedByUserId },
+    select: { email: true, role: true, nutritionistProfile: { select: { firstName: true, lastName: true, phone: true } } },
+  });
+  if (!blocker) return null;
+  const profile = blocker.nutritionistProfile;
+  const name = profile ? `${profile.firstName || ""} ${profile.lastName || ""}`.trim() : "";
+  return {
+    name: name || blocker.email,
+    email: blocker.email,
+    phone: profile?.phone || null,
+    role: blocker.role,
+  };
+}
+
 // Отправка письма с приглашением пока не подключена (нет провайдера/SMTP-ключей) —
 // ссылка отдаётся в ответе API и показывается в CRM для ручной отправки. Когда появится
 // провайдер (SMTP/SendGrid/Resend/...), реализовать отправку здесь — вызовы уже
@@ -258,7 +280,10 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
       const ok = await bcrypt.compare(password, user.passwordHash);
       if (!ok) return res.status(401).json({ error: "Неверный email или пароль" });
-      if (user.status === "BLOCKED") return res.status(403).json({ error: "Аккаунт заблокирован" });
+      if (user.status === "BLOCKED") {
+        const blockedBy = await getBlockerContactInfo(prisma, (user as any).blockedByUserId);
+        return res.status(403).json({ error: "Аккаунт заблокирован", blockedBy });
+      }
 
       const token = signToken({ id: user.id, role: user.role, email: user.email });
       res.cookie("jwtToken", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
@@ -468,7 +493,10 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
         }
       }
 
-      const updated = await prisma.user.update({ where: { id }, data: { status } });
+      const updated = await prisma.user.update({
+        where: { id },
+        data: { status, blockedByUserId: status === "BLOCKED" ? adminId : null },
+      });
       return res.json({ user: { id: updated.id, status: updated.status } });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
@@ -678,6 +706,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
   app.patch("/api/crm/clients/:clientId/account-status", requireNutritionist, requireOwnClient, async (req: Request, res: Response) => {
     try {
+      const nutritionistId = (req as any).user.id;
       const { clientId } = req.params;
       const { status } = req.body;
       if (status !== "ACTIVE" && status !== "BLOCKED") {
@@ -687,7 +716,10 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       const clientUser = await prisma.user.findUnique({ where: { id: clientId } });
       if (!clientUser || !isClientRole(clientUser.role)) return res.status(404).json({ error: "Клиент не найден" });
 
-      const updated = await prisma.user.update({ where: { id: clientId }, data: { status } });
+      const updated = await prisma.user.update({
+        where: { id: clientId },
+        data: { status, blockedByUserId: status === "BLOCKED" ? nutritionistId : null },
+      });
       return res.json({ user: { id: updated.id, status: updated.status } });
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
@@ -1350,7 +1382,10 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       if (!invite.clientId || !invite.client) {
         return res.status(400).json({ error: "Сначала завершите онбординг" });
       }
-      if (invite.client.status === "BLOCKED") return res.status(403).json({ error: "Аккаунт заблокирован" });
+      if (invite.client.status === "BLOCKED") {
+        const blockedBy = await getBlockerContactInfo(prisma, invite.client.blockedByUserId);
+        return res.status(403).json({ error: "Аккаунт заблокирован", blockedBy });
+      }
 
       const jwtToken = signToken({ id: invite.client.id, role: invite.client.role, email: invite.client.email });
       res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
@@ -1393,7 +1428,10 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
             if (!password) return res.status(400).json({ error: "Укажите пароль" });
             const ok = await bcrypt.compare(password, existingUser.passwordHash);
             if (!ok) return res.status(401).json({ error: "Неверный пароль" });
-            if (existingUser.status === "BLOCKED") return res.status(403).json({ error: "Аккаунт заблокирован" });
+            if (existingUser.status === "BLOCKED") {
+              const blockedBy = await getBlockerContactInfo(prisma, existingUser.blockedByUserId);
+              return res.status(403).json({ error: "Аккаунт заблокирован", blockedBy });
+            }
 
             const jwtToken = signToken({ id: existingUser.id, role: existingUser.role, email: existingUser.email });
             res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
@@ -1473,7 +1511,10 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       if (invite.clientId) {
         const existingUser = await prisma.user.findUnique({ where: { id: invite.clientId } });
         if (existingUser) {
-          if (existingUser.status === "BLOCKED") return res.status(403).json({ error: "Аккаунт заблокирован" });
+          if (existingUser.status === "BLOCKED") {
+            const blockedBy = await getBlockerContactInfo(prisma, existingUser.blockedByUserId);
+            return res.status(403).json({ error: "Аккаунт заблокирован", blockedBy });
+          }
           const jwtToken = signToken({ id: existingUser.id, role: existingUser.role, email: existingUser.email });
           res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
           res.cookie("token", existingUser.id, { httpOnly: true, signed: true, secure: true, sameSite: "none" });

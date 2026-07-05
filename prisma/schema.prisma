@@ -21,6 +21,10 @@ model User {
   // ACTIVE | BLOCKED — заблокированный пользователь не может войти и все его запросы
   // с уже действующей сессией отклоняются (см. глобальные проверки в server.ts/crm-routes.ts)
   status       String   @default("ACTIVE")
+  // Кто заблокировал аккаунт (админ или нутрициолог) — для подсказки клиенту при входе
+  blockedByUserId String?
+  blockedBy       User?   @relation("BlockedByAdmin", fields: [blockedByUserId], references: [id], onDelete: SetNull)
+  blockedUsers    User[]  @relation("BlockedByAdmin")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

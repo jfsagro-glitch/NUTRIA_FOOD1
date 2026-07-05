@@ -33,7 +33,7 @@ import {
   quickAddSchema,
   voiceParseSchema,
 } from "./validation.ts";
-import { registerCrmRoutes } from "./crm-routes.ts";
+import { registerCrmRoutes, getBlockerContactInfo } from "./crm-routes.ts";
 import { registerTelegramBot } from "./telegram-bot.ts";
 import { logError } from "./logging.ts";
 
@@ -2359,8 +2359,11 @@ export async function createApp(): Promise<express.Express> {
     const userId = req.signedCookies?.token;
     if (userId && isDatabaseConfigured()) {
       try {
-        const user = await prisma.user.findUnique({ where: { id: userId }, select: { status: true } });
-        if (user?.status === "BLOCKED") return res.status(403).json({ error: "Аккаунт заблокирован" });
+        const user = await prisma.user.findUnique({ where: { id: userId }, select: { status: true, blockedByUserId: true } });
+        if (user?.status === "BLOCKED") {
+          const blockedBy = await getBlockerContactInfo(prisma, user.blockedByUserId);
+          return res.status(403).json({ error: "Аккаунт заблокирован", blockedBy });
+        }
       } catch (e) {
         logError("Blocked-status check error:", e);
       }
@@ -2520,6 +2523,11 @@ export async function createApp(): Promise<express.Express> {
       logError("Auth Me Error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
+  });
+
+  app.post("/api/auth/logout", async (req, res) => {
+    res.clearCookie("token", { httpOnly: true, signed: true, secure: true, sameSite: "none" });
+    res.json({ success: true });
   });
 
   // Сообщения от нутрициолога: список переписки (клиентская сторона)

@@ -34,7 +34,9 @@ import {
   Send,
   Flame,
   Link2,
-  Download
+  Download,
+  Ban,
+  LogOut
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -2156,6 +2158,8 @@ const SummaryScreen = ({
   onSaveProfileGoals,
   onToggleTheme,
   onMessagesRead,
+  authUser,
+  onLogout,
 }: {
   view: 'stats' | 'profile';
   goals: NutrientGoalSet;
@@ -2174,6 +2178,8 @@ const SummaryScreen = ({
   onSaveProfileGoals: (profile: UserProfileSettings, goals: NutrientGoalSet) => Promise<void>;
   onToggleTheme: () => void;
   onMessagesRead?: () => void;
+  authUser?: { email: string; role: string } | null;
+  onLogout?: () => void;
 }) => {
   const fastingHours = fastingMode === 'CUSTOM' ? customFastingHours : FASTING_PRESETS[fastingMode].fastingHours;
   const eatingHours = Math.max(0, 24 - fastingHours);
@@ -2906,6 +2912,21 @@ const SummaryScreen = ({
                     <Download size={16} /> Скачать архив
                   </a>
                 </div>
+
+                <div className="mt-4 bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+                  <p className="text-base font-semibold text-zinc-100 mb-3">Аккаунт</p>
+                  {authUser?.email && (
+                    <p className="text-sm text-zinc-400 mb-3">Вы вошли как {authUser.email}</p>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (window.confirm('Выйти из аккаунта?')) onLogout?.();
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-sm font-medium transition-colors"
+                  >
+                    <LogOut size={16} /> Выйти из аккаунта
+                  </button>
+                </div>
               </div>
             </motion.div>
           )}
@@ -3422,6 +3443,8 @@ export default function App() {
   const [hints, setHints] = useState<Hint[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [authUser, setAuthUser] = useState<{ email: string; role: string } | null>(null);
+  const [blockedInfo, setBlockedInfo] = useState<{ name: string; email: string; phone: string | null } | null>(null);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [isRecognizing, setIsRecognizing] = useState(false);
   const [recognizedItems, setRecognizedItems] = useState<RecognizedPhotoItem[]>([]);
@@ -3797,15 +3820,33 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         if (data.user) {
+          setAuthUser({ email: data.user.email, role: data.user.role });
           setIsLoggedIn(true);
           fetchDiary();
           fetchUnreadMessages();
+        }
+      } else if (res.status === 403) {
+        const err = await res.json().catch(() => ({}));
+        if (err?.error === 'Аккаунт заблокирован') {
+          setBlockedInfo(err.blockedBy || null);
         }
       }
     } catch (e) {
       console.error(e);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoggedIn(false);
+      setAuthUser(null);
+      window.location.reload();
     }
   };
 
@@ -5080,6 +5121,26 @@ export default function App() {
     );
   }
 
+  if (!isLoggedIn && blockedInfo) {
+    return (
+      <div className="min-h-screen bg-bg-dark flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-24 h-24 bg-red-500/10 rounded-3xl flex items-center justify-center mb-8 border border-red-500/20">
+          <Ban className="text-red-500" size={40} />
+        </div>
+        <h1 className="text-2xl font-bold mb-2">Аккаунт заблокирован</h1>
+        <p className="text-zinc-500 mb-8 max-w-[280px]">
+          Доступ к дневнику питания временно ограничен. Свяжитесь с администратором для разблокировки.
+        </p>
+        <div className="w-full max-w-[320px] bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-left space-y-2">
+          <div className="text-xs text-zinc-500 uppercase tracking-wide">Кто заблокировал</div>
+          <div className="font-semibold">{blockedInfo.name}</div>
+          <div className="text-sm text-zinc-400">{blockedInfo.email}</div>
+          {blockedInfo.phone && <div className="text-sm text-zinc-400">{blockedInfo.phone}</div>}
+        </div>
+      </div>
+    );
+  }
+
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-bg-dark flex flex-col items-center justify-center p-6 text-center">
@@ -5088,7 +5149,7 @@ export default function App() {
         </div>
         <h1 className="text-4xl font-black tracking-tighter mb-2 italic">NUTRIA</h1>
         <p className="text-zinc-500 mb-12 max-w-[240px]">Ваш персональный гид в мире осознанного питания</p>
-        <button 
+        <button
           onClick={login}
           className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-[0_8px_24px_rgba(0,115,112,0.3)] active:scale-95 transition-transform"
         >
@@ -5149,6 +5210,8 @@ export default function App() {
               onSaveProfileGoals={saveProfileAndGoals}
               onToggleTheme={() => setThemeMode((prev) => (prev === 'light' ? 'dark' : 'light'))}
               onMessagesRead={fetchUnreadMessages}
+              authUser={authUser}
+              onLogout={logout}
             />
           )}
         </motion.div>
