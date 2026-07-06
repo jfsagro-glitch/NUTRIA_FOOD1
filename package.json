@@ -19,6 +19,7 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:admin": "tsx prisma/seed-admin.ts",
     "db:backfill:micronutrients": "tsx prisma/backfill-micronutrients.ts",
+    "db:seed:servings": "tsx prisma/seed-servings.ts",
     "db:dedupe:meals": "tsx prisma/dedupe-meals.ts",
     "db:localize:ru": "tsx prisma/localize-ru.ts",
     "smoke:photo-correction": "powershell -ExecutionPolicy Bypass -File scripts/smoke-photo-correction.ps1",
