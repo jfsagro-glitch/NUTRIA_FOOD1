@@ -1392,7 +1392,10 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
 
   const mealTypes = ['BREAKFAST', 'LUNCH', 'DINNER', 'SNACK'];
   const mealLabels: any = { BREAKFAST: 'Завтрак', LUNCH: 'Обед', DINNER: 'Ужин', SNACK: 'Перекус' };
-  const mealIconSrc: any = { BREAKFAST: '/meal-icons/breakfast.png', LUNCH: '/meal-icons/lunch.png', DINNER: '/meal-icons/dinner.jpg', SNACK: '/meal-icons/snack.jpg' };
+  // Все иконки — PNG с прозрачным фоном (фон плитки = фон карточки, без белого квадрата).
+  // JPEG здесь использовать нельзя: он не поддерживает прозрачность, и вокруг картинки
+  // появляется запечённая белая плитка (п.3/п.12 дизайн-плана).
+  const mealIconSrc: any = { BREAKFAST: '/meal-icons/breakfast.png', LUNCH: '/meal-icons/lunch.png', DINNER: '/meal-icons/dinner.png', SNACK: '/meal-icons/snack.png' };
 
   const [allNutrientsOpen, setAllNutrientsOpen] = useState(false);
   const [mealExpanded, setMealExpanded] = useState<Record<string, boolean>>({
@@ -1659,12 +1662,11 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
                 onClick={() => toggleMeal(type)}
                 className="flex items-center gap-3 p-4 cursor-pointer active:opacity-80 transition-opacity"
               >
-                <div className="flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ width: 64, height: 64, borderRadius: 16 }}>
+                <div className="flex items-center justify-center flex-shrink-0" style={{ width: 72, height: 72 }}>
                   <img
                     src={mealIconSrc[type]}
                     alt=""
-                    className="w-full h-full object-cover"
-                    style={{ borderRadius: 16 }}
+                    className="w-full h-full object-contain"
                     onError={(e) => { e.currentTarget.style.display = 'none'; }}
                   />
                 </div>
@@ -1779,12 +1781,11 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
               {waterIntake >= waterGoal && <span style={{ color: PROTO.primary }}> · цель достигнута</span>}
             </p>
           </div>
-          <div className="flex items-center justify-center flex-shrink-0 overflow-hidden" style={{ width: 56, height: 56, borderRadius: 16 }}>
+          <div className="flex items-center justify-center flex-shrink-0" style={{ width: 64, height: 64 }}>
             <img
-              src="/meal-icons/water.jpg"
+              src="/meal-icons/water.png"
               alt=""
-              className="w-full h-full object-cover"
-              style={{ borderRadius: 16 }}
+              className="w-full h-full object-contain"
               onError={(e) => { e.currentTarget.style.display = 'none'; }}
             />
           </div>
