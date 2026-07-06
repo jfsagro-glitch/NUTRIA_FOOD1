@@ -874,7 +874,8 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
     if (isMicronutrientDataEffectivelyEmpty(micro)) {
       enrichProductMicronutrientsInBackground(product).catch(() => {});
     }
-    return { ...product, ...micro, source: "local" };
+    const servings = parseProductServings((product as any).servingsJson);
+    return { ...product, ...micro, servings, source: "local" };
   });
 
   let usdaProducts: any[] = [];
@@ -1553,6 +1554,21 @@ function parseMicronutrients(rawMicronutrients: any) {
     return JSON.parse(String(rawMicronutrients));
   } catch {
     return {} as Record<string, any>;
+  }
+}
+
+// Человеческие порции продукта ("1 шт" = 55г и т.п.) — опциональны, есть не у всех
+// продуктов (у большинства per-100g каталожных записей естественной порции нет).
+function parseProductServings(rawServingsJson: any): { name: string; grams: number }[] {
+  if (!rawServingsJson) return [];
+  try {
+    const parsed = typeof rawServingsJson === "string" ? JSON.parse(rawServingsJson) : rawServingsJson;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((s: any) => s && typeof s.name === "string" && Number.isFinite(Number(s.grams)) && Number(s.grams) > 0)
+      .map((s: any) => ({ name: s.name, grams: Number(s.grams) }));
+  } catch {
+    return [];
   }
 }
 
@@ -2737,6 +2753,7 @@ export async function createApp(): Promise<express.Express> {
         fat: r.product.fat,
         carbs: r.product.carbs,
         fiber: r.product.fiber,
+        servings: parseProductServings(r.product.servingsJson),
         lastWeightGrams: r.lastWeightGrams,
         useCount: r.useCount
       })));
@@ -3308,9 +3325,10 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
           if (hasEmptyMicronutrientGroup(micro)) {
             enrichProductMicronutrientsInBackground(i.product).catch(() => {});
           }
+          const servings = parseProductServings((i.product as any).servingsJson);
           return {
             ...i,
-            product: { ...i.product, ...micro, nutriScore: calcNutriScore({ ...i.product, ...micro }) }
+            product: { ...i.product, ...micro, servings, nutriScore: calcNutriScore({ ...i.product, ...micro }) }
           };
         })
       }));

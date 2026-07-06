@@ -306,6 +306,11 @@ model Product {
   recipeIngredients RecipeIngredient[]
   mealPlanItems     MealPlanItem[]
 
+  // Человеческие порции — JSON-массив [{ name: "1 шт", grams: 55 }, ...].
+  // Опционально: у большинства каталожных продуктов (per-100g USDA-записи)
+  // естественных порций нет и не будет — граммы остаются основным способом ввода.
+  servingsJson String?
+
   @@unique([name, brand])
 }
 
