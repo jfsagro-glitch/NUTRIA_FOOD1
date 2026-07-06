@@ -2499,7 +2499,7 @@ export async function createApp(): Promise<express.Express> {
 
       // Свои продукты пользователя с привязанным штрих-кодом (в memory-режиме
       // resolveBarcodeProduct их не видит — он ищет только в Prisma и внешних источниках)
-      const userId = req.cookies.token;
+      const userId = req.signedCookies?.token;
       if (!isDatabaseConfigured() && userId) {
         const mine = getOrCreateInMemoryCustomProducts(userId).find(
           (p: any) => p.barcode && candidates.includes(String(p.barcode))
@@ -2565,11 +2565,22 @@ export async function createApp(): Promise<express.Express> {
         return res.json({ user: DEMO_USER, mode: "memory" });
       }
 
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { id: true, email: true, role: true, createdAt: true, updatedAt: true },
-      });
-      res.json({ user });
+      // Анкета (ClientProfile, заполняется при онбординге) и последняя запись веса
+      // нужны клиентскому приложению, чтобы профиль/цели стартовали с реальных данных
+      // клиента, а не с дефолтных 70 кг (пока пользователь сам их не отредактирует).
+      const [user, lastWeight] = await Promise.all([
+        prisma.user.findUnique({
+          where: { id: userId },
+          select: {
+            id: true, email: true, role: true, createdAt: true, updatedAt: true,
+            clientProfile: {
+              select: { weightKg: true, heightCm: true, birthYear: true, sex: true, goal: true, activity: true },
+            },
+          },
+        }),
+        prisma.weightLog.findFirst({ where: { userId }, orderBy: { date: "desc" }, select: { weightKg: true } }),
+      ]);
+      res.json({ user: user ? { ...user, latestWeightKg: lastWeight?.weightKg ?? null } : null });
     } catch (e: any) {
       logError("Auth Me Error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
@@ -2826,7 +2837,7 @@ export async function createApp(): Promise<express.Express> {
   // Редактирование своего продукта как карточки (не записи в дневнике): дневник хранит
   // только productId+amount, поэтому обновлённые КБЖУ автоматически подхватятся во всех записях.
   app.patch("/api/products/custom/:id", validateBody(customProductSchema), async (req, res) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies?.token;
     const { id } = req.params;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 

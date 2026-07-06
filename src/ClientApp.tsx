@@ -990,6 +990,10 @@ const deriveProgramGoals = (
 };
 
 const PROFILE_SETTINGS_STORAGE_KEY = 'nutria_profile_settings_v1';
+// Пока флаг не выставлен, профиль на каждом входе подтягивается из анкеты онбординга
+// (ClientProfile) и последней записи веса на сервере. Выставляется при явном
+// редактировании профиля пользователем ("Профиль и цели" / запись веса).
+const PROFILE_EDITED_FLAG_KEY = 'nutria_profile_user_edited_v1';
 const GOAL_OVERRIDE_STORAGE_KEY = 'nutria_goal_override_v1';
 
 // MET (Metabolic Equivalent of Task) — расход = MET × вес(кг) × часы. Источник: Compendium of Physical Activities.
@@ -1828,9 +1832,9 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
           </div>
           <div
             className="flex items-center justify-center flex-shrink-0"
-            style={{ width: 48, height: 48, borderRadius: 14, background: PROTO.coolBlock, color: PROTO.terra }}
+            style={{ width: 48, height: 48, color: PROTO.terra }}
           >
-            <Flame size={22} />
+            <Flame size={28} />
           </div>
         </div>
 
@@ -2320,7 +2324,8 @@ const SummaryScreen = ({
   };
 
   useEffect(() => {
-    if (view !== 'profile') return;
+    // История веса нужна и в профиле (график), и в статистике (тренд к цели)
+    if (view !== 'profile' && view !== 'stats') return;
     fetch('/api/weight/history?days=90')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => { if (data) setWeightHistory(data.history); })
@@ -2408,77 +2413,173 @@ const SummaryScreen = ({
     );
   }, [selectedProgram, goals, profile.weightKg]);
 
+  // ── Цель и энергобаланс ──────────────────────────────────────────────────
+  // Все средние считаются только по дням с записями (activeDays) — пустые дни
+  // не «размывают» цифры (иначе вода 143 мл/день при одном заполненном дне из семи).
+  const GOAL_LABELS: Record<UserProfileSettings['goal'], string> = {
+    lose: 'Снижение веса',
+    maintain: 'Поддержание веса',
+    gain: 'Набор массы',
+    recomposition: 'Рекомпозиция',
+  };
+
+  const goalSummary = useMemo(() => {
+    const weightKg = Math.max(35, profile.weightKg || 70);
+    const heightCm = Math.max(130, profile.heightCm || 170);
+    const age = Math.max(14, profile.age || 30);
+    const bmr = profile.sex === 'male'
+      ? 10 * weightKg + 6.25 * heightCm - 5 * age + 5
+      : 10 * weightKg + 6.25 * heightCm - 5 * age - 161;
+    const tdee = Math.round(bmr * ACTIVITY_FACTORS[profile.activity]);
+
+    const points = historyWithMetrics.slice(-7);
+    const activePoints = points.filter(({ point }) => point.mealsCount > 0);
+    const activeDays = activePoints.length;
+    const avgCalories = activeDays > 0
+      ? activePoints.reduce((s, { point }) => s + point.totals.calories, 0) / activeDays
+      : 0;
+    // Дефицит/профицит считаем от TDEE (поддерживающих калорий), а не от целевых
+    const dailyBalance = activeDays > 0 ? Math.round(avgCalories - tdee) : null; // − дефицит, + профицит
+    const projectedWeeklyKg = dailyBalance !== null ? (dailyBalance * 7) / 7700 : null;
+
+    // Фактический тренд веса за последние ≤30 дней
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffKey = toDateKey(cutoff);
+    const recentWeights = weightHistory.filter((p) => p.date >= cutoffKey);
+    let weightTrend: { deltaKg: number; days: number; from: number; to: number } | null = null;
+    if (recentWeights.length >= 2) {
+      const first = recentWeights[0];
+      const last = recentWeights[recentWeights.length - 1];
+      const days = Math.max(1, Math.round((new Date(`${last.date}T12:00:00`).getTime() - new Date(`${first.date}T12:00:00`).getTime()) / 86400000));
+      weightTrend = { deltaKg: last.weightKg - first.weightKg, days, from: first.weightKg, to: last.weightKg };
+    }
+
+    return { tdee, activeDays, daysCount: points.length, avgCalories, dailyBalance, projectedWeeklyKg, weightTrend };
+  }, [historyWithMetrics, profile, weightHistory]);
+
   const weeklyRecommendations = useMemo(() => {
-    const points = historyWithMetrics.slice(-7).map(({ point, metrics }) => ({ point, metrics }));
+    const points = historyWithMetrics.slice(-7);
     const daysCount = points.length;
+    const activePoints = points.filter(({ point }) => point.mealsCount > 0);
+    const activeDays = activePoints.length;
+    const weightKg = Math.max(35, profile.weightKg || 70);
+    const goal = profile.goal;
 
-    const sum = points.reduce(
-      (acc, item) => {
-        acc.calories += item.point.totals.calories;
-        acc.protein += item.point.totals.protein;
-        acc.fat += item.point.totals.fat;
-        acc.carbs += item.point.totals.carbs;
-        acc.fiber += item.point.totals.fiber;
-        acc.water += item.point.waterIntake;
-        acc.score += item.metrics.score;
-        if (item.point.mealsCount > 0) acc.activeDays += 1;
-        if (item.point.totals.protein < goals.protein * 0.8) acc.proteinLowDays += 1;
-        if (item.point.totals.carbs > goals.carbs * 1.1) acc.highCarbDays += 1;
-        if (item.point.totals.fiber < (goals.fiber || 30) * 0.75) acc.lowFiberDays += 1;
-        if (item.point.waterIntake < 1800) acc.lowWaterDays += 1;
-        return acc;
-      },
-      {
-        calories: 0,
-        protein: 0,
-        fat: 0,
-        carbs: 0,
-        fiber: 0,
-        water: 0,
-        score: 0,
-        activeDays: 0,
-        proteinLowDays: 0,
-        highCarbDays: 0,
-        lowFiberDays: 0,
-        lowWaterDays: 0,
+    const avgOf = (selector: (item: (typeof activePoints)[number]) => number) =>
+      activeDays > 0 ? activePoints.reduce((s, item) => s + selector(item), 0) / activeDays : 0;
+
+    const avgCalories = avgOf(({ point }) => point.totals.calories);
+    const avgProtein = avgOf(({ point }) => point.totals.protein);
+    const avgFiber = avgOf(({ point }) => point.totals.fiber);
+    const avgWater = avgOf(({ point }) => point.waterIntake);
+    const avgScore = avgOf(({ metrics }) => metrics.score);
+
+    // Профессиональные ориентиры, привязанные к цели и массе тела
+    const proteinRange: [number, number] =
+      goal === 'lose' ? [1.6, 2.2] :
+      goal === 'gain' ? [1.6, 2.0] :
+      goal === 'recomposition' ? [1.8, 2.2] : [1.2, 1.6];
+    const proteinPerKg = weightKg > 0 ? avgProtein / weightKg : 0;
+    const proteinTargetG = Math.round(proteinRange[0] * weightKg);
+    const fiberTarget = Math.max(25, Math.round(goals.fiber || 28));
+    const waterTarget = Math.round((weightKg * 30) / 50) * 50; // ~30 мл/кг
+
+    const fmt1 = (v: number) => (Math.round(v * 10) / 10).toString();
+    const noData = activeDays === 0;
+    const lowCoverage = activeDays > 0 && activeDays < 4;
+    const coverageNote = lowCoverage
+      ? ` Дневник заполнен лишь ${activeDays} из ${daysCount} дн — цифры могут быть занижены, выводы предварительные.`
+      : '';
+
+    // 1. Калории и цель
+    let caloriesText: string;
+    if (noData) {
+      caloriesText = 'Нет заполненных дней за неделю. Ведите дневник хотя бы 4 дня из 7 — тогда появится расчёт дефицита/профицита и прогноз по весу.';
+    } else {
+      const balance = goalSummary.dailyBalance ?? 0;
+      const weeklyKg = goalSummary.projectedWeeklyKg ?? 0;
+      const balanceStr = balance <= 0
+        ? `дефицит ~${Math.abs(balance)} ккал/день`
+        : `профицит ~${balance} ккал/день`;
+      const projStr = `оценочно ${weeklyKg <= 0 ? '−' : '+'}${fmt1(Math.abs(weeklyKg))} кг/нед`;
+      if (goal === 'lose') {
+        caloriesText = balance <= -700
+          ? `Средние ${Math.round(avgCalories)} ккал при поддерживающих ${goalSummary.tdee} — ${balanceStr}. Дефицит глубже 700 ккал повышает риск потери мышц и срывов: поднимите калории до ~${goalSummary.tdee - 500} ккал, сохранив белок.`
+          : balance <= -300
+            ? `Средние ${Math.round(avgCalories)} ккал при поддерживающих ${goalSummary.tdee} — устойчивый ${balanceStr}, ${projStr}. Это рабочий темп для снижения веса без потери мышечной массы.`
+            : balance < 0
+              ? `Средние ${Math.round(avgCalories)} ккал — ${balanceStr}. Для устойчивого снижения нужен дефицит 300–700 ккал: уберите ~${300 - Math.abs(balance)} ккал (например, сладкие напитки или поздний перекус).`
+              : `Средние ${Math.round(avgCalories)} ккал — ${balanceStr} при цели снижения веса. Вернитесь к целевым ${Math.round(goals.calories)} ккал: начните с урезания жидких калорий и порций гарнира.`;
+      } else if (goal === 'gain') {
+        caloriesText = balance >= 200
+          ? `Средние ${Math.round(avgCalories)} ккал — ${balanceStr}, ${projStr}. Рабочий темп набора; следите, чтобы белок оставался в норме.`
+          : `Средние ${Math.round(avgCalories)} ккал — для набора массы нужен профицит 200–400 ккал (до ~${goalSummary.tdee + 300} ккал). Добавьте калорийно-плотный приём: орехи, крупы, молочные продукты.`;
+      } else {
+        caloriesText = Math.abs(balance) <= 200
+          ? `Средние ${Math.round(avgCalories)} ккал при поддерживающих ${goalSummary.tdee} — энергобаланс стабилен, вес будет держаться.`
+          : `Средние ${Math.round(avgCalories)} ккал при поддерживающих ${goalSummary.tdee} (${balanceStr}). Для удержания веса вернитесь в коридор ±200 ккал от поддерживающих.`;
       }
-    );
+      caloriesText += coverageNote;
+    }
 
-    const safeDiv = (value: number) => (daysCount > 0 ? value / daysCount : 0);
-    const avgCalories = safeDiv(sum.calories);
-    const avgProtein = safeDiv(sum.protein);
-    const avgCarbs = safeDiv(sum.carbs);
-    const avgFiber = safeDiv(sum.fiber);
-    const avgWater = safeDiv(sum.water);
-    const avgScore = safeDiv(sum.score);
+    // 2. Белок (г/кг — главный маркер сохранения мышц при похудении)
+    let proteinText: string;
+    if (noData) {
+      proteinText = `Ориентир для вашей цели: ${fmt1(proteinRange[0])}–${fmt1(proteinRange[1])} г/кг — это ${proteinTargetG}–${Math.round(proteinRange[1] * weightKg)} г белка в день.`;
+    } else if (proteinPerKg < proteinRange[0]) {
+      const deficitG = Math.max(10, Math.round(proteinTargetG - avgProtein));
+      proteinText = `Сейчас ${fmt1(proteinPerKg)} г/кг (${Math.round(avgProtein)} г/день) при ориентире ${fmt1(proteinRange[0])}–${fmt1(proteinRange[1])} г/кг для вашей цели. Не хватает ~${deficitG} г: 200 г творога 5% (+34 г), 150 г куриной грудки (+46 г) или 2 яйца (+12 г).${goal === 'lose' ? ' При дефиците калорий именно белок защищает мышечную массу.' : ''}`;
+    } else if (proteinPerKg > proteinRange[1] + 0.4) {
+      proteinText = `Белок ${fmt1(proteinPerKg)} г/кг — заметно выше ориентира ${fmt1(proteinRange[1])} г/кг. Вреда нет, но часть можно заменить сложными углеводами для энергии и клетчатки.`;
+    } else {
+      proteinText = `Белок в норме: ${fmt1(proteinPerKg)} г/кг (${Math.round(avgProtein)} г/день) при ориентире ${fmt1(proteinRange[0])}–${fmt1(proteinRange[1])} г/кг. Держите каждый приём с источником белка 25–40 г.`;
+    }
 
-    const macrosText =
-      daysCount === 0
-        ? 'Недостаточно данных за неделю. Добавляйте приемы пищи ежедневно для точных выводов.'
-        : sum.proteinLowDays >= 3
-          ? `За 7 дней белок ниже цели в ${sum.proteinLowDays} дн. Среднее: ${Math.round(avgProtein)} г при цели ${Math.round(goals.protein)} г. Добавьте 1-2 белковых приема в день.`
-          : Math.abs(avgCalories - goals.calories) / Math.max(1, goals.calories) > 0.15
-            ? `Средние калории: ${Math.round(avgCalories)} ккал при цели ${Math.round(goals.calories)}. Стабилизируйте порции и распределение приемов пищи.`
-            : `Баланс макроэлементов за неделю близок к цели: в среднем ${Math.round(avgProtein)}Б / ${Math.round(safeDiv(sum.fat))}Ж / ${Math.round(avgCarbs)}У.`;
+    // 3. Клетчатка
+    let fiberText: string;
+    if (noData) {
+      fiberText = `Ориентир: ${fiberTarget} г клетчатки в день — овощи к каждому приёму, бобовые 2–3 раза в неделю, цельные крупы вместо рафинированных.`;
+    } else if (avgFiber < fiberTarget * 0.75) {
+      const deficitG = Math.round(fiberTarget - avgFiber);
+      fiberText = `В среднем ${Math.round(avgFiber)} г/день при норме ${fiberTarget} г — не хватает ~${deficitG} г. Закрыть просто: 300 г овощей (+7 г), 100 г чечевицы (+8 г), 30 г отрубей (+13 г), груша (+5 г). Низкая клетчатка тянет за собой дефициты магния, калия и фолатов${goal === 'lose' ? ' и снижает насыщение — сложнее держать дефицит' : ''}.`;
+    } else {
+      fiberText = `Клетчатка в порядке: ${Math.round(avgFiber)} г/день при норме ${fiberTarget} г. Сохраняйте разнообразие источников — овощи разных цветов, ягоды, бобовые, цельные крупы.`;
+    }
 
-    const vitaminsText =
-      daysCount === 0
-        ? 'Нет недельных данных для оценки пищевой плотности.'
-        : sum.lowFiberDays >= 3
-          ? `Клетчатка ниже нормы в ${sum.lowFiberDays} дн. Это повышает риск дефицитов по C, A, фолатам и магнию. Добавьте овощи, бобовые, ягоды и зелень.`
-          : `Пищевая плотность рациона на неделе стабильна. Поддерживайте разнообразие: овощи разных цветов, цельные продукты, источники магния и железа.`;
+    // 4. Вода
+    let waterText: string;
+    if (noData) {
+      waterText = `Ориентир для веса ${Math.round(weightKg)} кг: ~${waterTarget} мл в день. Отмечайте воду в дневнике — это влияет на насыщение и энергию.`;
+    } else if (avgWater < waterTarget * 0.7) {
+      waterText = `В среднем ${Math.round(avgWater)} мл/день при ориентире ~${waterTarget} мл (30 мл/кг). Начните с стакана воды к каждому приёму пищи — это уже +${Math.min(1000, 250 * 4)} мл${goal === 'lose' ? '; лёгкое обезвоживание часто маскируется под голод' : ''}.`;
+    } else {
+      waterText = `Гидратация в норме: ${Math.round(avgWater)} мл/день при ориентире ~${waterTarget} мл.`;
+    }
 
-    const glycemicText =
-      daysCount === 0
-        ? 'Пока нет данных для оценки углеводной нагрузки.'
-        : sum.highCarbDays >= 3 && sum.lowFiberDays >= 3
-          ? `Отмечены высокие углеводы в ${sum.highCarbDays} дн и низкая клетчатка в ${sum.lowFiberDays} дн. Снизьте долю быстрых сахаров и добавьте цельные источники углеводов.`
-          : `Углеводный профиль недели ${avgCarbs <= goals.carbs * 1.05 ? 'контролируемый' : 'повышенный'}. Ориентир: больше цельных круп и овощей, меньше сладких перекусов.`;
-
-    const aiText =
-      daysCount === 0
-        ? 'Сформируйте минимум 3-4 дня заполненного дневника, и AI даст персональные рекомендации по трендам.'
-        : `Анализ 7 дней: средний рейтинг ${Math.round(avgScore)}%, вода ${Math.round(avgWater)} мл/день, активных дней ${sum.activeDays}/${daysCount}. Следующий фокус: ${sum.lowWaterDays >= 3 ? 'гидратация' : sum.lowFiberDays >= 3 ? 'клетчатка и микронутриенты' : 'удержание текущего режима'}.`;
+    // 5. Итог недели: покрытие дневника, рейтинг, тренд веса против цели
+    let summaryText: string;
+    if (noData) {
+      summaryText = 'Заполните минимум 4 дня из 7 — и здесь появится сводка: рейтинг недели, тренд веса и главный фокус на следующую неделю.';
+    } else {
+      const trend = goalSummary.weightTrend;
+      let trendStr = '';
+      if (trend) {
+        const dir = trend.deltaKg < -0.05 ? '−' : trend.deltaKg > 0.05 ? '+' : '±';
+        trendStr = ` Вес за ${trend.days} дн: ${fmt1(trend.from)} → ${fmt1(trend.to)} кг (${dir}${fmt1(Math.abs(trend.deltaKg))} кг)`;
+        if (goal === 'lose') trendStr += trend.deltaKg < -0.05 ? ' — движетесь к цели.' : trend.deltaKg > 0.05 ? ' — вес растёт при цели снижения, сверьте фактические калории с дневником.' : ' — плато; если оно дольше 2–3 недель, пересмотрите дефицит.';
+        else if (goal === 'gain') trendStr += trend.deltaKg > 0.05 ? ' — движетесь к цели.' : ' — набора нет, добавьте калорий.';
+        else trendStr += ' — стабильно.';
+      } else {
+        trendStr = ' Записывайте вес 2–3 раза в неделю — появится тренд и связь с калориями.';
+      }
+      const focus =
+        avgWater < waterTarget * 0.7 ? 'гидратация' :
+        proteinPerKg < proteinRange[0] ? 'белок в каждом приёме' :
+        avgFiber < fiberTarget * 0.75 ? 'клетчатка и овощи' :
+        lowCoverage ? 'регулярность дневника' : 'удержание режима';
+      summaryText = `Заполнено ${activeDays} из ${daysCount} дн, средний рейтинг ${Math.round(avgScore)}%.${trendStr} Фокус на следующую неделю: ${focus}.`;
+    }
 
     return {
       periodLabel:
@@ -2486,13 +2587,14 @@ const SummaryScreen = ({
           ? `${new Date(`${points[0].point.date}T12:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })} - ${new Date(`${points[daysCount - 1].point.date}T12:00:00`).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`
           : 'нет данных',
       cards: [
-        { title: 'Макроэлементы', text: macrosText },
-        { title: 'Витамины и минералы', text: vitaminsText },
-        { title: 'Гликемическая нагрузка', text: glycemicText },
-        { title: 'Анализ AI', text: aiText },
+        { title: 'Калории и цель', text: caloriesText },
+        { title: 'Белок', text: proteinText },
+        { title: 'Клетчатка и микронутриенты', text: fiberText },
+        { title: 'Вода', text: waterText },
+        { title: 'Итог недели', text: summaryText },
       ],
     };
-  }, [historyWithMetrics, goals]);
+  }, [historyWithMetrics, goals, profile, goalSummary]);
 
   useEffect(() => {
     setSettingsProfile(profile);
@@ -2579,6 +2681,51 @@ const SummaryScreen = ({
 
       {view === 'stats' && (
       <>
+      {/* Цель: энергобаланс недели и тренд веса, привязанные к цели из анкеты */}
+      <div className="mb-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">Моя цель</p>
+            <h3 className="text-lg font-bold">{GOAL_LABELS[profile.goal]}</h3>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] uppercase tracking-widest text-zinc-500">Поддерживающие</p>
+            <p className="text-sm font-semibold text-zinc-200">{goalSummary.tdee} ккал</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-[11px]">
+          <div className="bg-zinc-950/70 border border-zinc-800 rounded-lg p-2">
+            <p className="text-zinc-500 uppercase">Факт/день</p>
+            <p className="text-zinc-100 font-semibold">
+              {goalSummary.activeDays > 0 ? `${Math.round(goalSummary.avgCalories)} ккал` : '—'}
+            </p>
+          </div>
+          <div className="bg-zinc-950/70 border border-zinc-800 rounded-lg p-2">
+            <p className="text-zinc-500 uppercase">{goalSummary.dailyBalance !== null && goalSummary.dailyBalance > 0 ? 'Профицит' : 'Дефицит'}</p>
+            <p className="text-zinc-100 font-semibold">
+              {goalSummary.dailyBalance !== null ? `${Math.abs(goalSummary.dailyBalance)} ккал` : '—'}
+            </p>
+          </div>
+          <div className="bg-zinc-950/70 border border-zinc-800 rounded-lg p-2">
+            <p className="text-zinc-500 uppercase">Прогноз</p>
+            <p className="text-zinc-100 font-semibold">
+              {goalSummary.projectedWeeklyKg !== null
+                ? `${goalSummary.projectedWeeklyKg <= 0 ? '−' : '+'}${(Math.round(Math.abs(goalSummary.projectedWeeklyKg) * 10) / 10)} кг/нед`
+                : '—'}
+            </p>
+          </div>
+        </div>
+        {goalSummary.weightTrend && (
+          <p className="text-xs text-zinc-400 mt-3">
+            Вес за {goalSummary.weightTrend.days} дн: {Math.round(goalSummary.weightTrend.from * 10) / 10} → {Math.round(goalSummary.weightTrend.to * 10) / 10} кг
+            {' '}({goalSummary.weightTrend.deltaKg <= 0 ? '−' : '+'}{Math.round(Math.abs(goalSummary.weightTrend.deltaKg) * 10) / 10} кг)
+          </p>
+        )}
+        {goalSummary.activeDays === 0 && (
+          <p className="text-xs text-zinc-500 mt-3">Заполняйте дневник — появится расчёт дефицита и прогноз движения к цели.</p>
+        )}
+      </div>
+
       <div className="mb-4 bg-zinc-900 border border-zinc-800 rounded-2xl p-3">
         <div className="flex items-center justify-between mb-3 px-1">
           <p className="text-sm font-semibold text-zinc-200">Пульс питания за 7 дней</p>
@@ -3889,6 +4036,26 @@ export default function App() {
     }
   };
 
+  // Подтягиваем параметры из анкеты онбординга (ClientProfile) и последний записанный
+  // вес — пока пользователь сам не отредактировал профиль в приложении (флаг ниже).
+  // Так профиль стартует с реальных данных клиента (вес 108 из анкеты), а не с дефолтных 70 кг.
+  const applyServerProfile = (user: any) => {
+    if (localStorage.getItem(PROFILE_EDITED_FLAG_KEY) === 'true') return;
+    const cp = user.clientProfile;
+    const weightKg = user.latestWeightKg ?? cp?.weightKg ?? null;
+    if (!cp && !weightKg) return;
+    const currentYear = new Date().getFullYear();
+    setProfileSettings((prev) => ({
+      ...prev,
+      ...(weightKg && weightKg > 0 ? { weightKg } : {}),
+      ...(cp?.heightCm && cp.heightCm > 0 ? { heightCm: cp.heightCm } : {}),
+      ...(cp?.birthYear ? { age: Math.max(14, currentYear - cp.birthYear) } : {}),
+      ...(cp?.sex === 'male' || cp?.sex === 'female' ? { sex: cp.sex } : {}),
+      ...(cp?.goal && ['lose', 'maintain', 'gain', 'recomposition'].includes(cp.goal) ? { goal: cp.goal } : {}),
+      ...(cp?.activity && ['low', 'moderate', 'high', 'very_high'].includes(cp.activity) ? { activity: cp.activity } : {}),
+    }));
+  };
+
   const checkAuth = async () => {
     try {
       const res = await fetch('/api/auth/me');
@@ -3896,6 +4063,7 @@ export default function App() {
         const data = await res.json();
         if (data.user) {
           setAuthUser({ email: data.user.email, role: data.user.role });
+          applyServerProfile(data.user);
           setIsLoggedIn(true);
           fetchDiary();
           fetchUnreadMessages();
@@ -3943,6 +4111,12 @@ export default function App() {
       }
       const data = await res.json().catch(() => ({}));
       if (data?.user) setAuthUser({ email: data.user.email, role: data.user.role });
+      // /api/auth/login не возвращает анкету — подтягиваем её отдельным запросом,
+      // как и при входе с уже действующей cookie (checkAuth)
+      fetch('/api/auth/me')
+        .then((meRes) => (meRes.ok ? meRes.json() : null))
+        .then((me) => { if (me?.user) applyServerProfile(me.user); })
+        .catch(() => {});
       setIsLoggedIn(true);
       fetchDiary();
       fetchUnreadMessages();
@@ -4068,6 +4242,9 @@ export default function App() {
   const saveProfileAndGoals = async (nextProfile: UserProfileSettings, nextGoals: NutrientGoalSet) => {
     const previousProfile = profileSettings;
     const previousGoals = goalOverrides;
+    // Пользователь явно отредактировал профиль — с этого момента его значения главнее
+    // анкеты онбординга, и applyServerProfile больше их не перезаписывает.
+    localStorage.setItem(PROFILE_EDITED_FLAG_KEY, 'true');
     setProfileSettings(nextProfile);
     setGoalOverrides(nextGoals);
 

@@ -1088,7 +1088,7 @@ export function registerTelegramBot(app: Express, prisma: PrismaClient) {
 
   // Привязка существующего веб-аккаунта к Telegram-чату (Профиль → Настройки).
   app.post("/api/telegram/link-code", async (req: Request, res: Response) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies?.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     await (prisma as any).telegramLinkCode.deleteMany({ where: { userId } });
     const code = generateLinkCode();
@@ -1103,7 +1103,7 @@ export function registerTelegramBot(app: Express, prisma: PrismaClient) {
   });
 
   app.get("/api/telegram/link-status", async (req: Request, res: Response) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies?.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     const account = await (prisma as any).telegramAccount.findUnique({ where: { userId } });
     res.json({
@@ -1116,7 +1116,7 @@ export function registerTelegramBot(app: Express, prisma: PrismaClient) {
   });
 
   app.post("/api/telegram/unlink", async (req: Request, res: Response) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies?.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     await (prisma as any).telegramAccount.updateMany({ where: { userId }, data: { userId: null } });
     res.json({ ok: true });
@@ -1126,7 +1126,7 @@ export function registerTelegramBot(app: Express, prisma: PrismaClient) {
   // привязали Telegram через код (а не завели аккаунт онбордингом в самом
   // боте) и не будут листать меню бота, чтобы их включить.
   app.post("/api/telegram/smart-reminders", async (req: Request, res: Response) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies?.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
     const account = await (prisma as any).telegramAccount.findUnique({ where: { userId } });
     if (!account) return res.status(404).json({ error: "Telegram не привязан" });
@@ -1149,7 +1149,7 @@ export function registerTelegramBot(app: Express, prisma: PrismaClient) {
   // (таймер голодания живёт в localStorage, а не на сервере), отправляет
   // сообщение в Telegram, если у пользователя привязан аккаунт.
   app.post("/api/telegram/notify-fasting", validateBody(fastingNotifySchema), async (req: Request, res: Response) => {
-    const userId = req.cookies.token;
+    const userId = req.signedCookies?.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
     const { event, fastingHours, eatingHours } = req.body as { event: "start" | "end"; fastingHours?: number; eatingHours?: number };
