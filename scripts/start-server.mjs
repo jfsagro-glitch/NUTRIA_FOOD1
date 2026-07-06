@@ -51,6 +51,8 @@ if (resolvedDatabaseUrl) {
   runOrExit("npx", ["tsx", "prisma/seed.ts"], env);
   console.log("[startup] Running prisma/seed-admin.ts (bootstrap admin, safe to repeat)...");
   runOrExit("npx", ["tsx", "prisma/seed-admin.ts"], env);
+  console.log("[startup] Running prisma/seed-servings.ts (fill common serving sizes, safe to repeat)...");
+  runOrExit("npx", ["tsx", "prisma/seed-servings.ts"], env);
 } else {
   console.warn("[startup] DATABASE_URL is empty. Skipping prisma db push.");
   console.warn("[startup] Set DATABASE_URL in the Render service's Environment variables to enable DB features.");
