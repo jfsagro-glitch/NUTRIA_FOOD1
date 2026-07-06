@@ -68,6 +68,8 @@ interface Product {
   aminoAcids?: Record<string, number>;
   fattyAcids?: Record<string, number>;
   carbohydrateTypes?: Record<string, number>;
+  // Человеческие порции ("1 шт" = 55г и т.п.) — есть не у всех продуктов
+  servings?: { name: string; grams: number }[];
 }
 
 // "Недавние": продукт/блюдо + метаданные последнего использования
@@ -6014,6 +6016,20 @@ export default function App() {
               />
               <span className="text-xl font-bold text-zinc-500">грамм</span>
             </div>
+
+            {!!selectedProductForAmount.servings?.length && (
+              <div className="flex flex-wrap justify-center gap-2">
+                {selectedProductForAmount.servings.map((serving) => (
+                  <button
+                    key={serving.name}
+                    onClick={() => setFoodAmount(String(serving.grams))}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-medium"
+                  >
+                    {serving.name} ({serving.grams} г)
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="flex justify-center gap-2">
               {[50, 100, 150, 200, 300].map((preset) => (
