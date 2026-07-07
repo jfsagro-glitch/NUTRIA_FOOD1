@@ -39,6 +39,7 @@ import {
 import { registerCrmRoutes, getBlockerContactInfo } from "./crm-routes.ts";
 import { registerTelegramBot } from "./telegram-bot.ts";
 import { logError } from "./logging.ts";
+import { resolveCookieSecret } from "./cookie-secret.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2346,20 +2347,6 @@ async function generateAI(prompt: string, responseMimeType: string = "applicatio
   }
 
   throw new Error("All AI models failed or keys are missing.");
-}
-
-// Секрет для подписи cookie "token" (cookie-parser). Без подписи любой клиент мог
-// прислать Cookie: token=<чужой userId> и сервер доверял бы этому значению напрямую —
-// signed cookies гарантируют, что значение реально было выдано этим сервером.
-function resolveCookieSecret(): string {
-  const fromEnv = process.env.COOKIE_SECRET;
-  if (fromEnv) return fromEnv;
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("COOKIE_SECRET не задан — обязателен в production (иначе сессионную cookie можно подделать)");
-  }
-  // eslint-disable-next-line no-console
-  console.warn("[server] COOKIE_SECRET не задан — используется случайный секрет на время процесса (все сессии слетят при рестарте). Задайте COOKIE_SECRET в .env.");
-  return crypto.randomBytes(32).toString("hex");
 }
 
 export async function createApp(): Promise<express.Express> {

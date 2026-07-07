@@ -20,9 +20,10 @@
  *    зависимость.
  *  - Бизнес-логика дневника (распознавание еды, продукты, цели) НЕ
  *    дублируется — бот делает внутренние HTTP-запросы к уже существующим
- *    эндпойнтам того же сервера (/api/diary/*, /api/voice/parse),
- *    подставляя cookie `token=<userId>` — ровно так же, как их использует
- *    клиентское приложение.
+ *    эндпойнтам того же сервера (/api/diary/*, /api/voice/parse), подставляя
+ *    подписанную cookie `token=s:<userId>.<sig>` (см. internalApi ниже) —
+ *    сервер принимает только подписанные cookie (req.signedCookies.token),
+ *    сырое значение token=<userId> он отклонит как неавторизованное.
  *  - Состояние диалога (шаг онбординга, черновик ответов, напоминания)
  *    хранится в таблице TelegramAccount, а не в памяти процесса — это
  *    переживает перезапуск/засыпание бесплатного хостинга.
@@ -31,8 +32,10 @@
 import type { Express, Request, Response } from "express";
 import type { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
+import { sign as signCookieValue } from "cookie-signature";
 import { logError } from "./logging.ts";
 import { validateBody, fastingNotifySchema } from "./validation.ts";
+import { resolveCookieSecret } from "./cookie-secret.ts";
 
 // ─── Конфигурация ────────────────────────────────────────────────────────────
 
@@ -179,15 +182,21 @@ async function transcribeVoice(buffer: Buffer): Promise<string> {
 
 // ─── Внутренние вызовы к уже существующим API дневника ──────────────────────
 // Бот не дублирует бизнес-логику — он дёргает те же эндпойнты, что и
-// клиентское приложение, подставляя `token=<userId>` (см. server.ts —
-// /api/diary/* читают userId именно из этой cookie).
+// клиентское приложение, подставляя cookie "token". server.ts читает её как
+// req.signedCookies.token (не req.cookies.token) — сырое token=<userId> без
+// подписи молча отклоняется как Unauthorized, поэтому подписываем тем же
+// секретом, что и cookie-parser в server.ts (см. cookie-secret.ts).
+// Отсюда и был баг "Записал 0 продуктов, ≈0 ккал" — распознавание речи
+// (/api/voice/parse) авторизации не требует и отрабатывало, а /api/recipes
+// и /api/diary/add требуют — и получали 401 на каждый вызов.
 
 async function internalApi(path: string, opts: { method?: string; body?: any; userId: string }) {
+  const signedToken = "s:" + signCookieValue(opts.userId, resolveCookieSecret());
   const res = await fetch(`${INTERNAL_BASE_URL}${path}`, {
     method: opts.method || "GET",
     headers: {
       "Content-Type": "application/json",
-      Cookie: `token=${opts.userId}`,
+      Cookie: `token=${signedToken}`,
     },
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
@@ -711,6 +720,17 @@ async function handleAwaitMealText(prisma: PrismaClient, account: any, chatId: s
   }
 
   await saveAccount(prisma, chatId, { state: "DONE" });
+
+  // Не рапортуем "✅ Записал", если по факту ничего не записалось — иначе пользователь
+  // уверен, что приём пищи в дневнике, хотя запросы к /api/diary/add провалились
+  // (например 401 из-за сбоя авторизации) и записей 0.
+  if (added === 0) {
+    return sendMessage(
+      chatId,
+      `Распознал продукты, но не смог записать ни один в дневник — сервер вернул ошибку. Попробуй ещё раз через минуту, если не поможет — напиши в поддержку.\nРаспознано:\n${itemsList}`,
+      MAIN_MENU_KEYBOARD
+    );
+  }
 
   return sendMessage(
     chatId,

@@ -4816,12 +4816,44 @@ export default function App() {
     { weight: 0, calories: 0, protein: 0, fat: 0, carbs: 0 }
   );
 
-  // Санитарная проверка "веса готового блюда": он не может быть в разы меньше суммы
-  // ингредиентов (ужарка/упарка — это 10–30%, а не 4–5 раз), и плотность калорий выше
-  // ~900 ккал/100 г (чистый жир) физически невозможна. Типичная ошибка — пользователь
-  // вписывает сюда вес съеденной ПОРЦИИ вместо веса всего блюда, и тогда КБЖУ на 100 г
-  // взлетает в разы (блинчики: 692 г ингредиентов, "вес блюда" 150 г → 863 ккал/100 г).
+  // Правка состава уже занесённой/черновой записи (голос/фото) — вводится вес порции,
+  // которую фактически съели, а не вес всего приготовленного блюда. Нутриенты считаются
+  // строго пропорционально: порция / сумма ингредиентов × нутриенты ингредиентов.
+  // Создание нового блюда в "Мои блюда" (isCreateDishOpen) — отдельный сценарий: там
+  // вес готового блюда описывает весь рецепт (с учётом ужарки/упарки), а порция при
+  // добавлении в дневник выбирается позже, при каждом использовании рецепта.
+  const isDishPortionMode = editDishMealItemId !== null || editDishReviewTempId !== null;
+
+  const dishPortionTotals = (() => {
+    const portion = Number(dishCookedWeight) || 0;
+    if (dishTotals.weight <= 0 || portion <= 0) return null;
+    const factor = portion / dishTotals.weight;
+    return {
+      weight: portion,
+      calories: dishTotals.calories * factor,
+      protein: dishTotals.protein * factor,
+      fat: dishTotals.fat * factor,
+      carbs: dishTotals.carbs * factor,
+    };
+  })();
+
+  // Санитарная проверка. В режиме порции — портия физически не может быть больше суммы
+  // ингредиентов (нельзя съесть больше, чем приготовили). В режиме рецепта ("Мои блюда")
+  // — вес готового блюда не может быть в разы меньше суммы ингредиентов (ужарка/упарка —
+  // это 10–30%, а не 4–5 раз), и плотность калорий выше ~900 ккал/100 г физически
+  // невозможна (типичная причина — вписали вес порции вместо веса всего блюда).
   const dishSanity = (() => {
+    if (isDishPortionMode) {
+      const portion = Number(dishCookedWeight) || 0;
+      if (!portion || dishTotals.weight <= 0) return null;
+      if (portion > dishTotals.weight * 1.05) {
+        return {
+          per100: null,
+          warning: `Порция (${Math.round(portion)} г) больше, чем всего ингредиентов в блюде (${Math.round(dishTotals.weight)} г) — нельзя съесть больше, чем приготовили. Проверьте граммовки ингредиентов или размер порции.`,
+        };
+      }
+      return { per100: null, warning: null };
+    }
     const cooked = Number(dishCookedWeight) || dishTotals.weight;
     if (!cooked || cooked <= 0 || dishTotals.weight <= 0) return null;
     const per100 = (dishTotals.calories / cooked) * 100;
@@ -4871,7 +4903,9 @@ export default function App() {
       setEditDishMealItemId(item.id);
       setEditDishMealItemRecipeId(recipeId);
       setDishName(recipe.name);
-      setDishCookedWeight(String(Math.round(recipe.cookedWeightGrams || item.amount)));
+      // Портия — это то, что реально записано в дневнике (item.amount), а не вес всего
+      // приготовленного блюда из рецепта (recipe.cookedWeightGrams) — это разные величины.
+      setDishCookedWeight(String(Math.round(item.amount)));
       setDishIngredients((recipe.ingredients || []).map((ing: any) => ({
         productId: ing.productId,
         name: ing.product?.name || ing.name || '',
@@ -4904,9 +4938,13 @@ export default function App() {
       return;
     }
     setIsSavingDish(true);
+    // В режиме порции (правка уже занесённой/черновой записи) серверу всегда отдаём вес
+    // ВСЕГО блюда как сумму ингредиентов — это чистая плотность без домыслов об ужарке,
+    // а введённая порция ниже применяется отдельно к дневнику/черновику.
+    const portionWeight = Number(dishCookedWeight) || 0;
     const payload = {
       name: dishName.trim(),
-      cookedWeightGrams: Number(dishCookedWeight) || dishTotals.weight,
+      cookedWeightGrams: isDishPortionMode ? dishTotals.weight : (Number(dishCookedWeight) || dishTotals.weight),
       ingredients: dishIngredients.map((ing) => ({
         productId: ing.productId,
         name: ing.name,
@@ -4925,10 +4963,16 @@ export default function App() {
           body: JSON.stringify(payload)
         });
         if (res.ok) {
-          // "Вес готового блюда" — это вес всего блюда (для пересчёта КБЖУ на 100г),
-          // а не порция, которую съел пользователь — amount в дневнике не трогаем.
-          fetchDiary(selectedDiaryDate);
-          fetchHints();
+          // Порция, введённая пользователем, — это и есть то, что записано в дневнике:
+          // применяем её к amount записи (раньше эта величина молча путалась с весом
+          // всего блюда, отсюда и брались завышенные калории). updateMealItemAmountDirect
+          // сам перечитывает дневник и подсказки при успехе.
+          if (portionWeight > 0) {
+            await updateMealItemAmountDirect(editDishMealItemId, portionWeight);
+          } else {
+            fetchDiary(selectedDiaryDate);
+            fetchHints();
+          }
           closeMealItemComposition();
         }
         return;
@@ -4944,7 +4988,7 @@ export default function App() {
         if (res.ok) {
           const recipe = await res.json();
           const updatedProduct: Product = { ...recipe.product, recipeId: recipe.product?.recipeId || recipe.id };
-          const newWeight = payload.cookedWeightGrams;
+          const newWeight = portionWeight || dishTotals.weight;
           const savedIngredients = dishIngredients.map((ing) => ({ ...ing }));
           setReviewItems((prev) => prev.map((it) => it.tempId === editDishReviewTempId
             ? { ...it, product: updatedProduct, amount: newWeight, dishIngredients: savedIngredients }
@@ -6191,25 +6235,28 @@ export default function App() {
           )}
 
           <div>
-            <label className="text-[11px] text-zinc-500 uppercase tracking-wider">Вес готового блюда, г</label>
+            <label className="text-[11px] text-zinc-500 uppercase tracking-wider">Вес порции, г</label>
             <input
-              type="number" placeholder={dishTotals.weight ? String(Math.round(dishTotals.weight)) : 'Вес готового блюда'}
+              type="number" placeholder="Сколько съели, г"
               className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
               value={dishCookedWeight}
               onChange={(e) => setDishCookedWeight(e.target.value)}
             />
+            {dishTotals.weight > 0 && (
+              <p className="text-[11px] text-zinc-500 mt-1">Всего в блюде: {Math.round(dishTotals.weight)} г</p>
+            )}
           </div>
 
           {dishIngredients.length > 0 && (
             <div className="space-y-2">
               <div className="bg-zinc-800/50 rounded-xl p-3 grid grid-cols-4 gap-2 text-center">
-                <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.calories)}</p><p className="text-[9px] text-zinc-500 uppercase">ккал</p></div>
-                <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.protein)}</p><p className="text-[9px] text-zinc-500 uppercase">белки</p></div>
-                <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.fat)}</p><p className="text-[9px] text-zinc-500 uppercase">жиры</p></div>
-                <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.carbs)}</p><p className="text-[9px] text-zinc-500 uppercase">углеводы</p></div>
+                <div><p className="text-sm font-bold text-zinc-100">{dishPortionTotals ? Math.round(dishPortionTotals.calories) : Math.round(dishTotals.calories)}</p><p className="text-[9px] text-zinc-500 uppercase">ккал</p></div>
+                <div><p className="text-sm font-bold text-zinc-100">{dishPortionTotals ? Math.round(dishPortionTotals.protein) : Math.round(dishTotals.protein)}</p><p className="text-[9px] text-zinc-500 uppercase">белки</p></div>
+                <div><p className="text-sm font-bold text-zinc-100">{dishPortionTotals ? Math.round(dishPortionTotals.fat) : Math.round(dishTotals.fat)}</p><p className="text-[9px] text-zinc-500 uppercase">жиры</p></div>
+                <div><p className="text-sm font-bold text-zinc-100">{dishPortionTotals ? Math.round(dishPortionTotals.carbs) : Math.round(dishTotals.carbs)}</p><p className="text-[9px] text-zinc-500 uppercase">углеводы</p></div>
               </div>
-              {dishSanity && !dishSanity.warning && (
-                <p className="text-[11px] text-zinc-500 text-center">≈ {Math.round(dishSanity.per100)} ккал / 100 г готового блюда</p>
+              {dishPortionTotals && (
+                <p className="text-[11px] text-zinc-500 text-center">нутриенты для порции {Math.round(dishPortionTotals.weight)} г</p>
               )}
               {dishSanity?.warning && (
                 <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-xs text-red-400">
