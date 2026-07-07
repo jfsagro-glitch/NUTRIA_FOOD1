@@ -4816,6 +4816,26 @@ export default function App() {
     { weight: 0, calories: 0, protein: 0, fat: 0, carbs: 0 }
   );
 
+  // Санитарная проверка "веса готового блюда": он не может быть в разы меньше суммы
+  // ингредиентов (ужарка/упарка — это 10–30%, а не 4–5 раз), и плотность калорий выше
+  // ~900 ккал/100 г (чистый жир) физически невозможна. Типичная ошибка — пользователь
+  // вписывает сюда вес съеденной ПОРЦИИ вместо веса всего блюда, и тогда КБЖУ на 100 г
+  // взлетает в разы (блинчики: 692 г ингредиентов, "вес блюда" 150 г → 863 ккал/100 г).
+  const dishSanity = (() => {
+    const cooked = Number(dishCookedWeight) || dishTotals.weight;
+    if (!cooked || cooked <= 0 || dishTotals.weight <= 0) return null;
+    const per100 = (dishTotals.calories / cooked) * 100;
+    const tooLight = cooked < dishTotals.weight * 0.5;
+    const impossibleDensity = per100 > 700;
+    let warning: string | null = null;
+    if (tooLight) {
+      warning = `Вес готового блюда (${Math.round(cooked)} г) намного меньше суммы ингредиентов (${Math.round(dishTotals.weight)} г) — выходит ${Math.round(per100)} ккал/100 г, так не бывает даже у жареного. Здесь нужен вес ВСЕГО блюда после готовки (обычно на 10–30% меньше суммы ингредиентов). Вес съеденной порции указывается отдельно — при добавлении блюда в дневник.`;
+    } else if (impossibleDensity) {
+      warning = `Получается ${Math.round(per100)} ккал/100 г — плотнее чистого жира (900 ккал/100 г) еда не бывает. Проверьте граммовки ингредиентов и вес готового блюда.`;
+    }
+    return { per100, warning };
+  })();
+
   // Открыть правку состава блюда прямо в черновике «Проверьте результат»
   const openEditDishIngredients = (item: ReviewDraftItem) => {
     // Закрываем «Проверьте результат» на время правки — обе шторки используют
@@ -4880,6 +4900,9 @@ export default function App() {
 
   const submitDish = async () => {
     if (!dishName.trim() || dishIngredients.length === 0) return;
+    if (dishSanity?.warning && !window.confirm(`${dishSanity.warning}\n\nВсё равно сохранить как есть?`)) {
+      return;
+    }
     setIsSavingDish(true);
     const payload = {
       name: dishName.trim(),
@@ -6082,11 +6105,21 @@ export default function App() {
           </div>
 
           {dishIngredients.length > 0 && (
-            <div className="bg-zinc-800/50 rounded-xl p-3 grid grid-cols-4 gap-2 text-center">
-              <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.calories)}</p><p className="text-[9px] text-zinc-500 uppercase">ккал</p></div>
-              <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.protein)}</p><p className="text-[9px] text-zinc-500 uppercase">белки</p></div>
-              <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.fat)}</p><p className="text-[9px] text-zinc-500 uppercase">жиры</p></div>
-              <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.carbs)}</p><p className="text-[9px] text-zinc-500 uppercase">углеводы</p></div>
+            <div className="space-y-2">
+              <div className="bg-zinc-800/50 rounded-xl p-3 grid grid-cols-4 gap-2 text-center">
+                <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.calories)}</p><p className="text-[9px] text-zinc-500 uppercase">ккал</p></div>
+                <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.protein)}</p><p className="text-[9px] text-zinc-500 uppercase">белки</p></div>
+                <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.fat)}</p><p className="text-[9px] text-zinc-500 uppercase">жиры</p></div>
+                <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.carbs)}</p><p className="text-[9px] text-zinc-500 uppercase">углеводы</p></div>
+              </div>
+              {dishSanity && !dishSanity.warning && (
+                <p className="text-[11px] text-zinc-500 text-center">≈ {Math.round(dishSanity.per100)} ккал / 100 г готового блюда</p>
+              )}
+              {dishSanity?.warning && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-xs text-red-400">
+                  {dishSanity.warning}
+                </div>
+              )}
             </div>
           )}
 
@@ -6168,11 +6201,21 @@ export default function App() {
           </div>
 
           {dishIngredients.length > 0 && (
-            <div className="bg-zinc-800/50 rounded-xl p-3 grid grid-cols-4 gap-2 text-center">
-              <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.calories)}</p><p className="text-[9px] text-zinc-500 uppercase">ккал</p></div>
-              <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.protein)}</p><p className="text-[9px] text-zinc-500 uppercase">белки</p></div>
-              <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.fat)}</p><p className="text-[9px] text-zinc-500 uppercase">жиры</p></div>
-              <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.carbs)}</p><p className="text-[9px] text-zinc-500 uppercase">углеводы</p></div>
+            <div className="space-y-2">
+              <div className="bg-zinc-800/50 rounded-xl p-3 grid grid-cols-4 gap-2 text-center">
+                <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.calories)}</p><p className="text-[9px] text-zinc-500 uppercase">ккал</p></div>
+                <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.protein)}</p><p className="text-[9px] text-zinc-500 uppercase">белки</p></div>
+                <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.fat)}</p><p className="text-[9px] text-zinc-500 uppercase">жиры</p></div>
+                <div><p className="text-sm font-bold text-zinc-100">{Math.round(dishTotals.carbs)}</p><p className="text-[9px] text-zinc-500 uppercase">углеводы</p></div>
+              </div>
+              {dishSanity && !dishSanity.warning && (
+                <p className="text-[11px] text-zinc-500 text-center">≈ {Math.round(dishSanity.per100)} ккал / 100 г готового блюда</p>
+              )}
+              {dishSanity?.warning && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-xs text-red-400">
+                  {dishSanity.warning}
+                </div>
+              )}
             </div>
           )}
 
