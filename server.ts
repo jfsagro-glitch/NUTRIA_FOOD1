@@ -2526,7 +2526,7 @@ export async function createApp(): Promise<express.Express> {
     // настоящего (пригашённого через CRM) аккаунта повторное нажатие той же кнопки тут же
     // возвращало в общий демо-аккаунт, что выглядело как "выход не сработал".
     if (!isDatabaseConfigured()) {
-      res.cookie("token", DEMO_USER_ID, { httpOnly: true, signed: true, secure: true, sameSite: "lax" });
+      res.cookie("token", DEMO_USER_ID, { httpOnly: true, signed: true, secure: true, sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
       return res.json({ success: true, user: { email: DEMO_USER.email, role: DEMO_USER.role }, mode: "memory" });
     }
 
@@ -2547,7 +2547,7 @@ export async function createApp(): Promise<express.Express> {
         return res.status(403).json({ error: "Аккаунт заблокирован", blockedBy });
       }
 
-      res.cookie("token", user.id, { httpOnly: true, signed: true, secure: true, sameSite: "lax" });
+      res.cookie("token", user.id, { httpOnly: true, signed: true, secure: true, sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
       res.json({ success: true, user: { email: user.email, role: user.role } });
     } catch (e: any) {
       logError("Auth Login Error:", e);
@@ -2588,6 +2588,7 @@ export async function createApp(): Promise<express.Express> {
   });
 
   app.post("/api/auth/logout", async (req, res) => {
+    // ВАЖНО: без maxAge — clearCookie с maxAge не удалит куку (Express предпочтёт maxAge вместо expires)
     res.clearCookie("token", { httpOnly: true, signed: true, secure: true, sameSite: "lax" });
     res.json({ success: true });
   });

@@ -1417,7 +1417,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
       const jwtToken = signToken({ id: invite.client.id, role: invite.client.role, email: invite.client.email });
       res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
       // Также ставим "token" — куки, которую использует основной дневник питания (server.ts / ClientApp.tsx)
-      res.cookie("token", invite.client.id, { httpOnly: true, signed: true, secure: true, sameSite: "lax" });
+      res.cookie("token", invite.client.id, { httpOnly: true, signed: true, secure: true, sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
 
       return res.json({ user: { id: invite.client.id, email: invite.client.email, role: invite.client.role }, token: jwtToken });
     } catch (e: any) {
@@ -1463,7 +1463,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
             const jwtToken = signToken({ id: existingUser.id, role: existingUser.role, email: existingUser.email });
             res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
             if (existingUser.role === "CLIENT") {
-              res.cookie("token", existingUser.id, { httpOnly: true, signed: true, secure: true, sameSite: "lax" });
+              res.cookie("token", existingUser.id, { httpOnly: true, signed: true, secure: true, sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
             }
             return res.json({ user: { id: existingUser.id, email: existingUser.email, role: existingUser.role }, token: jwtToken });
           }
@@ -1518,7 +1518,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
         const jwtToken = signToken({ id: newUser.id, role: newUser.role, email: newUser.email });
         res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
         if (newUser.role === "CLIENT") {
-          res.cookie("token", newUser.id, { httpOnly: true, signed: true, secure: true, sameSite: "lax" });
+          res.cookie("token", newUser.id, { httpOnly: true, signed: true, secure: true, sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
         }
         return res.json({ user: { id: newUser.id, email: newUser.email, role: newUser.role }, token: jwtToken });
       }
@@ -1544,7 +1544,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
           }
           const jwtToken = signToken({ id: existingUser.id, role: existingUser.role, email: existingUser.email });
           res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
-          res.cookie("token", existingUser.id, { httpOnly: true, signed: true, secure: true, sameSite: "lax" });
+          res.cookie("token", existingUser.id, { httpOnly: true, signed: true, secure: true, sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
           return res.json({ user: { id: existingUser.id, email: existingUser.email, role: existingUser.role }, token: jwtToken });
         }
       }
@@ -1592,7 +1592,7 @@ export function registerCrmRoutes(app: Express, prisma: PrismaClient) {
 
       const jwtToken = signToken({ id: clientUser.id, role: clientUser.role, email: clientUser.email });
       res.cookie("jwtToken", jwtToken, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
-      res.cookie("token", clientUser.id, { httpOnly: true, signed: true, secure: true, sameSite: "lax" });
+      res.cookie("token", clientUser.id, { httpOnly: true, signed: true, secure: true, sameSite: "lax", maxAge: 30 * 24 * 3600 * 1000 });
 
       return res.json({ user: { id: clientUser.id, email: clientUser.email, role: clientUser.role }, token: jwtToken });
     } catch (e: any) {

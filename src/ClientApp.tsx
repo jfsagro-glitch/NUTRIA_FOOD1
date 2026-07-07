@@ -3646,6 +3646,9 @@ export default function App() {
     const saved = sessionStorage.getItem('nutria_diary_date') || '';
     return /^\d{4}-\d{2}-\d{2}$/.test(saved) ? saved : toDateKey(new Date());
   });
+  // Актуальная выбранная дата для отложенных колбэков (см. scheduleMicronutrientRefetch)
+  const selectedDiaryDateRef = useRef(selectedDiaryDate);
+  useEffect(() => { selectedDiaryDateRef.current = selectedDiaryDate; }, [selectedDiaryDate]);
   const [diaryData, setDiaryData] = useState<DiaryData>({ meals: [], goals: null, waterIntake: 0, date: selectedDiaryDate });
   const [activities, setActivities] = useState<any[]>([]);
   const [weeklyHistory, setWeeklyHistory] = useState<DiaryHistoryPoint[]>([]);
@@ -3706,6 +3709,10 @@ export default function App() {
   const barcodeScannerRef = useRef<Html5QrcodeType | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
   const diaryAbortRef = useRef<AbortController | null>(null);
+  // Дозапрос дневника, пока сервер в фоне докомплектовывает микроэлементы только что
+  // добавленных продуктов (USDA/AI занимает секунды) — иначе "Все нутриенты" по свежим
+  // записям показывают нули до ручного обновления страницы. Не больше 3 попыток на дату.
+  const microRefetchRef = useRef<{ date: string; attempts: number; timer: ReturnType<typeof setTimeout> | null }>({ date: '', attempts: 0, timer: null });
   const html5QrcodeModuleRef = useRef<typeof import('html5-qrcode') | null>(null);
   const barcodeHandledRef = useRef(false);
   const fastingNotifiedRef = useRef(false);
@@ -4138,6 +4145,43 @@ export default function App() {
     }
   };
 
+  // Есть ли в дневнике продукты с полностью пустым микроэлементным профилем
+  // (кроме quick-add — у приблизительных записей его не бывает по определению)
+  const hasEmptyMicronutrients = (data: any): boolean =>
+    (data?.meals || []).some((m: any) =>
+      (m?.items || []).some((i: any) => {
+        const p = i?.product;
+        if (!p || p.source === 'quickadd') return false;
+        const groups = [p.vitamins, p.minerals, p.aminoAcids, p.fattyAcids, p.carbohydrateTypes];
+        const total = groups.reduce(
+          (sum: number, g: any) =>
+            sum + (g ? (Object.values(g) as any[]).reduce((a: number, v: any) => a + (Number(v) || 0), 0) : 0),
+          0
+        );
+        return total === 0;
+      })
+    );
+
+  const scheduleMicronutrientRefetch = (data: any, targetDate: string) => {
+    const state = microRefetchRef.current;
+    if (state.date !== targetDate) {
+      if (state.timer) clearTimeout(state.timer);
+      microRefetchRef.current = { date: targetDate, attempts: 0, timer: null };
+    }
+    if (!hasEmptyMicronutrients(data)) {
+      microRefetchRef.current.attempts = 0;
+      return;
+    }
+    if (microRefetchRef.current.attempts >= 3 || microRefetchRef.current.timer) return;
+    microRefetchRef.current.attempts += 1;
+    microRefetchRef.current.timer = setTimeout(() => {
+      microRefetchRef.current.timer = null;
+      // Пока ждали, пользователь мог уйти на другую дату — тогда дозапрос не нужен
+      if (selectedDiaryDateRef.current !== targetDate) return;
+      fetchDiary(targetDate).catch(() => {});
+    }, 8000);
+  };
+
   const fetchDiary = async (targetDate = selectedDiaryDate) => {
     // Отменяем предыдущий незавершённый запрос — иначе быстрое переключение дат
     // (день A → день B) могло применить более медленный ответ дня A ПОСЛЕ ответа
@@ -4158,6 +4202,7 @@ export default function App() {
         if (data.meals && data.meals.length > 0) {
           fetchHints(data);
         }
+        scheduleMicronutrientRefetch(data, targetDate);
       } else {
         const err = await res.json().catch(() => ({}));
         console.warn('Diary fetch error:', err);
