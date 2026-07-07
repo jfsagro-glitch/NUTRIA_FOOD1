@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f5f2ea"/>
+      <stop offset="1" stop-color="#e9e3d6"/>
+    </linearGradient>
+
+    <linearGradient id="nGrad" x1="0" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#23706e"/>
+      <stop offset="0.5" stop-color="#155a5c"/>
+      <stop offset="1" stop-color="#0b3e42"/>
+    </linearGradient>
+
+    <linearGradient id="leafBud" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#cdefe4"/>
+      <stop offset="1" stop-color="#93d3c3"/>
+    </linearGradient>
+
+    <linearGradient id="leafMid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1d6470"/>
+      <stop offset="1" stop-color="#0f4650"/>
+    </linearGradient>
+
+    <linearGradient id="leafBig" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6bd7c0"/>
+      <stop offset="0.5" stop-color="#26a08f"/>
+      <stop offset="1" stop-color="#0f6b62"/>
+    </linearGradient>
+
+    <linearGradient id="leafSmall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a5058"/>
+      <stop offset="1" stop-color="#0a2f34"/>
+    </linearGradient>
+
+    <filter id="softShadow" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="3" dy="7" stdDeviation="5" flood-color="#0a2e2e" flood-opacity="0.30"/>
+    </filter>
+    <filter id="softShadowSmall" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="2" dy="4" stdDeviation="3" flood-color="#0a2e2e" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="512" height="512" rx="96" fill="url(#bg)"/>
+
+  <!-- Буква N — курсивный засечковый шрифт, с тенью в стиле бумажной аппликации -->
+  <g filter="url(#softShadow)">
+    <text x="70" y="378" font-family="Liberation Serif, Georgia, serif" font-style="italic"
+          font-weight="700" font-size="360" fill="url(#nGrad)">N</text>
+  </g>
+
+  <!-- Бутон (самый светлый лист) — растёт из "локтя" N -->
+  <g filter="url(#softShadowSmall)" transform="translate(222,150) rotate(-10)">
+    <path d="M30 0
+             C47 17 58 39 58 62
+             C58 84 45 99 30 99
+             C15 99 2 84 2 62
+             C2 39 13 17 30 0 Z"
+          fill="url(#leafBud)"/>
+    <path d="M30 13 L30 90" stroke="#5fb3a0" stroke-width="2.5" fill="none" opacity="0.55"/>
+  </g>
+
+  <!-- Средний лист (тёмно-бирюзовый), направлен вверх-вправо -->
+  <g filter="url(#softShadow)" transform="translate(288,96) rotate(10)">
+    <path d="M38 0
+             C61 25 74 57 72 91
+             C70 121 53 142 30 138
+             C9 134 -2 109 4 80
+             C10 52 21 23 38 0 Z"
+          fill="url(#leafMid)"/>
+    <path d="M38 19 C32 57 27 98 23 132" stroke="#062327" stroke-width="3" fill="none" opacity="0.45"/>
+  </g>
+
+  <!-- Большой лист (главный), направлен вправо — растёт из диагонали N -->
+  <g filter="url(#softShadow)" transform="translate(320,190) rotate(24)">
+    <path d="M0 38
+             C34 8 80 -9 125 0
+             C129 44 110 87 74 110
+             C44 129 10 122 0 95
+             C-6 78 -8 57 0 38 Z"
+          fill="url(#leafBig)"/>
+    <path d="M13 91 C48 66 84 40 116 13" stroke="#0a3c37" stroke-width="4" fill="none" opacity="0.4"/>
+  </g>
+
+  <!-- Малый тёмный акцент-лист снизу справа от большого листа -->
+  <g filter="url(#softShadowSmall)" transform="translate(378,300) rotate(50)">
+    <path d="M0 25
+             C6 10 19 0 34 0
+             C40 15 36 32 25 42
+             C15 49 4 46 0 36
+             C-2 32 -2 29 0 25 Z"
+          fill="url(#leafSmall)"/>
+  </g>
+</svg>
