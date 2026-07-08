@@ -3638,6 +3638,11 @@ export default function App() {
   // занесённого из бота/голоса/фото) — тоже переиспользует dishName/dishIngredients/dishCookedWeight.
   const [editDishMealItemId, setEditDishMealItemId] = useState<string | null>(null);
   const [editDishMealItemRecipeId, setEditDishMealItemRecipeId] = useState<string | null>(null);
+  // Правка блюда прямо из "Мои" (не привязана ни к записи дневника, ни к черновику) —
+  // здесь редактируется сам рецепт-шаблон, поэтому режим НЕ портии: "Вес готового блюда"
+  // сохраняет исходный смысл (вес всего блюда с учётом ужарки/упарки), портия выбирается
+  // позже, при каждом добавлении рецепта в дневник.
+  const [editDishMineRecipeId, setEditDishMineRecipeId] = useState<string | null>(null);
   const [editingMealItem, setEditingMealItem] = useState<{ id: string; amount: number; name: string } | null>(null);
   const [editAmountValue, setEditAmountValue] = useState('');
   // Выбранный день переживает перезагрузку страницы (sessionStorage — в рамках текущей
@@ -4932,6 +4937,58 @@ export default function App() {
     setDishIngredientResults([]);
   };
 
+  // Правка блюда прямо из "Мои" — открывает тот же редактор состава, но правит рецепт
+  // напрямую (не привязан к записи дневника/черновику), поэтому "Вес готового блюда"
+  // здесь — вес всего рецепта, как при создании.
+  const startEditMineRecipe = async (recipe: MyRecipe) => {
+    try {
+      const res = await fetch(`/api/recipes/${recipe.id}`);
+      if (!res.ok) return;
+      const full = await res.json();
+      setEditDishMineRecipeId(recipe.id);
+      setDishName(full.name);
+      setDishCookedWeight(String(Math.round(full.cookedWeightGrams || 100)));
+      setDishIngredients((full.ingredients || []).map((ing: any) => ({
+        productId: ing.productId,
+        name: ing.product?.name || ing.name || '',
+        weightGrams: String(Math.round(ing.weightGrams)),
+        calories: ing.product?.calories ?? 0,
+        protein: ing.product?.protein ?? 0,
+        fat: ing.product?.fat ?? 0,
+        carbs: ing.product?.carbs ?? 0,
+      })));
+      setDishIngredientQuery('');
+      setDishIngredientResults([]);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const closeEditMineRecipe = () => {
+    setEditDishMineRecipeId(null);
+    setDishName('');
+    setDishCookedWeight('');
+    setDishIngredients([]);
+    setDishIngredientQuery('');
+    setDishIngredientResults([]);
+  };
+
+  const deleteMineRecipe = async (recipe: MyRecipe) => {
+    if (!window.confirm(`Удалить блюдо «${recipe.name}» из ваших блюд?`)) return;
+    try {
+      const res = await fetch(`/api/recipes/${recipe.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchMine();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err?.error || 'Не удалось удалить блюдо');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Сервер недоступен. Попробуйте позже.');
+    }
+  };
+
   const submitDish = async () => {
     if (!dishName.trim() || dishIngredients.length === 0) return;
     if (dishSanity?.warning && !window.confirm(`${dishSanity.warning}\n\nВсё равно сохранить как есть?`)) {
@@ -4956,6 +5013,21 @@ export default function App() {
       }))
     };
     try {
+      if (editDishMineRecipeId) {
+        const res = await fetch(`/api/recipes/${editDishMineRecipeId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          fetchMine();
+          closeEditMineRecipe();
+        } else {
+          const err = await res.json().catch(() => ({}));
+          alert(err?.error || 'Не удалось сохранить изменения блюда');
+        }
+        return;
+      }
       if (editDishMealItemId && editDishMealItemRecipeId) {
         const res = await fetch(`/api/recipes/${editDishMealItemRecipeId}`, {
           method: 'PATCH',
@@ -4974,6 +5046,9 @@ export default function App() {
             fetchHints();
           }
           closeMealItemComposition();
+        } else {
+          const err = await res.json().catch(() => ({}));
+          alert(err?.error || 'Не удалось сохранить изменения состава');
         }
         return;
       }
@@ -4994,6 +5069,9 @@ export default function App() {
             ? { ...it, product: updatedProduct, amount: newWeight, dishIngredients: savedIngredients }
             : it));
           closeEditDishIngredients();
+        } else {
+          const err = await res.json().catch(() => ({}));
+          alert(err?.error || 'Не удалось сохранить изменения состава');
         }
         return;
       }
@@ -5008,9 +5086,13 @@ export default function App() {
         setDishCookedWeight('');
         setDishIngredients([]);
         fetchMine();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err?.error || 'Не удалось сохранить блюдо');
       }
     } catch (e) {
       console.error(e);
+      alert('Сервер недоступен. Попробуйте позже.');
     } finally {
       setIsSavingDish(false);
     }
@@ -5909,21 +5991,37 @@ export default function App() {
             ) : (
               <>
                 {mineRecipes.map((recipe) => (
-                  <button
+                  <div
                     key={recipe.id}
-                    onClick={() => {
-                      setSelectedProductForAmount(recipe.product);
-                      setFoodAmount(String(Math.max(1, Math.round(recipe.cookedWeightGrams || 100))));
-                      setAmountEntryContext({ source: 'search' });
-                    }}
-                    className="w-full bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center active:bg-zinc-800 transition-colors"
+                    className="w-full bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center gap-2"
                   >
-                    <div className="text-left">
-                      <p className="font-semibold text-zinc-200 text-[15px]">{recipe.name}</p>
+                    <button
+                      onClick={() => {
+                        setSelectedProductForAmount(recipe.product);
+                        setFoodAmount(String(Math.max(1, Math.round(recipe.cookedWeightGrams || 100))));
+                        setAmountEntryContext({ source: 'search' });
+                      }}
+                      className="flex-1 min-w-0 text-left active:opacity-70 transition-opacity"
+                    >
+                      <p className="font-semibold text-zinc-200 text-[15px] truncate">{recipe.name}</p>
                       <p className="text-[11px] text-zinc-500">Блюдо • {Math.round(recipe.product.calories)} ккал / 100 г</p>
-                    </div>
-                    <Plus size={20} className="text-emerald-500" />
-                  </button>
+                    </button>
+                    <button
+                      onClick={() => { void startEditMineRecipe(recipe); }}
+                      className="p-2 text-zinc-500 active:text-zinc-300 shrink-0"
+                      aria-label="Редактировать блюдо"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      onClick={() => { void deleteMineRecipe(recipe); }}
+                      className="p-2 text-zinc-500 active:text-red-400 shrink-0"
+                      aria-label="Удалить блюдо"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                    <Plus size={20} className="text-emerald-500 shrink-0" />
+                  </div>
                 ))}
                 {mineProducts.map((product) => (
                   <div
@@ -6179,8 +6277,8 @@ export default function App() {
 
       {/* «Проверьте результат» → правка состава блюда, собранного из ингредиентов (голос/фото) */}
       <BottomSheet
-        isOpen={editDishReviewTempId !== null || editDishMealItemId !== null}
-        onClose={editDishMealItemId !== null ? closeMealItemComposition : closeEditDishIngredients}
+        isOpen={editDishReviewTempId !== null || editDishMealItemId !== null || editDishMineRecipeId !== null}
+        onClose={editDishMealItemId !== null ? closeMealItemComposition : editDishMineRecipeId !== null ? closeEditMineRecipe : closeEditDishIngredients}
         title="Состав блюда"
       >
         <div className="space-y-3">
@@ -6235,15 +6333,17 @@ export default function App() {
           )}
 
           <div>
-            <label className="text-[11px] text-zinc-500 uppercase tracking-wider">Вес порции, г</label>
+            <label className="text-[11px] text-zinc-500 uppercase tracking-wider">
+              {isDishPortionMode ? 'Вес порции, г' : 'Вес готового блюда, г'}
+            </label>
             <input
-              type="number" placeholder="Сколько съели, г"
+              type="number" placeholder={isDishPortionMode ? 'Сколько съели, г' : 'Вес готового блюда'}
               className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
               value={dishCookedWeight}
               onChange={(e) => setDishCookedWeight(e.target.value)}
             />
             {dishTotals.weight > 0 && (
-              <p className="text-[11px] text-zinc-500 mt-1">Всего в блюде: {Math.round(dishTotals.weight)} г</p>
+              <p className="text-[11px] text-zinc-500 mt-1">Всего ингредиентов: {Math.round(dishTotals.weight)} г</p>
             )}
           </div>
 
@@ -6256,7 +6356,9 @@ export default function App() {
                 <div><p className="text-sm font-bold text-zinc-100">{dishPortionTotals ? Math.round(dishPortionTotals.carbs) : Math.round(dishTotals.carbs)}</p><p className="text-[9px] text-zinc-500 uppercase">углеводы</p></div>
               </div>
               {dishPortionTotals && (
-                <p className="text-[11px] text-zinc-500 text-center">нутриенты для порции {Math.round(dishPortionTotals.weight)} г</p>
+                <p className="text-[11px] text-zinc-500 text-center">
+                  {isDishPortionMode ? `нутриенты для порции ${Math.round(dishPortionTotals.weight)} г` : `нутриенты для всего блюда ${Math.round(dishPortionTotals.weight)} г`}
+                </p>
               )}
               {dishSanity?.warning && (
                 <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-xs text-red-400">
@@ -6468,7 +6570,7 @@ export default function App() {
                           {Math.round(item.amount)} г · {Math.round(item.product.calories * factor)} ккал
                         </p>
                         <p className="text-[11px] text-zinc-500">
-                          Б {Math.round(item.product.protein * factor)} · Ж {Math.round(item.product.fat * factor)} · У {Math.round(item.product.carbs * factor)}
+                          Б {fmtMacro(item.product.protein * factor)} · Ж {fmtMacro(item.product.fat * factor)} · У {fmtMacro(item.product.carbs * factor)}
                         </p>
                       </button>
                       <div className="flex items-center gap-2 shrink-0">
@@ -6539,7 +6641,7 @@ export default function App() {
               <span className="text-xl font-bold text-emerald-500">{Math.round(reviewTotals.calories)} ккал</span>
             </div>
             <p className="text-xs text-zinc-500">
-              Б {Math.round(reviewTotals.protein)} г · Ж {Math.round(reviewTotals.fat)} г · У {Math.round(reviewTotals.carbs)} г
+              Б {fmtMacro(reviewTotals.protein)} г · Ж {fmtMacro(reviewTotals.fat)} г · У {fmtMacro(reviewTotals.carbs)} г
             </p>
           </div>
 

@@ -1010,6 +1010,17 @@ ${finalResults.map((candidate, index) => `${index}: ${candidate.name} (${candida
     }
   }
 
+  // Детерминированный предохранитель, не зависящий от доступности AI: реранк должен был
+  // сам исключить нерелевантные позиции ("Полностью нерелевантные позиции исключи"), но
+  // если AI-оценка и реранк оба недоступны/провалились (таймаут, сбой провайдера — оба шага
+  // просто логируют ошибку и молча ничего не меняют), в выдаче остаются кандидаты из грубого
+  // SQL contains-предфильтра с очень низкой релевантностью (напр. запрос "фасоль красная"
+  // находил только "Пищевой краситель, красный" — совпадение по слову "красный", а не по
+  // продукту). Без AI такие совпадения лучше не показывать вовсе, чем выдавать за КБЖУ
+  // явно не того продукта.
+  const MIN_RELEVANT_SCORE = 0.35;
+  finalResults = finalResults.filter((item) => item.source === "ai" || numberOrZero(item.matchScore) >= MIN_RELEVANT_SCORE);
+
   const localizedResults = localize
     ? await Promise.all(finalResults.slice(0, limit).map((item) => localizeProductForRussianAudience(item)))
     : finalResults.slice(0, limit);
@@ -1342,6 +1353,64 @@ function cacheProductSearch(query: string, results: any[]) {
 function numberOrZero(value: any) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+// Ингредиенты блюда иногда ссылаются на productId, которого нет в базе — это
+// AI-оценка (searchProductsEngine отдаёт эфемерный id вида "ai-est-...", если
+// точного совпадения в каталоге не нашлось) или продукт из внешнего источника
+// (USDA), который ещё не сохранён локально. RecipeIngredient.productId — обязательный
+// внешний ключ на Product, поэтому такой ингредиент нужно материализовать как
+// настоящую запись Product (по присланным клиентом КБЖУ), а не молча пропускать —
+// иначе блюдо целиком из таких ингредиентов не сохранится вообще
+// ("Не найдены продукты для ингредиентов"), не объясняя пользователю причину.
+async function resolveIngredientProducts(
+  prisma: PrismaClient,
+  ingredientsInput: any[],
+  userId: string
+): Promise<Map<string, { id: string; calories: number; protein: number; fat: number; carbs: number }>> {
+  const productIds = ingredientsInput.map((ing: any) => String(ing.productId));
+  const existing = await prisma.product.findMany({ where: { id: { in: productIds } } });
+  const resolved = new Map<string, any>(existing.map((p: any) => [p.id, p]));
+
+  for (const ing of ingredientsInput) {
+    const key = String(ing.productId);
+    if (resolved.has(key)) continue;
+    const name = String(ing.name || "").trim();
+    if (!name) continue;
+    // Фиксированный brand (не null): Prisma не даёт использовать null как часть
+    // значения составного уникального ключа @@unique([name, brand]) в where —
+    // даже когда сама колонка nullable, запрос падает с "Argument `brand` must
+    // not be null". Используем findFirst → create, а не upsert (так же, как уже
+    // сделано для AI/USDA-продуктов чуть выше в этом файле), и ловим гонку двух
+    // параллельных запросов на одинаковый ингредиент через P2002.
+    const brand = "AI Ingredient";
+    let product = await prisma.product.findFirst({ where: { name, brand } });
+    if (!product) {
+      const data = {
+        name,
+        brand,
+        source: "ai",
+        createdByUserId: userId,
+        calories: numberOrZero(ing.calories),
+        protein: numberOrZero(ing.protein),
+        fat: numberOrZero(ing.fat),
+        carbs: numberOrZero(ing.carbs),
+      };
+      try {
+        product = await prisma.product.create({ data });
+      } catch (e: any) {
+        if (e?.code === "P2002") {
+          product = await prisma.product.findFirst({ where: { name, brand } });
+          if (!product) throw e;
+        } else {
+          throw e;
+        }
+      }
+    }
+    resolved.set(key, product);
+  }
+
+  return resolved;
 }
 
 function hasCyrillic(value: any) {
@@ -2922,9 +2991,7 @@ export async function createApp(): Promise<express.Express> {
     }
 
     try {
-      const productIds = ingredientsInput.map((ing: any) => String(ing.productId));
-      const products = await prisma.product.findMany({ where: { id: { in: productIds } } });
-      const productMap = new Map(products.map((p: any) => [p.id, p]));
+      const productMap = await resolveIngredientProducts(prisma, ingredientsInput, userId);
 
       let totalWeight = 0, totalCal = 0, totalProtein = 0, totalFat = 0, totalCarbs = 0;
       const ingredientRows: any[] = [];
@@ -3173,9 +3240,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
     }
 
     try {
-      const productIds = ingredientsInput.map((ing: any) => String(ing.productId));
-      const products = await prisma.product.findMany({ where: { id: { in: productIds } } });
-      const productMap = new Map(products.map((p: any) => [p.id, p]));
+      const productMap = await resolveIngredientProducts(prisma, ingredientsInput, userId);
 
       let totalWeight = 0, totalCal = 0, totalProtein = 0, totalFat = 0, totalCarbs = 0;
       const ingredientRows: any[] = [];
