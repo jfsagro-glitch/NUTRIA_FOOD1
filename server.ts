@@ -802,6 +802,20 @@ function buildPhotoRecognitionQueries(item: PhotoRecognitionItem) {
   return expanded.slice(0, 12);
 }
 
+function fallbackUsdaEnglishQuery(query: string): string {
+  const normalized = String(query || "").toLowerCase().replace(/[^а-яёa-z0-9]+/g, " ").trim();
+  const dictionary: Array<[string, string]> = [
+    ["куриная грудка", "chicken breast"], ["куриное филе", "chicken breast"],
+    ["яйцо", "egg whole"], ["творог", "cottage cheese"], ["гречка", "buckwheat cooked"],
+    ["овсянка", "oatmeal cooked"], ["молоко", "milk whole"], ["говядина", "beef cooked"],
+    ["лосось", "salmon cooked"], ["семга", "salmon cooked"], ["банан", "banana raw"],
+    ["яблоко", "apple raw"], ["авокадо", "avocado raw"], ["рис", "rice cooked"],
+    ["картофель", "potato cooked"], ["помидор", "tomato raw"], ["огурец", "cucumber raw"],
+    ["оладьи", "pancakes"], ["котлета", "ground beef patty"], ["пирог", "cabbage pie"]
+  ];
+  return dictionary.find(([russian]) => normalized.includes(russian))?.[1] || query;
+}
+
 async function searchProductsEngine(query: string, options: ProductSearchOptions = {}) {
   const normalizedInput = String(query || "").trim();
   if (!normalizedInput) return [] as any[];
@@ -847,6 +861,9 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
       logError("Normalization error:", e);
     }
   }
+  // The USDA API indexes English descriptions. This deterministic fallback keeps
+  // USDA search working when the optional AI translator is not configured.
+  englishQuery = fallbackUsdaEnglishQuery(englishQuery);
 
   const queryTokens = uniqueStrings([
     ...normalizedInput.split(/\s+/),
@@ -2562,7 +2579,6 @@ export async function createApp(): Promise<express.Express> {
         );
         if (mine) return res.json(mine);
       }
-
       const { product } = await resolveBarcodeProduct(candidates);
       if (product) return res.json(product);
 
