@@ -1407,6 +1407,18 @@ function cacheBarcodeProduct(candidates: string[], product: any) {
   }
 }
 
+// После правки нутриентов по штрихкоду старая запись из открытой базы могла осесть в
+// кэше (TTL 6 ч) под несколькими ключами-кандидатами — чистим все, что указывают на
+// этот штрихкод, иначе повторное сканирование ещё какое-то время отдавало бы старьё.
+function invalidateBarcodeCache(barcode: string) {
+  const target = String(barcode);
+  for (const [key, entry] of barcodeLookupCache.entries()) {
+    if (key === target || String(entry.product?.barcode) === target) {
+      barcodeLookupCache.delete(key);
+    }
+  }
+}
+
 // LRU + TTL: Map сохраняет порядок вставки, поэтому при каждом обращении
 // (чтении или записи) ключ удаляется и вставляется заново — он "уезжает" в
 // конец, а наименее свежий ключ всегда первый и его проще всего вытеснить.
@@ -2222,6 +2234,30 @@ function extractUsdaExtendedNutrients(food: any) {
 
 function normalizeOpenFoodFactsProduct(rawProduct: any, barcode: string) {
   const nutr = rawProduct?.nutriments || {};
+
+  const protein = numberOrZero(nutr["proteins_100g"]);
+  const fat = numberOrZero(nutr["fat_100g"]);
+  const carbs = numberOrZero(nutr["carbohydrates_100g"]);
+  const fiber = numberOrZero(nutr["fiber_100g"]);
+
+  // Калорийность: kcal на 100 г → просто kcal → пересчёт из кДж → оценка по Атуотеру.
+  // OFF (крауд-данные) часто хранит энергию только в кДж или вовсе без неё, из-за чего
+  // калорийность приходила нулевой. 1 ккал = 4.184 кДж; Атуотер: 4/4/9 ккал на г Б/У/Ж.
+  const atwater = protein * 4 + carbs * 4 + fat * 9;
+  let calories = numberOrZero(nutr["energy-kcal_100g"] ?? nutr["energy-kcal"]);
+  const kj = numberOrZero(nutr["energy-kj_100g"] ?? nutr["energy-kj"] ?? nutr["energy_100g"]);
+  if (!calories && kj) calories = Math.round(kj / 4.184);
+  if (!calories && atwater) calories = Math.round(atwater);
+
+  // Флаг «сверьте с упаковкой»: данные OFF заполняются пользователями и часто расходятся
+  // с этикеткой (напр. сухарики "Хрустим" пришли с У 94.7 г — физически невозможно при
+  // жирах 16 г). Помечаем явно подозрительные случаи: сумма Б+Ж+У > 105 г на 100 г,
+  // либо все макросы нулевые, либо заявленная калорийность сильно расходится с оценкой
+  // по макронутриентам. Приложение по этому флагу предложит проверить и поправить.
+  const macroSum = protein + fat + carbs;
+  const kcalMismatch = atwater > 0 && calories > 0 && Math.abs(calories - atwater) / atwater > 0.3;
+  const needsReview = macroSum > 105 || macroSum <= 0 || kcalMismatch;
+
   return {
     id: `off-${barcode}`,
     name:
@@ -2231,13 +2267,14 @@ function normalizeOpenFoodFactsProduct(rawProduct: any, barcode: string) {
       rawProduct?.generic_name ||
       `Product ${barcode}`,
     brand: rawProduct?.brands || "OpenFoodFacts",
-    calories: numberOrZero(nutr["energy-kcal_100g"] ?? nutr["energy-kcal"]),
-    protein: numberOrZero(nutr["proteins_100g"]),
-    fat: numberOrZero(nutr["fat_100g"]),
-    carbs: numberOrZero(nutr["carbohydrates_100g"]),
-    fiber: numberOrZero(nutr["fiber_100g"]),
+    calories,
+    protein,
+    fat,
+    carbs,
+    fiber,
     barcode,
     isUsda: true,
+    needsReview,
     source: "openfoodfacts"
   };
 }
@@ -2391,7 +2428,9 @@ async function resolveBarcodeProduct(candidates: string[]) {
     const offProduct = await fetchOpenFoodFactsProduct(candidate);
     if (offProduct) {
       const persisted = await upsertProductFromBarcodeLookup(offProduct);
-      const responseProduct = persisted || offProduct;
+      // persisted — это строка из БД без поля needsReview; переносим флаг с исходной
+      // OFF-записи, чтобы приложение и после сохранения знало, что данные под вопросом.
+      const responseProduct = persisted ? { ...persisted, needsReview: offProduct.needsReview } : offProduct;
       cacheBarcodeProduct(candidates, responseProduct);
       return { product: responseProduct, isNew: true };
     }
@@ -2659,6 +2698,66 @@ export async function createApp(): Promise<express.Express> {
     } catch (e: any) {
       logError("Barcode lookup error:", e);
       return res.status(500).json({ error: "Barcode lookup failed", message: e?.message || "Unknown error" });
+    }
+  });
+
+  // Исправление нутриентов продукта, найденного по штрихкоду. Данные из открытой базы
+  // (OpenFoodFacts) часто расходятся с этикеткой; здесь пользователь приводит их в
+  // соответствие с упаковкой. Правка записывается в общую запись Product по штрихкоду
+  // (barcode уникален) и помечается выверенной человеком (source "catalog" + автор),
+  // поэтому повторное сканирование этого кода сразу вернёт исправленные значения из
+  // базы (resolveBarcodeProduct смотрит в базу раньше, чем в открытые источники) и
+  // больше не будет тянуть данные из OpenFoodFacts.
+  app.post("/api/products/barcode/:code/correct", validateBody(customProductSchema), async (req, res) => {
+    const userId = req.signedCookies?.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const candidates = extractBarcodeCandidates(String(req.params.code || ""));
+    if (candidates.length === 0) return res.status(400).json({ error: "Invalid barcode" });
+    const barcode = candidates[0];
+
+    const { name, brand, calories, protein, fat, carbs } = req.body;
+
+    if (!isDatabaseConfigured()) {
+      const list = getOrCreateInMemoryCustomProducts(userId);
+      let product = list.find((p: any) => candidates.includes(String(p.barcode)));
+      if (product) {
+        Object.assign(product, { name, brand: brand || null, calories, protein, fat, carbs });
+      } else {
+        product = {
+          id: `custom-${Date.now()}`,
+          name, brand: brand || null, barcode,
+          calories, protein, fat, carbs, fiber: null,
+          source: "user", createdAt: new Date().toISOString(),
+        };
+        list.unshift(product);
+      }
+      invalidateBarcodeCache(barcode);
+      return res.json(product);
+    }
+
+    try {
+      const existing = await prisma.product.findFirst({ where: { barcode: { in: candidates } } });
+      const data = {
+        name: String(name),
+        brand: brand ? String(brand) : null,
+        calories: numberOrZero(calories),
+        protein: numberOrZero(protein),
+        fat: numberOrZero(fat),
+        carbs: numberOrZero(carbs),
+        source: "catalog",
+        createdByUserId: userId,
+      };
+      const product = existing
+        ? await prisma.product.update({ where: { id: existing.id }, data })
+        : await prisma.product.create({ data: { ...data, barcode } });
+
+      invalidateBarcodeCache(barcode);
+      for (const c of candidates) invalidateBarcodeCache(c);
+      return res.json(product);
+    } catch (e: any) {
+      logError("Barcode correction error:", e);
+      return res.status(500).json({ error: "Не удалось сохранить исправление", message: e?.message || "Unknown error" });
     }
   });
 

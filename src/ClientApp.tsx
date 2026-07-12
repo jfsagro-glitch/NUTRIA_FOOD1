@@ -60,6 +60,11 @@ interface Product {
   isUsda?: boolean;
   isAiEstimated?: boolean;
   explanation?: string;
+  // Штрихкод и источник продукта — нужны для сценария сверки/правки данных, найденных
+  // по штрихкоду (openfoodfacts/usda — из открытой базы, могут расходиться с упаковкой).
+  barcode?: string;
+  source?: string;
+  needsReview?: boolean;
   // Если продукт — снимок блюда из ингредиентов (распознано голосом/фото или "Создать блюдо")
   recipeId?: string;
   // Micronutrients stored as JSON in DB, parsed here
@@ -3687,8 +3692,17 @@ export default function App() {
   // создать свой продукт с этим штрих-кодом (иначе созданный вручную продукт не привязан
   // к коду и повторное сканирование его не находит).
   const [barcodeNotFoundCode, setBarcodeNotFoundCode] = useState('');
+  // Продукт по штрихкоду найден, но данные из открытой базы могут расходиться с упаковкой —
+  // форма «Свой продукт» открыта в режиме правки этих нутриентов. Хранит штрихкод, по
+  // которому сохранится исправление (запись выверяется человеком, следующее сканирование
+  // вернёт исправленные значения). null — обычный режим создания/редактирования.
+  const [barcodeCorrectionCode, setBarcodeCorrectionCode] = useState<string | null>(null);
   // Откуда открыта форма «Свой продукт»: после сохранения из сканера сразу открываем ввод веса.
   const customProductOriginRef = useRef<'mine' | 'barcode'>('mine');
+  // При правке нутриентов по штрихкоду мы закрываем экран ввода веса (нельзя стекать два
+  // bottom sheet — у них одинаковый z-index), а сюда прячем исходный продукт, чтобы вернуть
+  // экран ввода веса, если правку отменили.
+  const barcodeAmountStashRef = useRef<Product | null>(null);
   const [isBarcodeScanning, setIsBarcodeScanning] = useState(false);
   const [fastingMode, setFastingMode] = useState<FastingMode>('OFF');
   const [customFastingHours, setCustomFastingHours] = useState(14);
@@ -4615,6 +4629,39 @@ export default function App() {
     if (!customProductForm.name.trim()) return;
     setIsSavingCustomProduct(true);
     try {
+      // Режим правки нутриентов продукта, найденного по штрихкоду: сохраняем исправление
+      // по коду, затем сразу продолжаем к вводу веса с уже исправленными значениями.
+      if (barcodeCorrectionCode) {
+        const res = await fetch(`/api/products/barcode/${encodeURIComponent(barcodeCorrectionCode)}/correct`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: customProductForm.name.trim(),
+            brand: customProductForm.brand.trim() || undefined,
+            calories: Number(customProductForm.calories) || 0,
+            protein: Number(customProductForm.protein) || 0,
+            fat: Number(customProductForm.fat) || 0,
+            carbs: Number(customProductForm.carbs) || 0,
+          })
+        });
+        if (res.ok) {
+          const product = await res.json().catch(() => null);
+          barcodeAmountStashRef.current = null;
+          setIsAddCustomProductOpen(false);
+          setCustomProductForm({ name: '', brand: '', barcode: '', calories: '', protein: '', fat: '', carbs: '' });
+          setBarcodeCorrectionCode(null);
+          customProductOriginRef.current = 'mine';
+          if (product?.id) {
+            setSelectedProductForAmount(product);
+            setFoodAmount('100');
+            setAmountEntryContext({ source: 'barcode' });
+          }
+        } else {
+          const err = await res.json().catch(() => ({}));
+          alert(err?.error || 'Не удалось сохранить исправление');
+        }
+        return;
+      }
       const res = await fetch(editingCustomProductId ? `/api/products/custom/${encodeURIComponent(editingCustomProductId)}` : '/api/products/custom', {
         method: editingCustomProductId ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -4656,6 +4703,7 @@ export default function App() {
   const startEditCustomProduct = (product: Product) => {
     customProductOriginRef.current = 'mine';
     setEditingCustomProductId(product.id);
+    setBarcodeCorrectionCode(null);
     setCustomProductForm({
       name: product.name || '',
       brand: product.brand || '',
@@ -4666,6 +4714,36 @@ export default function App() {
       carbs: String(product.carbs ?? ''),
     });
     setIsAddCustomProductOpen(true);
+  };
+
+  // Продукт найден по штрихкоду, но данные из открытой базы под вопросом — открываем
+  // форму правки, предзаполненную найденными значениями. "OpenFoodFacts" как бренд не
+  // тянем в поле — это не бренд продукта, а метка источника.
+  const startBarcodeCorrection = (product: Product) => {
+    if (!product?.barcode) return;
+    barcodeAmountStashRef.current = product;
+    customProductOriginRef.current = 'barcode';
+    setEditingCustomProductId(null);
+    setBarcodeCorrectionCode(String(product.barcode));
+    setCustomProductForm({
+      name: product.name || '',
+      brand: product.brand && product.brand !== 'OpenFoodFacts' ? product.brand : '',
+      barcode: String(product.barcode),
+      calories: String(Math.round(product.calories ?? 0)),
+      protein: String(product.protein ?? 0),
+      fat: String(product.fat ?? 0),
+      carbs: String(product.carbs ?? 0),
+    });
+    // Закрываем ввод веса, чтобы не показывать два bottom sheet поверх друг друга.
+    setSelectedProductForAmount(null);
+    setAmountEntryContext(null);
+    setIsAddCustomProductOpen(true);
+  };
+
+  // Продукт из открытой базы (OpenFoodFacts / USDA) — данные могут расходиться с упаковкой.
+  const isExternalBarcodeProduct = (product: Product | null) => {
+    const source = String(product?.source || '');
+    return source === 'openfoodfacts' || source.startsWith('usda');
   };
 
   const deleteCustomProduct = async (product: Product) => {
@@ -5295,6 +5373,8 @@ export default function App() {
   // после сохранения повторное сканирование этого кода будет находить продукт.
   const createProductForBarcode = () => {
     customProductOriginRef.current = 'barcode';
+    setEditingCustomProductId(null);
+    setBarcodeCorrectionCode(null);
     setCustomProductForm({ name: '', brand: '', barcode: barcodeNotFoundCode, calories: '', protein: '', fat: '', carbs: '' });
     setBarcodeNotFoundCode('');
     setBarcodeScannerError('');
@@ -5969,6 +6049,7 @@ export default function App() {
                 onClick={() => {
                   customProductOriginRef.current = 'mine';
                   setEditingCustomProductId(null);
+                  setBarcodeCorrectionCode(null);
                   setCustomProductForm({ name: '', brand: '', barcode: '', calories: '', protein: '', fat: '', carbs: '' });
                   setIsAddCustomProductOpen(true);
                 }}
@@ -6102,8 +6183,25 @@ export default function App() {
       </BottomSheet>
 
       {/* "Мои" → Добавить свой продукт */}
-      <BottomSheet isOpen={isAddCustomProductOpen} onClose={() => { setIsAddCustomProductOpen(false); setEditingCustomProductId(null); }} title={editingCustomProductId ? 'Редактировать продукт' : 'Добавить свой продукт'}>
+      <BottomSheet isOpen={isAddCustomProductOpen} onClose={() => {
+        setIsAddCustomProductOpen(false);
+        setEditingCustomProductId(null);
+        // Отмена правки нутриентов по штрихкоду — возвращаем экран ввода веса с исходным продуктом.
+        if (barcodeCorrectionCode && barcodeAmountStashRef.current) {
+          const stashed = barcodeAmountStashRef.current;
+          barcodeAmountStashRef.current = null;
+          setSelectedProductForAmount(stashed);
+          setFoodAmount('100');
+          setAmountEntryContext({ source: 'barcode' });
+        }
+        setBarcodeCorrectionCode(null);
+      }} title={barcodeCorrectionCode ? 'Проверьте нутриенты' : editingCustomProductId ? 'Редактировать продукт' : 'Добавить свой продукт'}>
         <div className="space-y-3">
+          {barcodeCorrectionCode && (
+            <p className="text-[12px] text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
+              Данные найдены в открытой базе (OpenFoodFacts) и могут не совпадать с упаковкой. Впишите значения с этикетки (на 100 г) — исправление запомнится, и следующее сканирование этого штрих-кода вернёт уже верные данные.
+            </p>
+          )}
           <input
             type="text" placeholder="Название"
             className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
@@ -6118,7 +6216,8 @@ export default function App() {
           />
           <input
             type="text" placeholder="Штрихкод (необязательно)"
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+            readOnly={!!barcodeCorrectionCode}
+            className={`w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 ${barcodeCorrectionCode ? 'opacity-60' : ''}`}
             value={customProductForm.barcode}
             onChange={(e) => setCustomProductForm((p) => ({ ...p, barcode: e.target.value }))}
           />
@@ -6138,7 +6237,7 @@ export default function App() {
             disabled={!customProductForm.name.trim() || isSavingCustomProduct}
             className="w-full py-4 bg-emerald-500 text-white font-bold rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-transform disabled:opacity-40"
           >
-            {isSavingCustomProduct ? 'Сохранение...' : editingCustomProductId ? 'Сохранить изменения' : 'Сохранить в Мои'}
+            {isSavingCustomProduct ? 'Сохранение...' : barcodeCorrectionCode ? 'Сохранить и продолжить' : editingCustomProductId ? 'Сохранить изменения' : 'Сохранить в Мои'}
           </button>
         </div>
       </BottomSheet>
@@ -6419,6 +6518,22 @@ export default function App() {
                 <p className="text-[10px] text-zinc-400 italic mt-2 px-4">{selectedProductForAmount.explanation}</p>
               )}
             </div>
+
+            {amountEntryContext?.source === 'barcode' && isExternalBarcodeProduct(selectedProductForAmount) && (
+              <div className={`rounded-xl p-3 text-[12px] ${selectedProductForAmount.needsReview ? 'bg-amber-500/10 border border-amber-500/30 text-amber-400' : 'bg-zinc-800/60 border border-zinc-700 text-zinc-400'}`}>
+                <p>
+                  {selectedProductForAmount.needsReview
+                    ? 'Нутриенты из открытой базы выглядят неполными или противоречивыми. Сверьте с упаковкой и поправьте.'
+                    : `Данные из открытой базы: ${Math.round(selectedProductForAmount.calories)} ккал · Б ${fmtMacro(selectedProductForAmount.protein)} · Ж ${fmtMacro(selectedProductForAmount.fat)} · У ${fmtMacro(selectedProductForAmount.carbs)} (на 100 г). Не совпадает с упаковкой — поправьте.`}
+                </p>
+                <button
+                  onClick={() => startBarcodeCorrection(selectedProductForAmount)}
+                  className="mt-2 inline-flex items-center gap-1.5 font-semibold text-emerald-400 active:opacity-70"
+                >
+                  <Pencil size={13} /> Поправить нутриенты
+                </button>
+              </div>
+            )}
 
             <div className="flex items-center justify-center gap-4">
               <input
