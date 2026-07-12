@@ -367,11 +367,58 @@ function computeTextSimilarity(left: any, right: any) {
 
   const leftTokens = textTokenSet(a);
   const rightTokens = textTokenSet(b);
-  const overlap = Array.from(leftTokens).filter((token) => rightTokens.has(token)).length;
+  // Совпадение токенов с учётом основы слова: "креветка" и "креветки" — это один
+  // токен по смыслу (единственное/множественное число), но как строки они разные,
+  // и без стемминга их пересечение было бы нулевым (см. stemRussianToken). Считаем
+  // токен совпавшим при точном совпадении ИЛИ при совпадении основ.
+  const rightStems = new Set(Array.from(rightTokens).map((token) => stemRussianToken(token) || token));
+  const overlap = Array.from(leftTokens).filter(
+    (token) => rightTokens.has(token) || rightStems.has(stemRussianToken(token) || token)
+  ).length;
   const tokenSimilarity = overlap / Math.max(leftTokens.size, rightTokens.size, 1);
   const containsBoost = a.includes(b) || b.includes(a) ? 0.15 : 0;
 
   return Math.max(0, Math.min(1, charSimilarity * 0.55 + tokenSimilarity * 0.45 + containsBoost));
+}
+
+// Лёгкий морфологический стемминг для русских слов. SQL contains — это точное
+// вхождение подстроки, поэтому запрос "креветка" не находит базовый продукт
+// "Креветки": у слов разные окончания (-а / -и), и одно не является подстрокой
+// другого. Отрезаем частое словоизменительное окончание, получая основу
+// ("креветк"), которая как contains-терм ловит все формы (креветка, креветки,
+// креветок...). Это не полноценный стеммер (нет словаря, возможна лёгкая
+// пере/недорезка) — задача только связать единственное/множественное число и
+// падежи в предфильтре; итоговую релевантность всё равно определяет скоринг ниже.
+// Окончания перечислены от длинных к коротким, чтобы отрезалось самое длинное
+// подходящее; основа никогда не короче 4 символов, иначе матч станет слишком общим.
+const RUSSIAN_STEM_ENDINGS = [
+  "иями",
+  "ями", "ами", "ого", "его", "ому", "ему", "ыми", "ими",
+  "ов", "ев", "ей", "ах", "ях", "ам", "ям", "ом", "ем",
+  "ий", "ый", "ой", "ая", "яя", "ое", "ее", "ые", "ие",
+  "а", "я", "ы", "и", "у", "ю", "е", "о", "ь", "й",
+];
+
+function stemRussianToken(token: string): string | null {
+  const value = String(token || "").toLowerCase().trim();
+  if (value.length < 5 || !/[а-яё]/.test(value)) return null;
+  for (const ending of RUSSIAN_STEM_ENDINGS) {
+    if (value.length - ending.length >= 4 && value.endsWith(ending)) {
+      return value.slice(0, value.length - ending.length);
+    }
+  }
+  return null;
+}
+
+// Базовый/каноничный продукт из нашего каталога — без бренда конкретной фирмы
+// (seed помечает такие brand: "Базовый продукт"). У них обычно полные нутриенты, и
+// команда просит показывать их выше фирменных вариантов того же продукта.
+function isBaseProductCandidate(candidate: any): boolean {
+  if (!candidate) return false;
+  const source = String(candidate.source || "");
+  if (source && source !== "local" && source !== "catalog") return false; // не USDA/AI
+  const brandText = String(candidate.brand || "").trim().toLowerCase();
+  return brandText === "" || brandText === "базовый продукт";
 }
 
 function uniqueStrings(values: any[], minLength: number = 1) {
@@ -871,6 +918,17 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
     ...englishQuery.split(/\s+/),
   ], 2);
 
+  // Основы русских слов из запроса — чтобы "креветка" находило "Креветки" и наоборот
+  // (см. stemRussianToken). Минимальная длина основы 3, чтобы не тянуть слишком общие
+  // куски; итоговую релевантность всё равно фильтрует скоринг + MIN_RELEVANT_SCORE ниже.
+  const stemTerms = uniqueStrings(
+    [...queryTokens, ...searchTerms]
+      .flatMap((term) => String(term).split(/\s+/))
+      .map((token) => stemRussianToken(token))
+      .filter((stem): stem is string => Boolean(stem)),
+    3
+  );
+
   const localProducts = dbReady
     ? await prisma.product.findMany({
         where: {
@@ -880,10 +938,11 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
             { name: { contains: englishQuery, mode: "insensitive" } },
             ...searchTerms.map((term) => ({ name: { contains: term, mode: "insensitive" as const } })),
             ...queryTokens.map((term) => ({ name: { contains: term, mode: "insensitive" as const } })),
+            ...stemTerms.map((term) => ({ name: { contains: term, mode: "insensitive" as const } })),
             { brand: { contains: normalizedInput, mode: "insensitive" } },
           ],
         },
-        take: 30,
+        take: 50,
       })
     : [];
 
@@ -948,7 +1007,14 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
       computeTextSimilarity(englishQuery, candidate.name)
     );
     const sourceBoost = candidate.source === "local" ? 0.1 : 0;
-    const finalScore = Math.max(0, Math.min(1, similarity + sourceBoost));
+    // Базовый/каноничный продукт (без бренда конкретной фирмы) поднимаем над
+    // фирменными вариантами того же продукта: у базового обычно полные нутриенты и
+    // он не привязан к конкретной марке — по просьбе команды "чтобы базовый
+    // выскакивал первым". Бонус применяется только к уже релевантным кандидатам
+    // (прошли предфильтр и порог MIN_RELEVANT_SCORE), поэтому нерелевантный базовый
+    // продукт наверх не всплывёт.
+    const baseBoost = isBaseProductCandidate(candidate) ? 0.15 : 0;
+    const finalScore = Math.max(0, Math.min(1, similarity + sourceBoost + baseBoost));
     return { ...candidate, matchScore: finalScore };
   });
 
@@ -1013,6 +1079,7 @@ ${finalResults.map((candidate, index) => `${index}: ${candidate.name} (${candida
 Выбери лучшие совпадения.
 Верни только JSON с массивом индексов по убыванию релевантности.
 Полностью нерелевантные позиции исключи.
+При прочих равных базовый/общий продукт (бренд "Базовый продукт" или без бренда фирмы) ставь выше фирменных вариантов того же продукта.
 Если есть AI-оценка и она выглядит корректно, можно поставить ее выше.`), 7000, "AI re-rank");
       const reRankData = parseAiJsonPayload(reRankResponseText || "{}");
       const indices = Array.isArray(reRankData)
@@ -1037,6 +1104,28 @@ ${finalResults.map((candidate, index) => `${index}: ${candidate.name} (${candida
   // явно не того продукта.
   const MIN_RELEVANT_SCORE = 0.35;
   finalResults = finalResults.filter((item) => item.source === "ai" || numberOrZero(item.matchScore) >= MIN_RELEVANT_SCORE);
+
+  // Гарантированно поднимаем базовый/общий продукт над фирменными вариантами того же
+  // продукта, если он в выдаче и сопоставимо релевантен (в пределах 0.12 от лидера) —
+  // по просьбе команды "чтобы базовый выскакивал первым". Делается детерминированно,
+  // после AI-реранка (AI про это правило не знает и мог переставить), но не трогает
+  // случаи, когда фирменный продукт заметно релевантнее (пользователь искал марку) и
+  // не двигает AI-оценку с первого места. Пример: запрос "креветка" — базовый
+  // "Креветки" должен быть выше фирменных "КРЕВЕТКА <марка>".
+  if (finalResults.length > 1) {
+    const leader = finalResults[0];
+    const leaderIsPreferred = leader?.source === "ai" || isBaseProductCandidate(leader);
+    if (!leaderIsPreferred) {
+      const topScore = numberOrZero(leader?.matchScore);
+      const baseIdx = finalResults.findIndex(
+        (item) => isBaseProductCandidate(item) && topScore - numberOrZero(item.matchScore) <= 0.12
+      );
+      if (baseIdx > 0) {
+        const [base] = finalResults.splice(baseIdx, 1);
+        finalResults.unshift(base);
+      }
+    }
+  }
 
   const localizedResults = localize
     ? await Promise.all(finalResults.slice(0, limit).map((item) => localizeProductForRussianAudience(item)))
