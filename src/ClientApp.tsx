@@ -4740,10 +4740,11 @@ export default function App() {
     setIsAddCustomProductOpen(true);
   };
 
-  // Продукт из открытой базы (OpenFoodFacts / USDA) — данные могут расходиться с упаковкой.
+  // Продукт из открытой базы (OpenFoodFacts / USDA) или AI-оценка по названию — данные
+  // могут расходиться с упаковкой, стоит предложить сверить и поправить.
   const isExternalBarcodeProduct = (product: Product | null) => {
     const source = String(product?.source || '');
-    return source === 'openfoodfacts' || source.startsWith('usda');
+    return source === 'openfoodfacts' || source.startsWith('usda') || source === 'ai_estimate';
   };
 
   const deleteCustomProduct = async (product: Product) => {
@@ -6519,10 +6520,14 @@ export default function App() {
               )}
             </div>
 
-            {amountEntryContext?.source === 'barcode' && isExternalBarcodeProduct(selectedProductForAmount) && (
-              <div className={`rounded-xl p-3 text-[12px] ${selectedProductForAmount.needsReview ? 'bg-amber-500/10 border border-amber-500/30 text-amber-400' : 'bg-zinc-800/60 border border-zinc-700 text-zinc-400'}`}>
+            {amountEntryContext?.source === 'barcode' && isExternalBarcodeProduct(selectedProductForAmount) && (() => {
+              const isAiEst = selectedProductForAmount.isAiEstimated || selectedProductForAmount.source === 'ai_estimate';
+              return (
+              <div className={`rounded-xl p-3 text-[12px] ${(selectedProductForAmount.needsReview || isAiEst) ? 'bg-amber-500/10 border border-amber-500/30 text-amber-400' : 'bg-zinc-800/60 border border-zinc-700 text-zinc-400'}`}>
                 <p>
-                  {selectedProductForAmount.needsReview
+                  {isAiEst
+                    ? `Точных данных по штрих-коду не нашлось — это приблизительная AI-оценка по названию: ${Math.round(selectedProductForAmount.calories)} ккал · Б ${fmtMacro(selectedProductForAmount.protein)} · Ж ${fmtMacro(selectedProductForAmount.fat)} · У ${fmtMacro(selectedProductForAmount.carbs)} (на 100 г). Сверьте с упаковкой и поправьте.`
+                    : selectedProductForAmount.needsReview
                     ? 'Нутриенты из открытой базы выглядят неполными или противоречивыми. Сверьте с упаковкой и поправьте.'
                     : `Данные из открытой базы: ${Math.round(selectedProductForAmount.calories)} ккал · Б ${fmtMacro(selectedProductForAmount.protein)} · Ж ${fmtMacro(selectedProductForAmount.fat)} · У ${fmtMacro(selectedProductForAmount.carbs)} (на 100 г). Не совпадает с упаковкой — поправьте.`}
                 </p>
@@ -6533,7 +6538,8 @@ export default function App() {
                   <Pencil size={13} /> Поправить нутриенты
                 </button>
               </div>
-            )}
+              );
+            })()}
 
             <div className="flex items-center justify-center gap-4">
               <input

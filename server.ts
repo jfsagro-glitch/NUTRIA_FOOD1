@@ -863,6 +863,41 @@ function fallbackUsdaEnglishQuery(query: string): string {
   return dictionary.find(([russian]) => normalized.includes(russian))?.[1] || query;
 }
 
+// Единый AI-фоллбэк «оценка КБЖУ по названию». Когда точных данных нет (продукта нет
+// в каталоге при поиске, либо штрихкод дал только название без нутриентов) — оцениваем
+// пищевую ценность на 100 г через AI. Работает на текущих AI-ключах (доп. затрат нет) и
+// закрывает товары, которых нет в открытых базах с нутриентами — это особенно актуально
+// для российских товаров. Возвращает распарсенную оценку (name/КБЖУ/микроэлементы/
+// explanation) или null. Значения приблизительные — вызывающий код помечает их как оценку.
+async function aiEstimateNutrientsByName(name: string): Promise<any | null> {
+  const query = String(name || "").trim();
+  if (!query) return null;
+  try {
+    const estimateResponseText = await withTimeout(generateAI(`Пользователь ищет продукт: "${query}".
+Точного совпадения в базе нет.
+Оцени пищевую ценность для 100 г и верни только JSON:
+{
+  "name": "Название на русском",
+  "calories": number,
+  "protein": number,
+  "fat": number,
+  "carbs": number,
+  "fiber": number,
+  "vitamins": { "BetaCarotene": number, "B1": number, "B2": number, "B5": number, "B6": number, "B9": number, "B12": number, "C": number, "A": number, "D": number, "E": number, "K": number, "B3": number, "Biotin": number, "Choline": number },
+  "minerals": { "Potassium": number, "Calcium": number, "Magnesium": number, "Sodium": number, "Phosphorus": number, "Iron": number, "Iodine": number, "Manganese": number, "Copper": number, "Selenium": number, "Chromium": number, "Zinc": number },
+  "fattyAcids": { "Omega3": number, "Omega6": number, "Omega9": number, "TransFats": number, "Cholesterol": number },
+  "carbohydrateTypes": { "Glucose": number, "Fructose": number, "Galactose": number, "Sucrose": number, "Lactose": number, "Maltose": number, "Starch": number, "Fiber": number },
+  "aminoAcids": { "Alanine": number, "Arginine": number, "Asparagine": number, "AsparticAcid": number, "Valine": number, "Histidine": number, "Glycine": number, "Glutamine": number, "GlutamicAcid": number, "Isoleucine": number, "Leucine": number, "Lysine": number, "Methionine": number, "Proline": number, "Serine": number, "Tyrosine": number, "Threonine": number, "Tryptophan": number, "Phenylalanine": number, "Cysteine": number },
+  "explanation": "Коротко почему такие значения"
+}`), 8000, "AI estimate");
+    const estimateData = parseAiJsonPayload(estimateResponseText || "{}");
+    return estimateData?.name ? estimateData : null;
+  } catch (e) {
+    logError("AI Estimation error:", e);
+    return null;
+  }
+}
+
 async function searchProductsEngine(query: string, options: ProductSearchOptions = {}) {
   const normalizedInput = String(query || "").trim();
   if (!normalizedInput) return [] as any[];
@@ -1023,48 +1058,27 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
   let finalResults = scoredCandidates.slice(0, 15);
 
   if (allowAiEstimate && (finalResults.length === 0 || numberOrZero(finalResults[0]?.matchScore) < 0.6)) {
-    try {
-      const estimateResponseText = await withTimeout(generateAI(`Пользователь ищет продукт: "${normalizedInput}".
-Точного совпадения в базе нет.
-Оцени пищевую ценность для 100 г и верни только JSON:
-{
-  "name": "Название на русском",
-  "calories": number,
-  "protein": number,
-  "fat": number,
-  "carbs": number,
-  "fiber": number,
-  "vitamins": { "BetaCarotene": number, "B1": number, "B2": number, "B5": number, "B6": number, "B9": number, "B12": number, "C": number, "A": number, "D": number, "E": number, "K": number, "B3": number, "Biotin": number, "Choline": number },
-  "minerals": { "Potassium": number, "Calcium": number, "Magnesium": number, "Sodium": number, "Phosphorus": number, "Iron": number, "Iodine": number, "Manganese": number, "Copper": number, "Selenium": number, "Chromium": number, "Zinc": number },
-  "fattyAcids": { "Omega3": number, "Omega6": number, "Omega9": number, "TransFats": number, "Cholesterol": number },
-  "carbohydrateTypes": { "Glucose": number, "Fructose": number, "Galactose": number, "Sucrose": number, "Lactose": number, "Maltose": number, "Starch": number, "Fiber": number },
-  "aminoAcids": { "Alanine": number, "Arginine": number, "Asparagine": number, "AsparticAcid": number, "Valine": number, "Histidine": number, "Glycine": number, "Glutamine": number, "GlutamicAcid": number, "Isoleucine": number, "Leucine": number, "Lysine": number, "Methionine": number, "Proline": number, "Serine": number, "Tyrosine": number, "Threonine": number, "Tryptophan": number, "Phenylalanine": number, "Cysteine": number },
-  "explanation": "Коротко почему такие значения"
-}`), 8000, "AI estimate");
-      const estimateData = parseAiJsonPayload(estimateResponseText || "{}");
-      if (estimateData?.name) {
-        finalResults.unshift({
-          id: `ai-est-${Date.now()}`,
-          name: `✨ ${estimateData.name} (AI Оценка)`,
-          brand: "AI Nutria Engine",
-          calories: numberOrZero(estimateData.calories),
-          protein: numberOrZero(estimateData.protein),
-          fat: numberOrZero(estimateData.fat),
-          carbs: numberOrZero(estimateData.carbs),
-          fiber: numberOrZero(estimateData.fiber),
-          vitamins: estimateData.vitamins || {},
-          minerals: estimateData.minerals || {},
-          aminoAcids: estimateData.aminoAcids || {},
-          fattyAcids: estimateData.fattyAcids || {},
-          carbohydrateTypes: estimateData.carbohydrateTypes || {},
-          isAiEstimated: true,
-          explanation: estimateData.explanation,
-          matchScore: 0.95,
-          source: "ai",
-        });
-      }
-    } catch (e) {
-      logError("AI Estimation error:", e);
+    const estimateData = await aiEstimateNutrientsByName(normalizedInput);
+    if (estimateData?.name) {
+      finalResults.unshift({
+        id: `ai-est-${Date.now()}`,
+        name: `✨ ${estimateData.name} (AI Оценка)`,
+        brand: "AI Nutria Engine",
+        calories: numberOrZero(estimateData.calories),
+        protein: numberOrZero(estimateData.protein),
+        fat: numberOrZero(estimateData.fat),
+        carbs: numberOrZero(estimateData.carbs),
+        fiber: numberOrZero(estimateData.fiber),
+        vitamins: estimateData.vitamins || {},
+        minerals: estimateData.minerals || {},
+        aminoAcids: estimateData.aminoAcids || {},
+        fattyAcids: estimateData.fattyAcids || {},
+        carbohydrateTypes: estimateData.carbohydrateTypes || {},
+        isAiEstimated: true,
+        explanation: estimateData.explanation,
+        matchScore: 0.95,
+        source: "ai",
+      });
     }
   }
 
@@ -2399,6 +2413,10 @@ async function upsertProductFromBarcodeLookup(product: any) {
         fat: numberOrZero(product.fat),
         carbs: numberOrZero(product.carbs),
         fiber: numberOrZero(product.fiber),
+        // Сохраняем источник (openfoodfacts/usda_branded/ai_estimate), иначе запись
+        // получала бы дефолтный "catalog" и приложение не понимало бы, что данные из
+        // открытой базы/AI-оценки и их стоит предложить сверить с упаковкой.
+        source: product.source ? String(product.source) : "catalog",
         micronutrients
       }
     });
@@ -2471,7 +2489,54 @@ async function fetchUsdaBrandedProduct(barcode: string) {
   }
 }
 
-// Единая цепочка источников для штрихкода: кэш -> локальная база -> OpenFoodFacts -> USDA Branded (по API, без бакового импорта).
+function isBarcodeProductNutritionallyEmpty(product: any): boolean {
+  const macros = numberOrZero(product?.protein) + numberOrZero(product?.fat) + numberOrZero(product?.carbs);
+  return numberOrZero(product?.calories) <= 0 && macros <= 0;
+}
+
+// Штрихкод дал название, но нутриенты пустые — частый случай российских товаров в
+// открытых базах (карточка есть, КБЖУ нет). Бесплатный фоллбэк: дооцениваем КБЖУ по
+// названию через AI (на текущих ключах, без внешних платных каталогов) и помечаем как
+// приблизительную оценку, чтобы приложение предложило сверить с упаковкой. Не оцениваем,
+// если нутриенты уже есть или название — заглушка вида "Product 460..." (оценивать нечего).
+async function enrichBarcodeProductWithAiEstimate(product: any): Promise<any> {
+  if (!product || !isBarcodeProductNutritionallyEmpty(product)) return product;
+  const name = String(product.name || "").trim();
+  if (!name || /^product\s+\d/i.test(name)) return product;
+
+  const est = await aiEstimateNutrientsByName(name);
+  if (!est) return product;
+
+  const fiber = numberOrZero(est.fiber);
+  return {
+    ...product,
+    calories: numberOrZero(est.calories),
+    protein: numberOrZero(est.protein),
+    fat: numberOrZero(est.fat),
+    carbs: numberOrZero(est.carbs),
+    fiber,
+    micronutrients: JSON.stringify(buildCompleteMicronutrients(est, fiber)),
+    source: "ai_estimate",
+    isAiEstimated: true,
+    needsReview: true,
+    explanation: est.explanation || "Приблизительная AI-оценка по названию — сверьте с упаковкой.",
+  };
+}
+
+// Собираем ответ по штрихкоду: сохранённая запись теряет эфемерные флаги (needsReview,
+// isAiEstimated, explanation — это не колонки БД), поэтому переносим их с исходного продукта.
+function buildBarcodeResponseProduct(persisted: any, sourceProduct: any) {
+  const base = persisted || sourceProduct;
+  return {
+    ...base,
+    needsReview: sourceProduct.needsReview,
+    isAiEstimated: sourceProduct.isAiEstimated,
+    explanation: sourceProduct.explanation,
+  };
+}
+
+// Единая цепочка источников для штрихкода: кэш -> локальная база -> OpenFoodFacts ->
+// USDA Branded -> AI-оценка КБЖУ по названию (если источник дал только название).
 async function resolveBarcodeProduct(candidates: string[]) {
   const cached = getCachedBarcodeProduct(candidates);
   if (cached) return { product: cached, isNew: false };
@@ -2487,18 +2552,18 @@ async function resolveBarcodeProduct(candidates: string[]) {
   for (const candidate of candidates) {
     const offProduct = await fetchOpenFoodFactsProduct(candidate);
     if (offProduct) {
-      const persisted = await upsertProductFromBarcodeLookup(offProduct);
-      // persisted — это строка из БД без поля needsReview; переносим флаг с исходной
-      // OFF-записи, чтобы приложение и после сохранения знало, что данные под вопросом.
-      const responseProduct = persisted ? { ...persisted, needsReview: offProduct.needsReview } : offProduct;
+      const enriched = await enrichBarcodeProductWithAiEstimate(offProduct);
+      const persisted = await upsertProductFromBarcodeLookup(enriched);
+      const responseProduct = buildBarcodeResponseProduct(persisted, enriched);
       cacheBarcodeProduct(candidates, responseProduct);
       return { product: responseProduct, isNew: true };
     }
 
     const usdaProduct = await fetchUsdaBrandedProduct(candidate);
     if (usdaProduct) {
-      const persisted = await upsertProductFromBarcodeLookup(usdaProduct);
-      const responseProduct = persisted || usdaProduct;
+      const enriched = await enrichBarcodeProductWithAiEstimate(usdaProduct);
+      const persisted = await upsertProductFromBarcodeLookup(enriched);
+      const responseProduct = buildBarcodeResponseProduct(persisted, enriched);
       cacheBarcodeProduct(candidates, responseProduct);
       return { product: responseProduct, isNew: true };
     }
