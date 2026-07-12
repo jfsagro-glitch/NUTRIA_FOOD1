@@ -2296,32 +2296,75 @@ function normalizeOpenFoodFactsProduct(rawProduct: any, barcode: string) {
   };
 }
 
-async function fetchOpenFoodFactsProduct(barcode: string) {
-  const apiUrls = [
-    `https://ru.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?lc=${BARCODE_PREFERRED_LANG}&cc=${BARCODE_PREFERRED_COUNTRY}`,
-    `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?lc=${BARCODE_PREFERRED_LANG}&cc=${BARCODE_PREFERRED_COUNTRY}`
-  ];
+async function fetchOffRawProduct(url: string) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BARCODE_LOOKUP_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) return null;
+    const payload: any = await response.json().catch(() => null);
+    if (!payload || payload.status !== 1 || !payload.product) return null;
+    return payload.product;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
-  for (const url of apiUrls) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), BARCODE_LOOKUP_TIMEOUT_MS);
+// Полная ли карточка OFF: есть осмысленное название и все четыре макроса (ккал/Б/Ж/У).
+// Если да — второй инстанс OFF можно не запрашивать (экономим латентность); если нет —
+// добираем недостающее из другого инстанса (см. mergeOffRawProducts).
+function isOffRawComplete(raw: any): boolean {
+  const nutr = raw?.nutriments || {};
+  const hasName = Boolean(raw?.product_name_ru || raw?.product_name || raw?.generic_name_ru || raw?.generic_name);
+  const kcal = numberOrZero(nutr["energy-kcal_100g"] ?? nutr["energy-kcal"]) || numberOrZero(nutr["energy-kj_100g"] ?? nutr["energy_100g"]);
+  const hasMacros = numberOrZero(nutr["proteins_100g"]) > 0 && numberOrZero(nutr["fat_100g"]) > 0 && numberOrZero(nutr["carbohydrates_100g"]) > 0;
+  return hasName && kcal > 0 && hasMacros;
+}
 
-    try {
-      const response = await fetch(url, { signal: controller.signal });
-      if (!response.ok) continue;
-
-      const payload: any = await response.json().catch(() => null);
-      if (!payload || payload.status !== 1 || !payload.product) continue;
-
-      return normalizeOpenFoodFactsProduct(payload.product, barcode);
-    } catch {
-      // try next endpoint
-    } finally {
-      clearTimeout(timer);
+// Склейка нескольких карточек OFF (ru + world) в самую полную: имя/бренд — первое
+// непустое (с приоритетом русских полей за счёт порядка), нутриенты — поле за полем,
+// причём пустое или нулевое значение можно заменить осмысленным из другого инстанса
+// (в OFF отсутствующий нутриент часто приходит как 0). Инстансы OFF нередко содержат
+// разные по полноте карточки одного товара, и раньше бралась просто первая ответившая.
+function mergeOffRawProducts(raws: any[]): any {
+  const merged: any = { nutriments: {} };
+  const scalarKeys = ["product_name_ru", "product_name", "generic_name_ru", "generic_name", "brands"];
+  for (const raw of raws) {
+    if (!raw) continue;
+    for (const key of scalarKeys) {
+      if (!merged[key] && raw[key]) merged[key] = raw[key];
+    }
+    const nutr = raw.nutriments || {};
+    for (const [k, v] of Object.entries(nutr)) {
+      if (v === undefined || v === null || v === "") continue;
+      const cur = merged.nutriments[k];
+      const curNum = Number(cur);
+      const vNum = Number(v);
+      const curEmpty = cur === undefined || cur === null || cur === "";
+      if (curEmpty || (curNum === 0 && Number.isFinite(vNum) && vNum !== 0)) {
+        merged.nutriments[k] = v;
+      }
     }
   }
+  return merged;
+}
 
-  return null;
+async function fetchOpenFoodFactsProduct(barcode: string) {
+  const ruUrl = `https://ru.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?lc=${BARCODE_PREFERRED_LANG}&cc=${BARCODE_PREFERRED_COUNTRY}`;
+  const worldUrl = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?lc=${BARCODE_PREFERRED_LANG}&cc=${BARCODE_PREFERRED_COUNTRY}`;
+
+  const ruRaw = await fetchOffRawProduct(ruUrl);
+  // Второй инстанс запрашиваем, только если русская карточка отсутствует или неполная —
+  // тогда объединяем обе в максимально полную запись.
+  const worldRaw = (!ruRaw || !isOffRawComplete(ruRaw)) ? await fetchOffRawProduct(worldUrl) : null;
+
+  const raws = [ruRaw, worldRaw].filter(Boolean);
+  if (raws.length === 0) return null;
+
+  const source = raws.length === 1 ? raws[0] : mergeOffRawProducts(raws);
+  return normalizeOpenFoodFactsProduct(source, barcode);
 }
 
 async function upsertProductFromBarcodeLookup(product: any) {
