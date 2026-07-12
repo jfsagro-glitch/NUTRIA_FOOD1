@@ -898,6 +898,19 @@ async function aiEstimateNutrientsByName(name: string): Promise<any | null> {
   }
 }
 
+// Оценка микроэлементов (витамины/минералы/клетчатка/аминокислоты/жирные кислоты) по
+// названию продукта — для ручного ввода/правки, где пользователь указывает только КБЖУ,
+// а микроэлементы остаются пустыми (в карточке «% дневной нормы» — сплошные нули).
+// Возвращает готовую JSON-строку micronutrients и клетчатку, либо null (AI недоступен —
+// тогда сохраняем без микроэлементов, как раньше). Макросы (ккал/Б/Ж/У) не трогаем — их
+// ввёл пользователь; дозаполняем только микроэлементы, помечая всё как приблизительное.
+async function estimateMicronutrientsByName(name: string): Promise<{ micronutrients: string; fiber: number } | null> {
+  const est = await aiEstimateNutrientsByName(name);
+  if (!est) return null;
+  const fiber = numberOrZero(est.fiber);
+  return { micronutrients: JSON.stringify(buildCompleteMicronutrients(est, fiber)), fiber };
+}
+
 async function searchProductsEngine(query: string, options: ProductSearchOptions = {}) {
   const normalizedInput = String(query || "").trim();
   if (!normalizedInput) return [] as any[];
@@ -2862,6 +2875,9 @@ export async function createApp(): Promise<express.Express> {
 
     try {
       const existing = await prisma.product.findFirst({ where: { barcode: { in: candidates } } });
+      // Пользователь правит только КБЖУ — микроэлементы дооцениваем по названию через AI,
+      // чтобы выверенная карточка была полной, а не с нулевыми витаминами/минералами.
+      const micro = await estimateMicronutrientsByName(String(name));
       const data = {
         name: String(name),
         brand: brand ? String(brand) : null,
@@ -2871,6 +2887,7 @@ export async function createApp(): Promise<express.Express> {
         carbs: numberOrZero(carbs),
         source: "catalog",
         createdByUserId: userId,
+        ...(micro ? { micronutrients: micro.micronutrients, fiber: micro.fiber } : {}),
       };
       const product = existing
         ? await prisma.product.update({ where: { id: existing.id }, data })
@@ -3193,8 +3210,14 @@ export async function createApp(): Promise<express.Express> {
     }
 
     try {
+      // Пользователь вводит только КБЖУ — микроэлементы дооцениваем по названию через AI,
+      // чтобы карточка не была наполовину пустой (иначе «% дневной нормы» — сплошные нули).
+      const micro = await estimateMicronutrientsByName(String(name));
       const product = await prisma.product.create({
-        data: { name, brand, barcode, calories, protein, fat, carbs, source: "user", createdByUserId: userId }
+        data: {
+          name, brand, barcode, calories, protein, fat, carbs, source: "user", createdByUserId: userId,
+          ...(micro ? { micronutrients: micro.micronutrients, fiber: micro.fiber } : {}),
+        }
       });
       res.json(product);
     } catch (e: any) {
@@ -3226,9 +3249,15 @@ export async function createApp(): Promise<express.Express> {
     }
 
     try {
+      // Название могло измениться — пересобираем микроэлементы по новому названию (AI),
+      // сохраняя введённые пользователем КБЖУ.
+      const micro = await estimateMicronutrientsByName(String(name));
       const product = await prisma.product.update({
         where: { id },
-        data: { name, brand, barcode, calories, protein, fat, carbs }
+        data: {
+          name, brand, barcode, calories, protein, fat, carbs,
+          ...(micro ? { micronutrients: micro.micronutrients, fiber: micro.fiber } : {}),
+        }
       });
       res.json(product);
     } catch (e: any) {
