@@ -909,7 +909,7 @@ function fallbackUsdaEnglishQuery(query: string): string {
   const dictionary: Array<[string, string]> = [
     ["куриная грудка", "chicken breast"], ["куриное филе", "chicken breast"],
     ["яйцо", "egg whole"], ["творог", "cottage cheese"], ["гречка", "buckwheat cooked"],
-    ["овсянка", "oatmeal cooked"], ["молоко", "milk whole"], ["говядина", "beef cooked"],
+    ["овсяные хлопья", "rolled oats"], ["овсянка", "oatmeal cooked"], ["молоко", "milk whole"], ["говядина", "beef cooked"],
     ["лосось", "salmon cooked"], ["семга", "salmon cooked"], ["банан", "banana raw"],
     ["яблоко", "apple raw"], ["авокадо", "avocado raw"], ["рис", "rice cooked"],
     ["картофель", "potato cooked"], ["помидор", "tomato raw"], ["огурец", "cucumber raw"],

@@ -8,7 +8,7 @@
     { "id": "avocado", "query": "авокадо", "aliases": ["авокадо", "avocado"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"] },
     { "id": "banana", "query": "банан", "aliases": ["банан", "banana"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"] },
     { "id": "cottage-cheese", "query": "творог 5%", "aliases": ["творог 5", "cottage cheese"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"] },
-    { "id": "oats", "query": "овсяные хлопья", "aliases": ["овсяные хлопья", "овсянка", "oats"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"] }
+    { "id": "oats", "query": "овсяные хлопья", "aliases": ["овсяные хлопья", "овсянка", "rolled oats", "oats"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"] }
   ],
   "voice": [
     {
