@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import { createApp, NUTRIA_API_CONTRACT_VERSION, withNutritionContract } from "../server.ts";
+import { createApp, isLexicallyCompatibleFood, NUTRIA_API_CONTRACT_VERSION, withNutritionContract } from "../server.ts";
 
 // Тесты используют in-memory режим сервера (DATABASE_URL не задан в тестовой среде),
 // поэтому проверяют только маршруты, у которых есть fallback без реальной БД.
@@ -68,6 +68,15 @@ describe("nutrition contract", () => {
       vitamins: "usda_fdc",
       minerals: "usda_fdc",
     });
+  });
+});
+
+describe("food match guard", () => {
+  it("keeps compatible foods and rejects category-changing false matches", () => {
+    expect(isLexicallyCompatibleFood("рис", "Рис белый варёный")).toBe(true);
+    expect(isLexicallyCompatibleFood("рис", "Мука рисовая коричневая")).toBe(false);
+    expect(isLexicallyCompatibleFood("овсянка", "Соленая свинина, бекон")).toBe(false);
+    expect(isLexicallyCompatibleFood("молоко", "Просо, цельное зерно")).toBe(false);
   });
 });
 

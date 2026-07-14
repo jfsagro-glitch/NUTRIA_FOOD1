@@ -411,6 +411,31 @@ function computeTextSimilarity(left: any, right: any) {
   return Math.max(0, Math.min(1, charSimilarity * 0.55 + tokenSimilarity * 0.45 + containsBoost));
 }
 
+const FOOD_CATEGORY_CONFLICTS: Record<string, string[]> = {
+  "рис": ["мука", "лапша", "хлеб", "крекер"],
+  "rice": ["flour", "noodle", "bread", "cracker"],
+  "овсян": ["свинин", "бекон"],
+  "oat": ["pork", "bacon"],
+  "молок": ["просо"],
+  "milk": ["millet"],
+};
+
+export function isLexicallyCompatibleFood(query: any, candidateName: any) {
+  const queryTokens = Array.from(textTokenSet(query));
+  const candidateTokens = Array.from(textTokenSet(candidateName));
+  if (!queryTokens.length || !candidateTokens.length) return false;
+  const queryStems = queryTokens.map((token) => stemRussianToken(token) || token);
+  const candidateStems = candidateTokens.map((token) => stemRussianToken(token) || token);
+  const hasOverlap = queryStems.some((queryStem) => candidateStems.some((candidateStem) =>
+    queryStem === candidateStem || queryStem.startsWith(candidateStem) || candidateStem.startsWith(queryStem)
+  ));
+  const hasConflict = Object.entries(FOOD_CATEGORY_CONFLICTS).some(([queryPart, conflicts]) =>
+    queryStems.some((token) => token.startsWith(queryPart) || queryPart.startsWith(token))
+      && candidateStems.some((token) => conflicts.some((conflict) => token.startsWith(conflict)))
+  );
+  return !hasConflict && (hasOverlap || computeTextSimilarity(query, candidateName) >= 0.6);
+}
+
 // Лёгкий морфологический стемминг для русских слов. SQL contains — это точное
 // вхождение подстроки, поэтому запрос "креветка" не находит базовый продукт
 // "Креветки": у слов разные окончания (-а / -и), и одно не является подстрокой
@@ -1078,7 +1103,9 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
   }
 
   const allCandidates = [...parsedLocal, ...usdaProducts];
-  const scoredCandidates = allCandidates.map((candidate) => {
+  const scoredCandidates = allCandidates.filter((candidate) =>
+    !fast || isLexicallyCompatibleFood(normalizedInput, candidate.name)
+  ).map((candidate) => {
     const similarity = Math.max(
       computeTextSimilarity(normalizedInput, candidate.name),
       computeTextSimilarity(normalizedQuery, candidate.name),
@@ -1092,7 +1119,11 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
     // (прошли предфильтр и порог MIN_RELEVANT_SCORE), поэтому нерелевантный базовый
     // продукт наверх не всплывёт.
     const baseBoost = isBaseProductCandidate(candidate) ? 0.15 : 0;
-    const finalScore = Math.max(0, Math.min(1, similarity + sourceBoost + baseBoost));
+    const queryTokenCount = textTokenSet(normalizedInput).size;
+    const candidateTokenCount = textTokenSet(candidate.name).size;
+    const specificityPenalty = Math.min(0.2, Math.max(0, candidateTokenCount - queryTokenCount) * 0.035);
+    const exactPhraseBoost = normalizeComparableText(candidate.name) === normalizeComparableText(normalizedInput) ? 0.2 : 0;
+    const finalScore = Math.max(0, Math.min(1, similarity + sourceBoost + baseBoost + exactPhraseBoost - specificityPenalty));
     return { ...candidate, matchScore: finalScore };
   });
 
