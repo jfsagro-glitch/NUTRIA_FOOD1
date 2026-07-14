@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import { createApp } from "../server.ts";
+import { createApp, NUTRIA_API_CONTRACT_VERSION, withNutritionContract } from "../server.ts";
 
 // Тесты используют in-memory режим сервера (DATABASE_URL не задан в тестовой среде),
 // поэтому проверяют только маршруты, у которых есть fallback без реальной БД.
@@ -23,6 +23,10 @@ async function loginCookie(): Promise<string> {
 }
 
 describe("auth", () => {
+  it("API advertises the Nutria contract version", async () => {
+    const res = await request(app).get("/api/auth/me");
+    expect(res.headers["x-nutria-contract-version"]).toBe(String(NUTRIA_API_CONTRACT_VERSION));
+  });
   it("GET /api/auth/me без куки возвращает 401", async () => {
     const res = await request(app).get("/api/auth/me");
     expect(res.status).toBe(401);
@@ -41,6 +45,29 @@ describe("auth", () => {
     const res = await request(app).get("/api/auth/me").set("Cookie", cookie);
     expect(res.status).toBe(200);
     expect(res.body.user?.email).toBe("user@nutria.app");
+  });
+});
+
+describe("nutrition contract", () => {
+  it("adds honest source metadata only for populated nutrient groups", () => {
+    const product = withNutritionContract({
+      id: "usda-123",
+      name: "Chicken breast",
+      source: "usda",
+      protein: 31,
+      micronutrients: JSON.stringify({
+        vitamins: { B3: 13.7 },
+        minerals: { Potassium: 256 },
+        aminoAcids: {},
+      }),
+    });
+
+    expect(product.contractVersion).toBe(1);
+    expect(product.nutrientSources).toEqual({
+      macros: "usda_fdc",
+      vitamins: "usda_fdc",
+      minerals: "usda_fdc",
+    });
   });
 });
 

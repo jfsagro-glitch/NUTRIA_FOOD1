@@ -117,6 +117,36 @@ const ruLocalizationCache = new Map<string, { expiresAt: number; value: string }
 const CYRILLIC_RE = /[А-Яа-яЁё]/;
 // Защита от повторных параллельных AI-запросов на докомплектацию микроэлементов одного и того же продукта
 const micronutrientEnrichmentInFlight = new Set<string>();
+export const NUTRIA_API_CONTRACT_VERSION = 1;
+
+function normalizedNutritionSource(source: any) {
+  const value = String(source || "").trim().toLowerCase();
+  if (value.startsWith("usda")) return "usda_fdc";
+  if (value === "openfoodfacts") return "open_food_facts";
+  if (value === "ai" || value === "ai_estimate") return "ai_estimate";
+  if (value === "user" || value === "quickadd") return "user_entered";
+  if (value === "recipe") return "recipe_calculation";
+  return "nutria_catalog";
+}
+
+function hasUsefulContractGroup(group: any) {
+  return Boolean(group && typeof group === "object" && Object.values(group).some((value) => numberOrZero(value) > 0));
+}
+
+export function withNutritionContract(product: any) {
+  if (!product || typeof product !== "object") return product;
+  const source = normalizedNutritionSource(product.source);
+  const micronutrients = buildCompleteMicronutrients(parseMicronutrients(product.micronutrients || product), product.fiber);
+  const nutrientSources: Record<string, string> = { macros: source };
+  for (const group of ["vitamins", "minerals", "aminoAcids", "fattyAcids", "carbohydrateTypes"]) {
+    if (hasUsefulContractGroup(micronutrients[group])) nutrientSources[group] = source;
+  }
+  return {
+    ...product,
+    contractVersion: NUTRIA_API_CONTRACT_VERSION,
+    nutrientSources,
+  };
+}
 
 function getOrCreateInMemoryDiary(userId: string) {
   if (!inMemoryDiary.has(userId)) {
@@ -2687,6 +2717,10 @@ async function generateAI(prompt: string, responseMimeType: string = "applicatio
 export async function createApp(): Promise<express.Express> {
   // ... rest of setup ...
   const app = express();
+  app.use("/api", (_req, res, next) => {
+    res.setHeader("X-Nutria-Contract-Version", String(NUTRIA_API_CONTRACT_VERSION));
+    next();
+  });
 
   // Security-заголовки (helmet). CSP включаем только в production — в dev Vite HMR
   // использует inline-скрипты/websocket, которые пришлось бы отдельно разрешать,
@@ -3106,7 +3140,7 @@ export async function createApp(): Promise<express.Express> {
         localize: true,
         allowAiEstimate: true,
       });
-      res.json(responseResults);
+      res.json(responseResults.map(withNutritionContract));
     } catch (e: any) {
       logError("Products Search Error:", e);
       res.status(500).json({ error: "Products search failed", message: e.message });
@@ -3643,7 +3677,10 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
         mode,
       });
       return res.json({
-        items: recognized.items,
+        items: recognized.items.map((item: any) => ({
+          ...item,
+          product: withNutritionContract(item.product),
+        })),
         dishEstimate: recognized.dishEstimate,
         mode,
         message: recognized.items.length === 0 && !recognized.dishEstimate
@@ -3676,7 +3713,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
         correctedProduct: req.body.correctedProduct,
       });
 
-      return res.json({ success: true, product });
+      return res.json({ success: true, product: withNutritionContract(product) });
     } catch (e: any) {
       logError("Photo correction save error:", e);
       return res.status(500).json({ error: "Failed to save correction", message: e?.message || "Unknown error" });
@@ -4485,7 +4522,10 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       }
     }));
 
-    res.json(matchedItems);
+    res.json(matchedItems.map((item: any) => ({
+      ...item,
+      product: withNutritionContract(item.product),
+    })));
   });
 
   // --- Admin Routes ---
