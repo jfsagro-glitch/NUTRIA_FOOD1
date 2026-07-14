@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
-    "@prisma/client": "^6.4.1",
+    "@prisma/client": "^6.19.3",
     "@sentry/node": "^10.60.0",
     "@tailwindcss/vite": "^4.1.14",
     "@types/bcryptjs": "^2.4.6",
@@ -52,7 +52,7 @@
     "motion": "^12.23.24",
     "multer": "^2.1.0",
     "openai": "^6.25.0",
-    "prisma": "^6.4.1",
+    "prisma": "^6.19.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.5.0",
