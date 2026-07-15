@@ -71,6 +71,51 @@ describe("nutrition contract", () => {
   });
 });
 
+describe("recognition corrections", () => {
+  const correctedProduct = {
+    id: "user-correction-oats",
+    name: "Овсяные хлопья",
+    calories: 366,
+    protein: 12.3,
+    fat: 6.2,
+    carbs: 61.8,
+    source: "manufacturer",
+  };
+
+  it("stores a voice correction through the unified endpoint", async () => {
+    const cookie = await loginCookie();
+    const res = await request(app)
+      .post("/api/recognition/corrections")
+      .set("Cookie", cookie)
+      .send({
+        channel: "voice",
+        sourceName: "овсянка",
+        correctedProductId: correctedProduct.id,
+        correctedProduct,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.channel).toBe("voice");
+    expect(res.body.product.name).toBe(correctedProduct.name);
+  });
+
+  it("keeps the legacy photo endpoint compatible", async () => {
+    const cookie = await loginCookie();
+    const res = await request(app)
+      .post("/api/photo/corrections")
+      .set("Cookie", cookie)
+      .send({
+        sourceName: "хлопья на фото",
+        correctedProductId: correctedProduct.id,
+        correctedProduct,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.channel).toBe("photo");
+  });
+});
+
 describe("food match guard", () => {
   it("keeps compatible foods and rejects category-changing false matches", () => {
     expect(isLexicallyCompatibleFood("рис", "Рис белый варёный")).toBe(true);

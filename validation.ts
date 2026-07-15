@@ -77,8 +77,9 @@ export const photoRecognizeSchema = z.object({
   mode: z.enum(["ingredients", "whole_dish"]).optional(),
 });
 
-export const photoCorrectionSchema = z
+export const recognitionCorrectionSchema = z
   .object({
+    channel: z.enum(["photo", "voice", "diary"]).optional().default("photo"),
     sourceName: z.string().trim().min(1, "Correction payload is incomplete"),
     correctedProductId: z.string().trim().optional(),
     correctedProduct: z.object({ id: z.string().optional() }).passthrough().optional(),
@@ -89,6 +90,9 @@ export const photoCorrectionSchema = z
     message: "Correction payload is incomplete",
     path: ["correctedProductId"],
   });
+
+// Backwards-compatible export for existing web clients.
+export const photoCorrectionSchema = recognitionCorrectionSchema;
 
 export const diaryGoalsSchema = z.object({
   calories: z.coerce.number().positive("Invalid goals payload"),

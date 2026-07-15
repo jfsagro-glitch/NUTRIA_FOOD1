@@ -26,6 +26,7 @@ import {
   recipeImportUrlSchema,
   photoRecognizeSchema,
   photoCorrectionSchema,
+  recognitionCorrectionSchema,
   diaryGoalsSchema,
   diaryWaterSchema,
   activitySchema,
@@ -3727,7 +3728,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
     }
   });
 
-  app.post("/api/photo/corrections", validateBody(photoCorrectionSchema), async (req, res) => {
+  const saveCorrectionHandler = async (req: express.Request, res: express.Response) => {
     const userId = req.signedCookies.token;
     if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -3744,12 +3745,19 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
         correctedProduct: req.body.correctedProduct,
       });
 
-      return res.json({ success: true, product: withNutritionContract(product) });
+      return res.json({
+        success: true,
+        channel: req.body.channel || "photo",
+        product: withNutritionContract(product),
+      });
     } catch (e: any) {
-      logError("Photo correction save error:", e);
+      logError("Recognition correction save error:", e);
       return res.status(500).json({ error: "Failed to save correction", message: e?.message || "Unknown error" });
     }
-  });
+  };
+
+  app.post("/api/recognition/corrections", validateBody(recognitionCorrectionSchema), saveCorrectionHandler);
+  app.post("/api/photo/corrections", validateBody(photoCorrectionSchema), saveCorrectionHandler);
 
   // Diary: Get daily meals and aggregates
   app.get("/api/diary", async (req, res) => {
@@ -4466,6 +4474,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
   // Voice: Parse transcript into food items
   app.post("/api/voice/parse", validateBody(voiceParseSchema), async (req, res) => {
     const { transcript } = req.body;
+    const userId = req.signedCookies.token;
 
     const buildDecompositionPrompt = (reinforce: boolean) => `Пользователь записал голосовую заметку о приёме пищи: "${transcript}".
 
@@ -4535,6 +4544,23 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       if (!itemName) return { name: itemName, amount, product: null };
 
       try {
+        const correction = await findRecognitionCorrectionMatch(userId, {
+          name: itemName,
+          amount,
+          aliases: [],
+          searchHints: [],
+          visibleText: [],
+          barcodeCandidates: [],
+        });
+        if (correction?.correctedProduct) {
+          return {
+            name: itemName,
+            amount,
+            product: correction.correctedProduct,
+            matchedBy: "correction",
+          };
+        }
+
         const candidates = await withTimeout(
           searchProductsEngine(itemName, {
             limit: 1,
