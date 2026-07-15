@@ -117,7 +117,7 @@ const RU_LOCALIZATION_CACHE_TTL_MS = Number(process.env.RU_LOCALIZATION_CACHE_TT
 const ruLocalizationCache = new Map<string, { expiresAt: number; value: string }>();
 const CYRILLIC_RE = /[А-Яа-яЁё]/;
 // Защита от повторных параллельных AI-запросов на докомплектацию микроэлементов одного и того же продукта
-const micronutrientEnrichmentInFlight = new Set<string>();
+let micronutrientQueueWorkerRunning = false;
 export const NUTRIA_API_CONTRACT_VERSION = 1;
 
 function normalizedNutritionSource(source: any) {
@@ -137,10 +137,14 @@ function hasUsefulContractGroup(group: any) {
 export function withNutritionContract(product: any) {
   if (!product || typeof product !== "object") return product;
   const source = normalizedNutritionSource(product.source);
-  const micronutrients = buildCompleteMicronutrients(parseMicronutrients(product.micronutrients || product), product.fiber);
+  const rawMicronutrients = parseMicronutrients(product.micronutrients || product);
+  const micronutrients = buildCompleteMicronutrients(rawMicronutrients, product.fiber);
+  const storedSources = rawMicronutrients?.nutrientSources || {};
   const nutrientSources: Record<string, string> = { macros: source };
   for (const group of ["vitamins", "minerals", "aminoAcids", "fattyAcids", "carbohydrateTypes"]) {
-    if (hasUsefulContractGroup(micronutrients[group])) nutrientSources[group] = source;
+    if (hasUsefulContractGroup(micronutrients[group])) {
+      nutrientSources[group] = String(storedSources[group] || source);
+    }
   }
   return {
     ...product,
@@ -1983,7 +1987,7 @@ async function fetchUsdaMicronutrientsByName(productName: string) {
       `https://api.nal.usda.gov/fdc/v1/foods/search?api_key=${usdaKey}&query=${encodeURIComponent(englishQuery)}&dataType=${encodeURIComponent("Foundation,SR Legacy")}&pageSize=5`,
       { signal: AbortSignal.timeout(8000) }
     );
-    if (!response.ok) return null;
+    if (!response.ok) throw new Error(`USDA FDC returned HTTP ${response.status}`);
     const payload: any = await response.json();
     const foods = Array.isArray(payload?.foods) ? payload.foods : [];
     // Предпочитаем запись с аминокислотным профилем (id нутриентов 1210–1229) — именно
@@ -1997,7 +2001,7 @@ async function fetchUsdaMicronutrientsByName(productName: string) {
     return extractUsdaExtendedNutrients(food);
   } catch (e) {
     logError("USDA micronutrient lookup error:", e);
-    return null;
+    throw e;
   }
 }
 
@@ -2006,51 +2010,139 @@ async function fetchUsdaMicronutrientsByName(productName: string) {
 // добираем данные и сохраняем в Product.micronutrients. Приоритет источников:
 // сначала точные значения из USDA FDC, и только для групп, оставшихся пустыми, —
 // AI-оценка. Уже заполненные группы не перезаписываются.
-async function enrichProductMicronutrientsInBackground(product: { id: string; name: string; fiber?: number | null; micronutrients?: any }) {
-  if (!isDatabaseConfigured() || micronutrientEnrichmentInFlight.has(product.id)) return;
-  micronutrientEnrichmentInFlight.add(product.id);
+async function enrichProductMicronutrients(product: { id: string; name: string; fiber?: number | null; micronutrients?: any }) {
+  const existingRaw = parseMicronutrients(product.micronutrients);
+  const existingMicro = buildCompleteMicronutrients(existingRaw, product.fiber);
+  const merged: Record<string, Record<string, number>> = JSON.parse(JSON.stringify(existingMicro));
+  const nutrientSources: Record<string, string> = { ...(existingRaw?.nutrientSources || {}) };
+  let changed = false;
 
-  try {
-    const existingMicro = buildCompleteMicronutrients(parseMicronutrients(product.micronutrients), product.fiber);
-    const merged: Record<string, Record<string, number>> = JSON.parse(JSON.stringify(existingMicro));
-    let changed = false;
+  const usdaMicro = await fetchUsdaMicronutrientsByName(product.name);
+  if (usdaMicro) {
+    const usdaComplete = buildCompleteMicronutrients(usdaMicro, product.fiber);
+    for (const groupKey of Object.keys(merged)) {
+      if (!hasAnyPositiveValue(merged[groupKey]) && hasAnyPositiveValue((usdaComplete as any)[groupKey])) {
+        merged[groupKey] = (usdaComplete as any)[groupKey];
+        nutrientSources[groupKey] = "usda_fdc";
+        changed = true;
+      }
+    }
+  }
 
-    const usdaMicro = await fetchUsdaMicronutrientsByName(product.name);
-    if (usdaMicro) {
-      const usdaComplete = buildCompleteMicronutrients(usdaMicro, product.fiber);
+  // Группы, для которых и в USDA ничего не нашлось, добираем AI-оценкой —
+  // менее точно, но лучше нулей.
+  if (hasEmptyMicronutrientGroup(merged as any)) {
+    const estimatedMicro = await estimateMicronutrientsWithAI(product);
+    if (estimatedMicro) {
       for (const groupKey of Object.keys(merged)) {
-        if (!hasAnyPositiveValue(merged[groupKey]) && hasAnyPositiveValue((usdaComplete as any)[groupKey])) {
-          merged[groupKey] = (usdaComplete as any)[groupKey];
+        if (!hasAnyPositiveValue(merged[groupKey]) && hasAnyPositiveValue((estimatedMicro as any)[groupKey])) {
+          merged[groupKey] = (estimatedMicro as any)[groupKey];
+          nutrientSources[groupKey] = "ai_estimate";
           changed = true;
         }
       }
     }
-
-    // Группы, для которых и в USDA ничего не нашлось, добираем AI-оценкой —
-    // менее точно, но лучше нулей.
-    if (hasEmptyMicronutrientGroup(merged as any)) {
-      const estimatedMicro = await estimateMicronutrientsWithAI(product);
-      if (estimatedMicro) {
-        for (const groupKey of Object.keys(merged)) {
-          if (!hasAnyPositiveValue(merged[groupKey]) && hasAnyPositiveValue((estimatedMicro as any)[groupKey])) {
-            merged[groupKey] = (estimatedMicro as any)[groupKey];
-            changed = true;
-          }
-        }
-      }
-    }
-
-    if (!changed) return;
-
-    await prisma.product.update({
-      where: { id: product.id },
-      data: { micronutrients: JSON.stringify(merged) },
-    });
-  } catch (e) {
-    logError("Background micronutrient enrichment error:", e);
-  } finally {
-    micronutrientEnrichmentInFlight.delete(product.id);
   }
+
+  if (!changed) return false;
+
+  await prisma.product.update({
+    where: { id: product.id },
+    data: { micronutrients: JSON.stringify({ ...merged, nutrientSources }) },
+  });
+  return true;
+}
+
+export function micronutrientRetryDelayMs(attempt: number) {
+  return Math.min(60 * 60 * 1000, 60 * 1000 * 2 ** Math.max(0, attempt - 1));
+}
+
+async function enqueueMicronutrientEnrichment(productId: string, force = false) {
+  if (!isDatabaseConfigured() || !productId) return false;
+  const jobs = (prisma as any).micronutrientEnrichmentJob;
+  const existing = await jobs.findUnique({ where: { productId } });
+  if (existing && !force && ["PENDING", "RETRY", "PROCESSING", "COMPLETED"].includes(existing.status)) {
+    return false;
+  }
+
+  await jobs.upsert({
+    where: { productId },
+    update: {
+      status: "PENDING",
+      attempts: 0,
+      nextAttemptAt: new Date(),
+      lockedAt: null,
+      lastError: null,
+      completedAt: null,
+    },
+    create: { productId },
+  });
+  return true;
+}
+
+async function enrichProductMicronutrientsInBackground(product: { id: string }) {
+  return enqueueMicronutrientEnrichment(product.id);
+}
+
+async function processNextMicronutrientJob() {
+  const jobs = (prisma as any).micronutrientEnrichmentJob;
+  const now = new Date();
+  const candidate = await jobs.findFirst({
+    where: { status: { in: ["PENDING", "RETRY"] }, nextAttemptAt: { lte: now } },
+    orderBy: [{ nextAttemptAt: "asc" }, { createdAt: "asc" }],
+  });
+  if (!candidate) return false;
+
+  const claimed = await jobs.updateMany({
+    where: { id: candidate.id, status: { in: ["PENDING", "RETRY"] }, nextAttemptAt: { lte: now } },
+    data: { status: "PROCESSING", lockedAt: now },
+  });
+  if (claimed.count !== 1) return true;
+
+  try {
+    const product = await prisma.product.findUnique({ where: { id: candidate.productId } });
+    if (!product) {
+      await jobs.delete({ where: { id: candidate.id } });
+      return true;
+    }
+    await enrichProductMicronutrients(product);
+    await jobs.update({
+      where: { id: candidate.id },
+      data: { status: "COMPLETED", completedAt: new Date(), lockedAt: null, lastError: null },
+    });
+  } catch (error: any) {
+    const attempts = Number(candidate.attempts || 0) + 1;
+    const exhausted = attempts >= Number(candidate.maxAttempts || 5);
+    await jobs.update({
+      where: { id: candidate.id },
+      data: {
+        status: exhausted ? "FAILED" : "RETRY",
+        attempts,
+        nextAttemptAt: new Date(Date.now() + micronutrientRetryDelayMs(attempts)),
+        lockedAt: null,
+        lastError: String(error?.message || error).slice(0, 2000),
+      },
+    });
+    logError("Micronutrient queue job failed:", error);
+  }
+  return true;
+}
+
+async function runMicronutrientQueueBatch(limit = 10) {
+  if (!isDatabaseConfigured() || micronutrientQueueWorkerRunning) return 0;
+  micronutrientQueueWorkerRunning = true;
+  let processed = 0;
+  try {
+    const staleBefore = new Date(Date.now() - 15 * 60 * 1000);
+    await (prisma as any).micronutrientEnrichmentJob.updateMany({
+      where: { status: "PROCESSING", lockedAt: { lt: staleBefore } },
+      data: { status: "RETRY", lockedAt: null, nextAttemptAt: new Date() },
+    });
+    while (processed < limit && await processNextMicronutrientJob()) processed += 1;
+  } finally {
+    micronutrientQueueWorkerRunning = false;
+  }
+  return processed;
 }
 
 async function estimateMicronutrientsWithAI(product: { name: string; fiber?: number | null }) {
@@ -2071,7 +2163,7 @@ async function estimateMicronutrientsWithAI(product: { name: string; fiber?: num
     return isMicronutrientDataEffectivelyEmpty(estimatedMicro) ? null : estimatedMicro;
   } catch (e) {
     logError("AI micronutrient estimation error:", e);
-    return null;
+    throw e;
   }
 }
 
@@ -2103,7 +2195,8 @@ async function runMicronutrientBackfill(limit = 200) {
         scanned += 1;
         const micro = buildCompleteMicronutrients(parseMicronutrients(product.micronutrients), product.fiber);
         if (!hasEmptyMicronutrientGroup(micro)) continue;
-        await enrichProductMicronutrientsInBackground(product);
+        const enqueued = await enrichProductMicronutrientsInBackground(product);
+        if (!enqueued) continue;
         processed += 1;
         if (processed % 25 === 0) {
           console.log(`[micronutrient-backfill] processed ${processed}/${limit} (scanned ${scanned})`);
@@ -2865,6 +2958,17 @@ export async function createApp(): Promise<express.Express> {
     const limit = Math.max(1, Math.min(5000, Number(req.query.limit) || 200));
     runMicronutrientBackfill(limit).catch((e) => logError("Backfill error:", e));
     res.json({ started: true, limit });
+  });
+
+  app.get("/api/admin/micronutrient-queue", async (req, res) => {
+    const adminToken = process.env.ADMIN_TOKEN;
+    if (!adminToken) return res.status(404).json({ error: "Not found" });
+    if (req.get("x-admin-token") !== adminToken) return res.status(403).json({ error: "Forbidden" });
+    const grouped = await (prisma as any).micronutrientEnrichmentJob.groupBy({
+      by: ["status"],
+      _count: { _all: true },
+    });
+    res.json({ queue: grouped.map((row: any) => ({ status: row.status, count: row._count._all })) });
   });
 
   // Health check
@@ -4679,6 +4783,14 @@ async function startServer() {
       runMicronutrientBackfill(backfillOnBoot).catch((e) => logError("Boot backfill error:", e));
     }, 30_000);
   }
+
+  setTimeout(() => {
+    runMicronutrientQueueBatch(10).catch((e) => logError("Micronutrient queue startup error:", e));
+  }, 10_000);
+  const micronutrientQueueTimer = setInterval(() => {
+    runMicronutrientQueueBatch(10).catch((e) => logError("Micronutrient queue worker error:", e));
+  }, 60_000);
+  micronutrientQueueTimer.unref();
 }
 
 if (process.env.NODE_ENV !== "test") {

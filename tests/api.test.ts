@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import { createApp, isLexicallyCompatibleFood, NUTRIA_API_CONTRACT_VERSION, withNutritionContract } from "../server.ts";
+import {
+  createApp,
+  isLexicallyCompatibleFood,
+  micronutrientRetryDelayMs,
+  NUTRIA_API_CONTRACT_VERSION,
+  withNutritionContract,
+} from "../server.ts";
 
 // Тесты используют in-memory режим сервера (DATABASE_URL не задан в тестовой среде),
 // поэтому проверяют только маршруты, у которых есть fallback без реальной БД.
@@ -68,6 +74,30 @@ describe("nutrition contract", () => {
       vitamins: "usda_fdc",
       minerals: "usda_fdc",
     });
+  });
+
+  it("preserves per-group USDA and AI provenance", () => {
+    const product = withNutritionContract({
+      id: "mixed-source",
+      name: "Mixed source product",
+      source: "catalog",
+      micronutrients: JSON.stringify({
+        vitamins: { B1: 0.8 },
+        minerals: { Iron: 2.1 },
+        nutrientSources: { vitamins: "usda_fdc", minerals: "ai_estimate" },
+      }),
+    });
+
+    expect(product.nutrientSources.vitamins).toBe("usda_fdc");
+    expect(product.nutrientSources.minerals).toBe("ai_estimate");
+  });
+});
+
+describe("micronutrient enrichment queue", () => {
+  it("uses bounded exponential retry delays", () => {
+    expect(micronutrientRetryDelayMs(1)).toBe(60_000);
+    expect(micronutrientRetryDelayMs(3)).toBe(240_000);
+    expect(micronutrientRetryDelayMs(20)).toBe(3_600_000);
   });
 });
 

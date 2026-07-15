@@ -305,6 +305,7 @@ model Product {
   recentFoods      RecentFood[]
   recipeIngredients RecipeIngredient[]
   mealPlanItems     MealPlanItem[]
+  micronutrientEnrichmentJob MicronutrientEnrichmentJob?
 
   // Человеческие порции — JSON-массив [{ name: "1 шт", grams: 55 }, ...].
   // Опционально: у большинства каталожных продуктов (per-100g USDA-записи)
@@ -312,6 +313,23 @@ model Product {
   servingsJson String?
 
   @@unique([name, brand])
+}
+
+model MicronutrientEnrichmentJob {
+  id            String   @id @default(cuid())
+  productId     String   @unique
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  status        String   @default("PENDING")
+  attempts      Int      @default(0)
+  maxAttempts   Int      @default(5)
+  nextAttemptAt DateTime @default(now())
+  lockedAt      DateTime?
+  lastError     String?
+  completedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status, nextAttemptAt])
 }
 
 // ─── "Мои блюда" — пользовательские рецепты из ингредиентов (новое, v0.3) ───
