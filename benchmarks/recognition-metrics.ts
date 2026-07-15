@@ -9,6 +9,11 @@ export type ActualIngredient = {
   amount: number;
 };
 
+export type ExpectedRange = {
+  min: number;
+  max: number;
+};
+
 export type IngredientScore = {
   matched: number;
   expected: number;
@@ -60,4 +65,27 @@ export function scoreIngredients(expected: ExpectedIngredient[], actual: ActualI
     precision: actual.length ? matched / actual.length : expected.length ? 0 : 1,
     weightRangeAccuracy: matched ? inWeightRange / matched : 0,
   };
+}
+
+export function rangeRelativeError(actual: number, expected: ExpectedRange): number {
+  const min = Math.min(expected.min, expected.max);
+  const max = Math.max(expected.min, expected.max);
+  if (!Number.isFinite(actual) || actual < 0) return 1;
+  if (actual >= min && actual <= max) return 0;
+  const midpoint = Math.max(1, (min + max) / 2);
+  return Math.min(1, (actual < min ? min - actual : actual - max) / midpoint);
+}
+
+export function hasNutrientGroup(product: any, group: string): boolean {
+  if (product?.nutrientSources?.[group]) return true;
+  let micronutrients = product?.micronutrients;
+  if (typeof micronutrients === "string") {
+    try {
+      micronutrients = JSON.parse(micronutrients);
+    } catch {
+      return false;
+    }
+  }
+  const values = micronutrients?.[group];
+  return Boolean(values && typeof values === "object" && Object.values(values).some((value) => Number(value) > 0));
 }

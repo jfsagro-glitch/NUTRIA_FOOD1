@@ -1,14 +1,15 @@
 {
-  "version": 1,
+  "version": 2,
+  "targetCases": { "productSearch": 200, "voice": 100 },
   "productSearch": [
-    { "id": "egg", "query": "яйцо куриное", "aliases": ["яйцо", "egg"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"] },
-    { "id": "chicken", "query": "куриная грудка", "aliases": ["куриная грудка", "куриное филе", "chicken breast"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"] },
-    { "id": "buckwheat", "query": "гречневая крупа", "aliases": ["гречневая крупа", "гречка", "buckwheat"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"] },
-    { "id": "salmon", "query": "лосось", "aliases": ["лосось", "семга", "salmon"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"] },
-    { "id": "avocado", "query": "авокадо", "aliases": ["авокадо", "avocado"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"] },
-    { "id": "banana", "query": "банан", "aliases": ["банан", "banana"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"] },
-    { "id": "cottage-cheese", "query": "творог 5%", "aliases": ["творог 5", "cottage cheese"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"] },
-    { "id": "oats", "query": "овсяные хлопья", "aliases": ["овсяные хлопья", "овсянка", "rolled oats", "oats"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"] }
+    { "id": "egg", "query": "яйцо куриное", "aliases": ["яйцо", "egg"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 130, "max": 170 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
+    { "id": "chicken", "query": "куриная грудка", "aliases": ["куриная грудка", "куриное филе", "chicken breast"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 100, "max": 180 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
+    { "id": "buckwheat", "query": "гречневая крупа", "aliases": ["гречневая крупа", "гречка", "buckwheat"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 300, "max": 370 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "carbohydrateTypes"] },
+    { "id": "salmon", "query": "лосось", "aliases": ["лосось", "семга", "salmon"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 180, "max": 250 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "fattyAcids"] },
+    { "id": "avocado", "query": "авокадо", "aliases": ["авокадо", "avocado"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 140, "max": 190 }, "requiredNutrientGroups": ["vitamins", "minerals", "fattyAcids", "carbohydrateTypes"] },
+    { "id": "banana", "query": "банан", "aliases": ["банан", "banana"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 80, "max": 110 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
+    { "id": "cottage-cheese", "query": "творог 5%", "aliases": ["творог 5", "cottage cheese"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 110, "max": 170 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
+    { "id": "oats", "query": "овсяные хлопья", "aliases": ["овсяные хлопья", "овсянка", "rolled oats", "oats"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 350, "max": 400 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "carbohydrateTypes"] }
   ],
   "voice": [
     {
@@ -16,7 +17,8 @@
       "transcript": "На завтрак съел два яйца",
       "ingredients": [
         { "aliases": ["яйцо", "egg"], "minGrams": 80, "maxGrams": 130 }
-      ]
+      ],
+      "totalCalories": { "min": 110, "max": 200 }
     },
     {
       "id": "chicken-rice",
@@ -24,7 +26,8 @@
       "ingredients": [
         { "aliases": ["куриная грудка", "куриное филе", "chicken breast"], "minGrams": 170, "maxGrams": 190 },
         { "aliases": ["рис", "rice"], "minGrams": 140, "maxGrams": 160 }
-      ]
+      ],
+      "totalCalories": { "min": 350, "max": 650 }
     },
     {
       "id": "oatmeal-banana",
@@ -32,7 +35,8 @@
       "ingredients": [
         { "aliases": ["овсянка", "овсяные хлопья", "oats"], "minGrams": 50, "maxGrams": 70 },
         { "aliases": ["банан", "banana"], "minGrams": 110, "maxGrams": 130 }
-      ]
+      ],
+      "totalCalories": { "min": 250, "max": 420 }
     },
     {
       "id": "salmon-avocado",
@@ -40,7 +44,8 @@
       "ingredients": [
         { "aliases": ["лосось", "семга", "salmon"], "minGrams": 190, "maxGrams": 210 },
         { "aliases": ["авокадо", "avocado"], "minGrams": 70, "maxGrams": 90 }
-      ]
+      ],
+      "totalCalories": { "min": 400, "max": 700 }
     },
     {
       "id": "omelette",
@@ -49,13 +54,18 @@
         { "aliases": ["яйцо", "egg"], "minGrams": 130, "maxGrams": 180 },
         { "aliases": ["молоко", "milk"], "minGrams": 20, "maxGrams": 100 },
         { "aliases": ["масло растительное", "растительное масло", "vegetable oil"], "minGrams": 3, "maxGrams": 15 }
-      ]
+      ],
+      "totalCalories": { "min": 220, "max": 380 }
     }
   ],
   "thresholds": {
     "productTop3Accuracy": 0.85,
+    "productCaloriesRangeAccuracy": 0.8,
+    "productMicronutrientCoverage": 0.75,
     "voiceIngredientRecall": 0.8,
     "voiceIngredientPrecision": 0.7,
-    "voiceWeightRangeAccuracy": 0.75
+    "voiceWeightRangeAccuracy": 0.75,
+    "voiceCaloriesRangeAccuracy": 0.7,
+    "voiceCalorieAccuracy": 0.8
   }
 }

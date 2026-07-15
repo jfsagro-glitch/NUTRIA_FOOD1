@@ -6,6 +6,7 @@ import {
   isLexicallyCompatibleFood,
   micronutrientRetryDelayMs,
   NUTRIA_API_CONTRACT_VERSION,
+  restoreExactCatalogMatch,
   withNutritionContract,
 } from "../server.ts";
 
@@ -152,6 +153,12 @@ describe("food match guard", () => {
     expect(isLexicallyCompatibleFood("рис", "Мука рисовая коричневая")).toBe(false);
     expect(isLexicallyCompatibleFood("овсянка", "Соленая свинина, бекон")).toBe(false);
     expect(isLexicallyCompatibleFood("молоко", "Просо, цельное зерно")).toBe(false);
+  });
+
+  it("keeps an exact local product when AI ranking omits it", () => {
+    const exact = { id: "oats", name: "Овсяные хлопья сырые", source: "local", matchScore: 0.9 };
+    const milk = { id: "milk", name: "Овсяное молоко", source: "usda", matchScore: 0.8 };
+    expect(restoreExactCatalogMatch("овсяные хлопья", [exact, milk], [milk])).toEqual([exact, milk]);
   });
 });
 

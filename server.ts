@@ -153,6 +153,22 @@ export function withNutritionContract(product: any) {
   };
 }
 
+export function restoreExactCatalogMatch(query: string, scoredCandidates: any[], rankedCandidates: any[]) {
+  const normalizedQuery = normalizeComparableText(query);
+  const exactCatalogMatch = scoredCandidates.find((candidate) => {
+    const normalizedCandidate = normalizeComparableText(candidate.name);
+    return candidate.source === "local"
+      && normalizedQuery.length >= 3
+      && normalizedCandidate.includes(normalizedQuery)
+      && numberOrZero(candidate.matchScore) >= 0.6;
+  });
+  if (!exactCatalogMatch) return rankedCandidates;
+  return [
+    exactCatalogMatch,
+    ...rankedCandidates.filter((candidate) => candidate.id !== exactCatalogMatch.id),
+  ];
+}
+
 function getOrCreateInMemoryDiary(userId: string) {
   if (!inMemoryDiary.has(userId)) {
     inMemoryDiary.set(userId, { meals: [], goals: { ...DEMO_GOALS }, waterByDate: {} });
@@ -1186,6 +1202,11 @@ ${finalResults.map((candidate, index) => `${index}: ${candidate.name} (${candida
       logError("Re-ranking error:", e);
     }
   }
+
+  // AI-реранкер не может удалить точное каталожное совпадение. Например,
+  // "овсяные хлопья" должны сохранять "Овсяные хлопья сырые", а не оставлять
+  // только семантически близкое овсяное молоко.
+  finalResults = restoreExactCatalogMatch(normalizedInput, scoredCandidates, finalResults);
 
   // Детерминированный предохранитель, не зависящий от доступности AI: реранк должен был
   // сам исключить нерелевантные позиции ("Полностью нерелевантные позиции исключи"), но
@@ -4665,7 +4686,7 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
           };
         }
 
-        const candidates = await withTimeout(
+        let candidates = await withTimeout(
           searchProductsEngine(itemName, {
             limit: 1,
             cache: true,
@@ -4676,6 +4697,19 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
           15000,
           `Match "${itemName}"`
         );
+        if (candidates.length === 0) {
+          candidates = await withTimeout(
+            searchProductsEngine(itemName, {
+              limit: 1,
+              cache: true,
+              localize: true,
+              allowAiEstimate: true,
+              fast: false,
+            }),
+            20000,
+            `Full match "${itemName}"`
+          );
+        }
         return { name: itemName, amount, product: candidates[0] || null };
       } catch (e) {
         logError(`Voice item match failed for "${itemName}":`, e);
