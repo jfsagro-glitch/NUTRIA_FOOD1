@@ -57,12 +57,20 @@ const references = [...(dataset.productSearch || []), ...(dataset.voice || [])].
   counts[reference] = (counts[reference] || 0) + 1;
   return counts;
 }, {} as Record<string, number>);
+const independentReferences = (dataset.productSearch || []).filter((testCase: any) =>
+  ["usda_verified", "manufacturer_verified"].includes(String(testCase.reference || ""))
+).length;
 
 const summary = {
   version: dataset.version,
   productSearch: { actual: dataset.productSearch?.length || 0, target: dataset.targetCases?.productSearch || 0 },
   voice: { actual: dataset.voice?.length || 0, target: dataset.targetCases?.voice || 0 },
   references,
+  independentReferences: {
+    actual: independentReferences,
+    target: Number(dataset.independentReferenceTarget || 0),
+    complete: independentReferences >= Number(dataset.independentReferenceTarget || 0),
+  },
   valid: errors.length === 0,
   errors,
 };
