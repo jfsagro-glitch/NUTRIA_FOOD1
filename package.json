@@ -25,6 +25,7 @@
     "smoke:photo-correction": "powershell -ExecutionPolicy Bypass -File scripts/smoke-photo-correction.ps1",
     "smoke:photo-whole-dish": "powershell -ExecutionPolicy Bypass -File scripts/smoke-photo-whole-dish.ps1",
     "benchmark:recognition": "tsx benchmarks/run-recognition-benchmark.ts",
+    "benchmark:validate": "tsx benchmarks/validate-recognition-dataset.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

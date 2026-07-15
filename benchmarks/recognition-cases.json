@@ -2,18 +2,41 @@
   "version": 2,
   "targetCases": { "productSearch": 200, "voice": 100 },
   "productSearch": [
-    { "id": "egg", "query": "яйцо куриное", "aliases": ["яйцо", "egg"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 130, "max": 170 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
-    { "id": "chicken", "query": "куриная грудка", "aliases": ["куриная грудка", "куриное филе", "chicken breast"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 100, "max": 180 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
-    { "id": "buckwheat", "query": "гречневая крупа", "aliases": ["гречневая крупа", "гречка", "buckwheat"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 300, "max": 370 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "carbohydrateTypes"] },
-    { "id": "salmon", "query": "лосось", "aliases": ["лосось", "семга", "salmon"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 180, "max": 250 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "fattyAcids"] },
-    { "id": "avocado", "query": "авокадо", "aliases": ["авокадо", "avocado"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 140, "max": 190 }, "requiredNutrientGroups": ["vitamins", "minerals", "fattyAcids", "carbohydrateTypes"] },
-    { "id": "banana", "query": "банан", "aliases": ["банан", "banana"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 80, "max": 110 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "cottage-cheese", "query": "творог 5%", "aliases": ["творог 5", "cottage cheese"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 110, "max": 170 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
-    { "id": "oats", "query": "овсяные хлопья", "aliases": ["овсяные хлопья", "овсянка", "rolled oats", "oats"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 350, "max": 400 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "carbohydrateTypes"] }
+    { "id": "egg", "reference": "seed_curated", "query": "яйцо куриное", "aliases": ["яйцо", "egg"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 130, "max": 170 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
+    { "id": "chicken", "reference": "seed_curated", "query": "куриная грудка", "aliases": ["куриная грудка", "куриное филе", "chicken breast"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 100, "max": 180 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
+    { "id": "buckwheat", "reference": "seed_curated", "query": "гречневая крупа", "aliases": ["гречневая крупа", "гречка", "buckwheat"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 300, "max": 370 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "carbohydrateTypes"] },
+    { "id": "salmon", "reference": "seed_curated", "query": "лосось", "aliases": ["лосось", "семга", "salmon"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 180, "max": 250 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "fattyAcids"] },
+    { "id": "avocado", "reference": "seed_curated", "query": "авокадо", "aliases": ["авокадо", "avocado"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 140, "max": 190 }, "requiredNutrientGroups": ["vitamins", "minerals", "fattyAcids", "carbohydrateTypes"] },
+    { "id": "banana", "reference": "seed_curated", "query": "банан", "aliases": ["банан", "banana"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 80, "max": 110 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
+    { "id": "cottage-cheese", "reference": "seed_curated", "query": "творог 5%", "aliases": ["творог 5", "cottage cheese"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 110, "max": 170 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
+    { "id": "oats", "reference": "seed_curated", "query": "овсяные хлопья", "aliases": ["овсяные хлопья", "овсянка", "rolled oats", "oats"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 350, "max": 400 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "carbohydrateTypes"] },
+    { "id": "apple", "reference": "seed_curated", "query": "яблоко", "aliases": ["яблоко", "apple"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 45, "max": 60 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
+    { "id": "rice-cooked", "reference": "seed_curated", "query": "рис отварной", "aliases": ["рис отварной", "рис вареный", "cooked rice"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 105, "max": 145 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
+    { "id": "pasta-cooked", "reference": "seed_curated", "query": "макароны отварные", "aliases": ["макароны отварные", "макароны", "cooked pasta"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 115, "max": 165 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
+    { "id": "potato-boiled", "reference": "seed_curated", "query": "картофель отварной", "aliases": ["картофель отварной", "вареный картофель", "boiled potato"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 70, "max": 100 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
+    { "id": "onion", "reference": "seed_curated", "query": "лук репчатый", "aliases": ["лук репчатый", "лук", "onion"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 30, "max": 50 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
+    { "id": "garlic", "reference": "seed_curated", "query": "чеснок", "aliases": ["чеснок", "garlic"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 120, "max": 170 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
+    { "id": "carrot", "reference": "seed_curated", "query": "морковь", "aliases": ["морковь", "carrot"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 30, "max": 50 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
+    { "id": "tomato", "reference": "seed_curated", "query": "помидор", "aliases": ["помидор", "томат", "tomato"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 12, "max": 25 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
+    { "id": "cucumber", "reference": "seed_curated", "query": "огурец", "aliases": ["огурец", "cucumber"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 10, "max": 20 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
+    { "id": "white-cabbage", "reference": "seed_curated", "query": "капуста белокочанная", "aliases": ["капуста белокочанная", "капуста", "white cabbage"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 20, "max": 35 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
+    { "id": "bell-pepper", "reference": "seed_curated", "query": "перец болгарский", "aliases": ["перец болгарский", "сладкий перец", "bell pepper"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 20, "max": 40 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
+    { "id": "beet", "reference": "seed_curated", "query": "свекла", "aliases": ["свекла", "beetroot"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 35, "max": 55 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
+    { "id": "beef", "reference": "seed_curated", "query": "говядина", "aliases": ["говядина", "beef"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 200, "max": 300 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
+    { "id": "pork", "reference": "seed_curated", "query": "свинина", "aliases": ["свинина", "pork"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 220, "max": 320 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
+    { "id": "cod", "reference": "seed_curated", "query": "треска", "aliases": ["треска", "cod"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 70, "max": 100 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
+    { "id": "milk", "reference": "seed_curated", "query": "молоко", "aliases": ["молоко", "milk"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 50, "max": 70 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
+    { "id": "kefir", "reference": "seed_curated", "query": "кефир", "aliases": ["кефир", "kefir"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 35, "max": 55 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
+    { "id": "natural-yogurt", "reference": "seed_curated", "query": "йогурт натуральный", "aliases": ["йогурт натуральный", "натуральный йогурт", "plain yogurt"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 50, "max": 80 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
+    { "id": "wheat-bread", "reference": "seed_curated", "query": "хлеб пшеничный", "aliases": ["хлеб пшеничный", "белый хлеб", "wheat bread"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 230, "max": 290 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
+    { "id": "walnut", "reference": "seed_curated", "query": "грецкий орех", "aliases": ["грецкий орех", "грецкие орехи", "walnut"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 620, "max": 690 }, "requiredNutrientGroups": ["vitamins", "minerals", "fattyAcids"] },
+    { "id": "broccoli", "reference": "seed_curated", "query": "брокколи", "aliases": ["брокколи", "broccoli"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 25, "max": 45 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
+    { "id": "orange", "reference": "seed_curated", "query": "апельсин", "aliases": ["апельсин", "orange"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 40, "max": 55 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] }
   ],
   "voice": [
     {
       "id": "two-eggs",
+      "reference": "recipe_curated",
       "transcript": "На завтрак съел два яйца",
       "ingredients": [
         { "aliases": ["яйцо", "egg"], "minGrams": 80, "maxGrams": 130 }
@@ -22,6 +45,7 @@
     },
     {
       "id": "chicken-rice",
+      "reference": "recipe_curated",
       "transcript": "На обед куриная грудка 180 грамм и рис 150 грамм",
       "ingredients": [
         { "aliases": ["куриная грудка", "куриное филе", "chicken breast"], "minGrams": 170, "maxGrams": 190 },
@@ -31,6 +55,7 @@
     },
     {
       "id": "oatmeal-banana",
+      "reference": "recipe_curated",
       "transcript": "Овсяная каша с бананом: овсянка 60 грамм и банан 120 грамм",
       "ingredients": [
         { "aliases": ["овсянка", "овсяные хлопья", "oats"], "minGrams": 50, "maxGrams": 70 },
@@ -40,6 +65,7 @@
     },
     {
       "id": "salmon-avocado",
+      "reference": "recipe_curated",
       "transcript": "Ужин: лосось 200 грамм и авокадо 80 грамм",
       "ingredients": [
         { "aliases": ["лосось", "семга", "salmon"], "minGrams": 190, "maxGrams": 210 },
@@ -49,6 +75,7 @@
     },
     {
       "id": "omelette",
+      "reference": "recipe_curated",
       "transcript": "Омлет из трех яиц с молоком",
       "ingredients": [
         { "aliases": ["яйцо", "egg"], "minGrams": 130, "maxGrams": 180 },
@@ -56,6 +83,110 @@
         { "aliases": ["масло растительное", "растительное масло", "vegetable oil"], "minGrams": 3, "maxGrams": 15 }
       ],
       "totalCalories": { "min": 220, "max": 380 }
+    },
+    {
+      "id": "apple-yogurt",
+      "reference": "recipe_curated",
+      "transcript": "Перекус: яблоко 150 грамм и натуральный йогурт 200 грамм",
+      "ingredients": [
+        { "aliases": ["яблоко", "apple"], "minGrams": 140, "maxGrams": 160 },
+        { "aliases": ["йогурт натуральный", "натуральный йогурт", "plain yogurt"], "minGrams": 190, "maxGrams": 210 }
+      ],
+      "totalCalories": { "min": 170, "max": 260 }
+    },
+    {
+      "id": "beef-buckwheat",
+      "reference": "recipe_curated",
+      "transcript": "Говядина 150 грамм и гречка отварная 200 грамм",
+      "ingredients": [
+        { "aliases": ["говядина", "beef"], "minGrams": 140, "maxGrams": 160 },
+        { "aliases": ["гречка", "гречка отварная", "buckwheat"], "minGrams": 190, "maxGrams": 210 }
+      ],
+      "totalCalories": { "min": 500, "max": 700 }
+    },
+    {
+      "id": "salmon-potato",
+      "reference": "recipe_curated",
+      "transcript": "Лосось 180 грамм и картофель отварной 200 грамм",
+      "ingredients": [
+        { "aliases": ["лосось", "семга", "salmon"], "minGrams": 170, "maxGrams": 190 },
+        { "aliases": ["картофель", "картофель отварной", "boiled potato"], "minGrams": 190, "maxGrams": 210 }
+      ],
+      "totalCalories": { "min": 450, "max": 650 }
+    },
+    {
+      "id": "cottage-cheese-banana",
+      "reference": "recipe_curated",
+      "transcript": "Творог пять процентов 200 грамм и банан 120 грамм",
+      "ingredients": [
+        { "aliases": ["творог", "творог 5", "cottage cheese"], "minGrams": 190, "maxGrams": 210 },
+        { "aliases": ["банан", "banana"], "minGrams": 110, "maxGrams": 130 }
+      ],
+      "totalCalories": { "min": 300, "max": 420 }
+    },
+    {
+      "id": "pasta-chicken-tomato",
+      "reference": "recipe_curated",
+      "transcript": "Макароны отварные 200 грамм, куриное филе 150 грамм и помидор 100 грамм",
+      "ingredients": [
+        { "aliases": ["макароны", "макароны отварные", "pasta"], "minGrams": 190, "maxGrams": 210 },
+        { "aliases": ["куриное филе", "куриная грудка", "chicken breast"], "minGrams": 140, "maxGrams": 160 },
+        { "aliases": ["помидор", "томат", "tomato"], "minGrams": 90, "maxGrams": 110 }
+      ],
+      "totalCalories": { "min": 450, "max": 620 }
+    },
+    {
+      "id": "kefir-walnut",
+      "reference": "recipe_curated",
+      "transcript": "Кефир 250 миллилитров и грецкие орехи 30 грамм",
+      "ingredients": [
+        { "aliases": ["кефир", "kefir"], "minGrams": 230, "maxGrams": 270 },
+        { "aliases": ["грецкий орех", "грецкие орехи", "walnut"], "minGrams": 25, "maxGrams": 35 }
+      ],
+      "totalCalories": { "min": 250, "max": 350 }
+    },
+    {
+      "id": "vegetable-salad",
+      "reference": "recipe_curated",
+      "transcript": "Салат: помидор 150 грамм, огурец 150 грамм, болгарский перец 100 грамм и растительное масло 10 грамм",
+      "ingredients": [
+        { "aliases": ["помидор", "томат", "tomato"], "minGrams": 140, "maxGrams": 160 },
+        { "aliases": ["огурец", "cucumber"], "minGrams": 140, "maxGrams": 160 },
+        { "aliases": ["перец болгарский", "сладкий перец", "bell pepper"], "minGrams": 90, "maxGrams": 110 },
+        { "aliases": ["масло растительное", "растительное масло", "vegetable oil"], "minGrams": 8, "maxGrams": 12 }
+      ],
+      "totalCalories": { "min": 130, "max": 220 }
+    },
+    {
+      "id": "cod-rice",
+      "reference": "recipe_curated",
+      "transcript": "Треска 200 грамм и рис отварной 200 грамм",
+      "ingredients": [
+        { "aliases": ["треска", "cod"], "minGrams": 190, "maxGrams": 210 },
+        { "aliases": ["рис", "рис отварной", "cooked rice"], "minGrams": 190, "maxGrams": 210 }
+      ],
+      "totalCalories": { "min": 330, "max": 480 }
+    },
+    {
+      "id": "pork-potato",
+      "reference": "recipe_curated",
+      "transcript": "Свинина 180 грамм и картофель отварной 200 грамм",
+      "ingredients": [
+        { "aliases": ["свинина", "pork"], "minGrams": 170, "maxGrams": 190 },
+        { "aliases": ["картофель", "картофель отварной", "boiled potato"], "minGrams": 190, "maxGrams": 210 }
+      ],
+      "totalCalories": { "min": 550, "max": 750 }
+    },
+    {
+      "id": "oats-milk-apple",
+      "reference": "recipe_curated",
+      "transcript": "Овсяные хлопья 60 грамм, молоко 200 миллилитров и яблоко 100 грамм",
+      "ingredients": [
+        { "aliases": ["овсяные хлопья", "овсянка", "oats"], "minGrams": 50, "maxGrams": 70 },
+        { "aliases": ["молоко", "milk"], "minGrams": 180, "maxGrams": 220 },
+        { "aliases": ["яблоко", "apple"], "minGrams": 90, "maxGrams": 110 }
+      ],
+      "totalCalories": { "min": 330, "max": 450 }
     }
   ],
   "thresholds": {
