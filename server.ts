@@ -169,6 +169,13 @@ export function restoreExactCatalogMatch(query: string, scoredCandidates: any[],
   ];
 }
 
+export function parseProductSearchPagination(offsetValue: unknown, limitValue: unknown) {
+  return {
+    offset: Math.max(0, Math.min(40, Number(offsetValue) || 0)),
+    limit: Math.max(1, Math.min(10, Number(limitValue) || 10)),
+  };
+}
+
 function getOrCreateInMemoryDiary(userId: string) {
   if (!inMemoryDiary.has(userId)) {
     inMemoryDiary.set(userId, { meals: [], goals: { ...DEMO_GOALS }, waterByDate: {} });
@@ -998,7 +1005,7 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
   const fast = options.fast === true;
 
   if (useCache) {
-    const cachedSearch = getCachedProductSearch(normalizedInput);
+    const cachedSearch = getCachedProductSearch(`${normalizedInput}::${limit}`);
     if (cachedSearch) {
       return cachedSearch.slice(0, limit);
     }
@@ -1248,7 +1255,7 @@ ${finalResults.map((candidate, index) => `${index}: ${candidate.name} (${candida
   const responseResults = localizedResults.map((item: any) => ({ ...item, nutriScore: calcNutriScore(item) }));
 
   if (useCache) {
-    cacheProductSearch(normalizedInput, responseResults);
+    cacheProductSearch(`${normalizedInput}::${limit}`, responseResults);
   }
 
   return responseResults;
@@ -3300,6 +3307,33 @@ export async function createApp(): Promise<express.Express> {
       res.json(responseResults.map(withNutritionContract));
     } catch (e: any) {
       logError("Products Search Error:", e);
+      res.status(500).json({ error: "Products search failed", message: e.message });
+    }
+  });
+
+  app.get("/api/products/search/v2", async (req, res) => {
+    try {
+      const query = String(req.query.q || "").trim();
+      const { offset, limit } = parseProductSearchPagination(req.query.offset, req.query.limit);
+      if (!query) {
+        return res.json({ items: [], offset, limit, hasMore: false });
+      }
+
+      const candidates = await searchProductsEngine(query, {
+        limit: Math.min(20, offset + limit + 1),
+        cache: true,
+        localize: true,
+        allowAiEstimate: true,
+      });
+      const items = candidates.slice(offset, offset + limit).map(withNutritionContract);
+      res.json({
+        items,
+        offset,
+        limit,
+        hasMore: candidates.length > offset + items.length,
+      });
+    } catch (e: any) {
+      logError("Products Search V2 Error:", e);
       res.status(500).json({ error: "Products search failed", message: e.message });
     }
   });

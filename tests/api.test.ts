@@ -6,9 +6,25 @@ import {
   isLexicallyCompatibleFood,
   micronutrientRetryDelayMs,
   NUTRIA_API_CONTRACT_VERSION,
+  parseProductSearchPagination,
   restoreExactCatalogMatch,
   withNutritionContract,
 } from "../server.ts";
+
+describe("product search pagination", () => {
+  it("bounds offset and page size", () => {
+    expect(parseProductSearchPagination(-5, 100)).toEqual({ offset: 0, limit: 10 });
+    expect(parseProductSearchPagination(500, 0)).toEqual({ offset: 40, limit: 10 });
+    expect(parseProductSearchPagination(10, 5)).toEqual({ offset: 10, limit: 5 });
+  });
+
+  it("returns a stable empty page contract", async () => {
+    const res = await request(app).get("/api/products/search/v2?offset=10&limit=5");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ items: [], offset: 10, limit: 5, hasMore: false });
+  });
+});
 
 // Тесты используют in-memory режим сервера (DATABASE_URL не задан в тестовой среде),
 // поэтому проверяют только маршруты, у которых есть fallback без реальной БД.
