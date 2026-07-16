@@ -25,3 +25,24 @@ export function logError(label: string, error?: unknown) {
     Sentry.captureException(error ?? new Error(label), { extra: { label } });
   }
 }
+
+export function reportClientCrash(report: {
+  exceptionType: string;
+  stackHash: string;
+  appVersion: string;
+  androidSdk: number;
+  stage: "startup" | "runtime" | "background";
+}) {
+  console.warn("Android client crash", report);
+  if (sentryEnabled) {
+    Sentry.captureMessage(`Android crash: ${report.exceptionType}`, {
+      level: "error",
+      fingerprint: ["android", report.stackHash],
+      tags: {
+        appVersion: report.appVersion,
+        androidSdk: String(report.androidSdk),
+        stage: report.stage,
+      },
+    });
+  }
+}

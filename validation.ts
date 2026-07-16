@@ -32,6 +32,14 @@ export const aiGenerateSchema = z.object({
   image: z.any().optional(),
 });
 
+export const clientCrashSchema = z.object({
+  exceptionType: z.string().regex(/^[A-Za-z0-9_.$]{1,160}$/),
+  stackHash: z.string().regex(/^[a-f0-9]{64}$/),
+  appVersion: z.string().trim().min(1).max(40),
+  androidSdk: z.number().int().min(26).max(100),
+  stage: z.enum(["startup", "runtime", "background"]),
+}).strict();
+
 export const sendMessageSchema = z.object({
   content: z.string().trim().min(1, "Текст сообщения обязателен"),
   nutritionistId: z.string().optional(),

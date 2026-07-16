@@ -36,10 +36,11 @@ import {
   quickAddSchema,
   voiceParseSchema,
   changePasswordSchema,
+  clientCrashSchema,
 } from "./validation.ts";
 import { registerCrmRoutes, getBlockerContactInfo } from "./crm-routes.ts";
 import { registerTelegramBot } from "./telegram-bot.ts";
-import { logError } from "./logging.ts";
+import { logError, reportClientCrash } from "./logging.ts";
 import { resolveCookieSecret } from "./cookie-secret.ts";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -3008,6 +3009,11 @@ export async function createApp(): Promise<express.Express> {
       logError("Health check database error:", e);
       res.status(500).json({ status: "error", database: "disconnected", error: e.message });
     }
+  });
+
+  app.post("/api/client-errors", validateBody(clientCrashSchema), (req, res) => {
+    reportClientCrash(req.body);
+    res.status(202).json({ accepted: true });
   });
 
   // Barcode / QR lookup

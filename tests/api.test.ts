@@ -35,6 +35,29 @@ beforeAll(async () => {
   app = await createApp();
 });
 
+describe("privacy-safe client crash reports", () => {
+  const safeReport = {
+    exceptionType: "java.lang.IllegalStateException",
+    stackHash: "a".repeat(64),
+    appVersion: "1.0",
+    androidSdk: 36,
+    stage: "runtime",
+  };
+
+  it("accepts a fingerprint-only report", async () => {
+    const res = await request(app).post("/api/client-errors").send(safeReport);
+    expect(res.status).toBe(202);
+    expect(res.body).toEqual({ accepted: true });
+  });
+
+  it("rejects messages and arbitrary user data", async () => {
+    const res = await request(app)
+      .post("/api/client-errors")
+      .send({ ...safeReport, message: "user meal and health data" });
+    expect(res.status).toBe(400);
+  });
+});
+
 // Логин-кука выставляется с secure:true/sameSite:"none", из-за чего
 // автоматический cookie-jar supertest/superagent не пересылает её обратно
 // по обычному http — поэтому передаём заголовок Cookie вручную.
