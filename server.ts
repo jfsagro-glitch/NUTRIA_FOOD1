@@ -3004,7 +3004,16 @@ export async function createApp(): Promise<express.Express> {
   app.get("/api/health", async (req, res) => {
     try {
       await prisma.$queryRaw`SELECT 1`;
-      res.json({ status: "ok", database: "connected", version: "1.0.0" });
+      const productCount = await prisma.product.count();
+      res.json({
+        status: "ok",
+        database: "connected",
+        version: "1.0.0",
+        deployment: {
+          commit: String(process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || "unknown").slice(0, 12),
+        },
+        catalog: { products: productCount },
+      });
     } catch (e: any) {
       logError("Health check database error:", e);
       res.status(500).json({ status: "error", database: "disconnected", error: e.message });

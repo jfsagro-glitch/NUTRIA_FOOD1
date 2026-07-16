@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
@@ -37,18 +37,51 @@ type BenchmarkConfig = {
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const config = JSON.parse(await readFile(join(currentDir, "recognition-cases.json"), "utf8")) as BenchmarkConfig;
 const apiBaseUrl = (process.env.NUTRIA_API_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
+const requestDelayMs = Math.max(0, Number(process.env.BENCHMARK_REQUEST_DELAY_MS || 0));
+const reportPath = process.env.BENCHMARK_REPORT_PATH?.trim();
+let completedRequests = 0;
+const productDurations: number[] = [];
+const voiceDurations: number[] = [];
+
+const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 async function fetchJson(path: string, init?: RequestInit) {
-  const response = await fetch(`${apiBaseUrl}${path}`, { ...init, signal: AbortSignal.timeout(30000) });
-  if (!response.ok) throw new Error(`${path}: HTTP ${response.status}`);
-  return response.json();
+  const startedAt = performance.now();
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (requestDelayMs > 0) await sleep(requestDelayMs);
+    const response = await fetch(`${apiBaseUrl}${path}`, { ...init, signal: AbortSignal.timeout(30000) });
+    completedRequests += 1;
+    if (completedRequests % 25 === 0) console.error(`[benchmark] ${completedRequests} requests completed`);
+    if (response.ok) {
+      const duration = performance.now() - startedAt;
+      (path.startsWith("/api/voice/") ? voiceDurations : productDurations).push(duration);
+      return response.json();
+    }
+    const retryable = response.status === 429 || response.status >= 500;
+    if (!retryable || attempt === 2) throw new Error(`${path}: HTTP ${response.status}`);
+    const retryAfterSeconds = Number(response.headers.get("retry-after") || 0);
+    await sleep(retryAfterSeconds > 0 ? Math.min(retryAfterSeconds * 1000, 30_000) : 1000 * (attempt + 1));
+  }
+  throw new Error(`${path}: request failed`);
+}
+
+function durationStats(values: number[]) {
+  const sorted = [...values].sort((left, right) => left - right);
+  const percentile = (fraction: number) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))] || 0;
+  return {
+    count: sorted.length,
+    meanMs: sorted.length ? Math.round(sorted.reduce((sum, value) => sum + value, 0) / sorted.length) : 0,
+    p50Ms: Math.round(percentile(0.5)),
+    p95Ms: Math.round(percentile(0.95)),
+    maxMs: Math.round(sorted.at(-1) || 0),
+  };
 }
 
 let productPassed = 0;
 let productCaloriesInRange = 0;
 let requiredNutrientGroups = 0;
 let populatedNutrientGroups = 0;
-let usdaReferenceCount = 0;
+const usdaReferenceIds = new Set<number>();
 let usdaCalorieErrorTotal = 0;
 const productDetails = [] as Array<Record<string, unknown>>;
 for (const testCase of config.productSearch) {
@@ -66,8 +99,11 @@ for (const testCase of config.productSearch) {
     ? Math.abs(Number(match?.calories || 0) - usdaCalories) / usdaCalories
     : null;
   if (usdaCalorieError !== null) {
-    usdaReferenceCount += 1;
-    usdaCalorieErrorTotal += Math.min(1, usdaCalorieError);
+    const fdcId = Number((testCase as any).referenceDetails?.fdcId || 0);
+    if (!usdaReferenceIds.has(fdcId)) {
+      usdaReferenceIds.add(fdcId);
+      usdaCalorieErrorTotal += Math.min(1, usdaCalorieError);
+    }
   }
   if (match && calorieError === 0) productCaloriesInRange += 1;
   const groupCoverage = testCase.requiredNutrientGroups.map((group) => ({
@@ -124,8 +160,8 @@ const metrics = {
   productTop3Accuracy: config.productSearch.length ? productPassed / config.productSearch.length : 0,
   productCaloriesRangeAccuracy: config.productSearch.length ? productCaloriesInRange / config.productSearch.length : 0,
   productMicronutrientCoverage: requiredNutrientGroups ? populatedNutrientGroups / requiredNutrientGroups : 0,
-  productUsdaCalorieMeanRelativeError: usdaReferenceCount ? usdaCalorieErrorTotal / usdaReferenceCount : 1,
-  productUsdaCalorieAccuracy: usdaReferenceCount ? 1 - usdaCalorieErrorTotal / usdaReferenceCount : 0,
+  productUsdaCalorieMeanRelativeError: usdaReferenceIds.size ? usdaCalorieErrorTotal / usdaReferenceIds.size : 1,
+  productUsdaCalorieAccuracy: usdaReferenceIds.size ? 1 - usdaCalorieErrorTotal / usdaReferenceIds.size : 0,
   voiceIngredientRecall: voiceExpected ? voiceMatched / voiceExpected : 0,
   voiceIngredientPrecision: voiceActual ? voiceMatched / voiceActual : 0,
   voiceWeightRangeAccuracy: voiceMatched ? voiceWeightsInRange / voiceMatched : 0,
@@ -147,12 +183,22 @@ const report = {
   failures,
   dataset: {
     productSearch: { actual: config.productSearch.length, target: config.targetCases.productSearch },
-    independentUsdaReferences: usdaReferenceCount,
+    independentUsdaReferences: usdaReferenceIds.size,
     voice: { actual: config.voice.length, target: config.targetCases.voice },
     complete: config.productSearch.length >= config.targetCases.productSearch && config.voice.length >= config.targetCases.voice,
+  },
+  performance: {
+    productSearch: durationStats(productDurations),
+    voiceParse: durationStats(voiceDurations),
   },
   cases: { productSearch: productDetails, voice: voiceDetails },
 };
 
-console.log(JSON.stringify(report, null, 2));
+const serializedReport = `${JSON.stringify(report, null, 2)}\n`;
+if (reportPath) {
+  await mkdir(dirname(reportPath), { recursive: true });
+  await writeFile(reportPath, serializedReport, "utf8");
+  console.error(`[benchmark] report written to ${reportPath}`);
+}
+console.log(serializedReport.trimEnd());
 if (failures.length) process.exitCode = 1;
