@@ -1,68 +1,1949 @@
 {
   "version": 2,
-  "targetCases": { "productSearch": 200, "voice": 100 },
+  "targetCases": {
+    "productSearch": 200,
+    "voice": 100
+  },
   "independentReferenceTarget": 50,
   "productSearch": [
-    { "id": "egg", "reference": "seed_curated", "query": "яйцо куриное", "aliases": ["яйцо", "egg"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 130, "max": 170 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
-    { "id": "chicken", "reference": "seed_curated", "query": "куриная грудка", "aliases": ["куриная грудка", "куриное филе", "chicken breast"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 100, "max": 180 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
-    { "id": "buckwheat", "reference": "seed_curated", "query": "гречневая крупа", "aliases": ["гречневая крупа", "гречка", "buckwheat"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 300, "max": 370 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "carbohydrateTypes"] },
-    { "id": "salmon", "reference": "seed_curated", "query": "лосось", "aliases": ["лосось", "семга", "salmon"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 180, "max": 250 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "fattyAcids"] },
-    { "id": "avocado", "reference": "seed_curated", "query": "авокадо", "aliases": ["авокадо", "avocado"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 140, "max": 190 }, "requiredNutrientGroups": ["vitamins", "minerals", "fattyAcids", "carbohydrateTypes"] },
-    { "id": "banana", "reference": "seed_curated", "query": "банан", "aliases": ["банан", "banana"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 80, "max": 110 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "cottage-cheese", "reference": "seed_curated", "query": "творог 5%", "aliases": ["творог 5", "cottage cheese"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 110, "max": 170 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
-    { "id": "oats", "reference": "seed_curated", "query": "овсяные хлопья", "aliases": ["овсяные хлопья", "овсянка", "rolled oats", "oats"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 350, "max": 400 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "carbohydrateTypes"] },
-    { "id": "apple", "reference": "seed_curated", "query": "яблоко", "aliases": ["яблоко", "apple"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 45, "max": 60 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "rice-cooked", "reference": "seed_curated", "query": "рис отварной", "aliases": ["рис отварной", "рис вареный", "cooked rice"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 105, "max": 145 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "pasta-cooked", "reference": "seed_curated", "query": "макароны отварные", "aliases": ["макароны отварные", "макароны", "cooked pasta"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 115, "max": 165 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "potato-boiled", "reference": "seed_curated", "query": "картофель отварной", "aliases": ["картофель отварной", "вареный картофель", "boiled potato"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 70, "max": 100 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "onion", "reference": "seed_curated", "query": "лук репчатый", "aliases": ["лук репчатый", "лук", "onion"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 30, "max": 50 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "garlic", "reference": "seed_curated", "query": "чеснок", "aliases": ["чеснок", "garlic"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 120, "max": 170 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "carrot", "reference": "seed_curated", "query": "морковь", "aliases": ["морковь", "carrot"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 30, "max": 50 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "tomato", "reference": "seed_curated", "query": "помидор", "aliases": ["помидор", "томат", "tomato"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 12, "max": 25 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "cucumber", "reference": "seed_curated", "query": "огурец", "aliases": ["огурец", "cucumber"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 10, "max": 20 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "white-cabbage", "reference": "seed_curated", "query": "капуста белокочанная", "aliases": ["капуста белокочанная", "капуста", "white cabbage"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 20, "max": 35 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "bell-pepper", "reference": "seed_curated", "query": "перец болгарский", "aliases": ["перец болгарский", "сладкий перец", "bell pepper"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 20, "max": 40 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "beet", "reference": "seed_curated", "query": "свекла", "aliases": ["свекла", "beetroot"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 35, "max": 55 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "beef", "reference": "seed_curated", "query": "говядина", "aliases": ["говядина", "beef"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 200, "max": 300 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
-    { "id": "pork", "reference": "seed_curated", "query": "свинина", "aliases": ["свинина", "pork"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 220, "max": 320 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
-    { "id": "cod", "reference": "seed_curated", "query": "треска", "aliases": ["треска", "cod"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 70, "max": 100 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
-    { "id": "milk", "reference": "seed_curated", "query": "молоко", "aliases": ["молоко", "milk"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 50, "max": 70 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
-    { "id": "kefir", "reference": "seed_curated", "query": "кефир", "aliases": ["кефир", "kefir"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 35, "max": 55 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
-    { "id": "natural-yogurt", "reference": "seed_curated", "query": "йогурт натуральный", "aliases": ["йогурт натуральный", "натуральный йогурт", "plain yogurt"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 50, "max": 80 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
-    { "id": "wheat-bread", "reference": "seed_curated", "query": "хлеб пшеничный", "aliases": ["хлеб пшеничный", "белый хлеб", "wheat bread"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 230, "max": 290 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "walnut", "reference": "seed_curated", "query": "грецкий орех", "aliases": ["грецкий орех", "грецкие орехи", "walnut"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 620, "max": 690 }, "requiredNutrientGroups": ["vitamins", "minerals", "fattyAcids"] },
-    { "id": "broccoli", "reference": "seed_curated", "query": "брокколи", "aliases": ["брокколи", "broccoli"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 25, "max": 45 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "orange", "reference": "seed_curated", "query": "апельсин", "aliases": ["апельсин", "orange"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 40, "max": 55 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "squid", "reference": "seed_curated", "query": "кальмар", "aliases": ["кальмар", "squid"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 80, "max": 105 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
-    { "id": "red-caviar", "reference": "seed_curated", "query": "икра красная", "aliases": ["икра красная", "лососевая икра", "salmon roe"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 220, "max": 290 }, "requiredNutrientGroups": ["vitamins", "minerals", "fattyAcids"] },
-    { "id": "mozzarella", "reference": "seed_curated", "query": "сыр моцарелла", "aliases": ["сыр моцарелла", "моцарелла", "mozzarella"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 240, "max": 320 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
-    { "id": "pearl-barley-cooked", "reference": "seed_curated", "query": "перловка отварная", "aliases": ["перловка отварная", "перловка", "cooked pearl barley"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 95, "max": 125 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "lentils-cooked", "reference": "seed_curated", "query": "чечевица отварная", "aliases": ["чечевица отварная", "чечевица", "cooked lentils"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 100, "max": 135 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "carbohydrateTypes"] },
-    { "id": "red-beans-cooked", "reference": "seed_curated", "query": "фасоль красная отварная", "aliases": ["фасоль красная отварная", "красная фасоль", "cooked red beans"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 110, "max": 145 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "carbohydrateTypes"] },
-    { "id": "chickpeas-cooked", "reference": "seed_curated", "query": "нут отварной", "aliases": ["нут отварной", "нут", "cooked chickpeas"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 145, "max": 180 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "carbohydrateTypes"] },
-    { "id": "couscous-cooked", "reference": "seed_curated", "query": "кускус отварной", "aliases": ["кускус отварной", "кускус", "cooked couscous"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 100, "max": 125 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "bulgur-cooked", "reference": "seed_curated", "query": "булгур отварной", "aliases": ["булгур отварной", "булгур", "cooked bulgur"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 70, "max": 100 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "almond", "reference": "seed_curated", "query": "миндаль", "aliases": ["миндаль", "almond"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 550, "max": 610 }, "requiredNutrientGroups": ["vitamins", "minerals", "fattyAcids"] },
-    { "id": "cashew", "reference": "seed_curated", "query": "кешью", "aliases": ["кешью", "cashew"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 520, "max": 590 }, "requiredNutrientGroups": ["vitamins", "minerals", "fattyAcids"] },
-    { "id": "hazelnut", "reference": "seed_curated", "query": "фундук", "aliases": ["фундук", "hazelnut"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 600, "max": 660 }, "requiredNutrientGroups": ["vitamins", "minerals", "fattyAcids"] },
-    { "id": "peanut", "reference": "seed_curated", "query": "арахис", "aliases": ["арахис", "peanut"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 530, "max": 600 }, "requiredNutrientGroups": ["vitamins", "minerals", "fattyAcids"] },
-    { "id": "sunflower-seeds", "reference": "seed_curated", "query": "семечки подсолнечника", "aliases": ["семечки подсолнечника", "семена подсолнечника", "sunflower seeds"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 550, "max": 620 }, "requiredNutrientGroups": ["vitamins", "minerals", "fattyAcids"] },
-    { "id": "pumpkin-seeds", "reference": "seed_curated", "query": "семена тыквы", "aliases": ["семена тыквы", "тыквенные семечки", "pumpkin seeds"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 520, "max": 590 }, "requiredNutrientGroups": ["vitamins", "minerals", "fattyAcids"] },
-    { "id": "sesame", "reference": "seed_curated", "query": "кунжут", "aliases": ["кунжут", "sesame"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 540, "max": 610 }, "requiredNutrientGroups": ["vitamins", "minerals", "fattyAcids"] },
-    { "id": "olive-oil", "reference": "seed_curated", "query": "оливковое масло", "aliases": ["оливковое масло", "olive oil"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 870, "max": 900 }, "requiredNutrientGroups": ["vitamins", "fattyAcids"] },
-    { "id": "ginger", "reference": "seed_curated", "query": "имбирь", "aliases": ["имбирь", "ginger"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 65, "max": 95 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "mustard", "reference": "seed_curated", "query": "горчица", "aliases": ["горчица", "mustard"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 130, "max": 190 }, "requiredNutrientGroups": ["vitamins", "minerals", "fattyAcids"] },
-    { "id": "tomato-paste", "reference": "seed_curated", "query": "томатная паста", "aliases": ["томатная паста", "tomato paste"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 65, "max": 100 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "dark-chocolate", "reference": "seed_curated", "query": "шоколад темный", "aliases": ["шоколад темный", "темный шоколад", "dark chocolate"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 500, "max": 600 }, "requiredNutrientGroups": ["vitamins", "minerals", "fattyAcids"] },
-    { "id": "rye-bread", "reference": "seed_curated", "query": "хлеб ржаной", "aliases": ["хлеб ржаной", "ржаной хлеб", "rye bread"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 190, "max": 245 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "orange-juice", "reference": "seed_curated", "query": "сок апельсиновый", "aliases": ["сок апельсиновый", "апельсиновый сок", "orange juice"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 35, "max": 55 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "dumplings", "reference": "seed_curated", "query": "пельмени", "aliases": ["пельмени", "dumplings"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 190, "max": 250 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "carbohydrateTypes"] },
-    { "id": "pancakes", "reference": "seed_curated", "query": "блины готовые", "aliases": ["блины готовые", "блины", "pancakes"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 200, "max": 270 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "pollock", "reference": "seed_curated", "query": "минтай", "aliases": ["минтай", "pollock"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 60, "max": 85 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
-    { "id": "tofu", "reference": "seed_curated", "query": "тофу", "aliases": ["тофу", "tofu"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 65, "max": 95 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] },
-    { "id": "quinoa-cooked", "reference": "seed_curated", "query": "киноа отварная", "aliases": ["киноа отварная", "киноа", "cooked quinoa"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 105, "max": 135 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids", "carbohydrateTypes"] },
-    { "id": "pineapple", "reference": "seed_curated", "query": "ананас", "aliases": ["ананас", "pineapple"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 40, "max": 60 }, "requiredNutrientGroups": ["vitamins", "minerals", "carbohydrateTypes"] },
-    { "id": "quail-egg", "reference": "seed_curated", "query": "яйцо перепелиное", "aliases": ["яйцо перепелиное", "перепелиное яйцо", "quail egg"], "allowedSources": ["local", "catalog", "usda", "usda_fdc"], "caloriesPer100": { "min": 140, "max": 175 }, "requiredNutrientGroups": ["vitamins", "minerals", "aminoAcids"] }
+    {
+      "id": "egg",
+      "reference": "usda_verified",
+      "query": "яйцо куриное",
+      "aliases": [
+        "яйцо",
+        "egg"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 130,
+        "max": 170
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 323604,
+        "dataType": "Foundation",
+        "description": "Egg, whole, raw, frozen, pasteurized",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 150,
+        "url": "https://fdc.nal.usda.gov/food-details/323604/nutrients"
+      }
+    },
+    {
+      "id": "chicken",
+      "reference": "usda_verified",
+      "query": "куриная грудка",
+      "aliases": [
+        "куриная грудка",
+        "куриное филе",
+        "chicken breast"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 100,
+        "max": 180
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2646170,
+        "dataType": "Foundation",
+        "description": "Chicken, breast, boneless, skinless, raw",
+        "publicationDate": "2023-10-26",
+        "caloriesPer100": 112.20227,
+        "url": "https://fdc.nal.usda.gov/food-details/2646170/nutrients"
+      }
+    },
+    {
+      "id": "buckwheat",
+      "reference": "usda_verified",
+      "query": "гречневая крупа",
+      "aliases": [
+        "гречневая крупа",
+        "гречка",
+        "buckwheat"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 300,
+        "max": 370
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2512378,
+        "dataType": "Foundation",
+        "description": "Buckwheat, whole grain",
+        "publicationDate": "2023-04-20",
+        "caloriesPer100": 331.6005206,
+        "url": "https://fdc.nal.usda.gov/food-details/2512378/nutrients"
+      }
+    },
+    {
+      "id": "salmon",
+      "reference": "usda_verified",
+      "query": "лосось",
+      "aliases": [
+        "лосось",
+        "семга",
+        "salmon"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 180,
+        "max": 250
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids",
+        "fattyAcids"
+      ],
+      "referenceQuery": "salmon raw",
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2684440,
+        "dataType": "Foundation",
+        "description": "Fish, salmon, sockeye, wild caught, raw",
+        "publicationDate": "2024-04-18",
+        "caloriesPer100": 136.22202,
+        "url": "https://fdc.nal.usda.gov/food-details/2684440/nutrients"
+      }
+    },
+    {
+      "id": "avocado",
+      "reference": "usda_verified",
+      "query": "авокадо",
+      "aliases": [
+        "авокадо",
+        "avocado"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 140,
+        "max": 190
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "fattyAcids",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2710824,
+        "dataType": "Foundation",
+        "description": "Avocado, Hass, peeled, raw",
+        "publicationDate": "2024-10-31",
+        "caloriesPer100": 206.0493,
+        "url": "https://fdc.nal.usda.gov/food-details/2710824/nutrients"
+      }
+    },
+    {
+      "id": "banana",
+      "reference": "usda_verified",
+      "query": "банан",
+      "aliases": [
+        "банан",
+        "banana"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 80,
+        "max": 110
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 790774,
+        "dataType": "Foundation",
+        "description": "Bananas, overripe, raw",
+        "publicationDate": "2020-04-01",
+        "caloriesPer100": 85,
+        "url": "https://fdc.nal.usda.gov/food-details/790774/nutrients"
+      }
+    },
+    {
+      "id": "cottage-cheese",
+      "reference": "usda_verified",
+      "query": "творог 5%",
+      "aliases": [
+        "творог 5",
+        "cottage cheese"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 110,
+        "max": 170
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2346384,
+        "dataType": "Foundation",
+        "description": "Cottage cheese, full fat, large or small curd",
+        "publicationDate": "2022-10-28",
+        "caloriesPer100": 104.574374,
+        "url": "https://fdc.nal.usda.gov/food-details/2346384/nutrients"
+      }
+    },
+    {
+      "id": "oats",
+      "reference": "usda_verified",
+      "query": "овсяные хлопья",
+      "aliases": [
+        "овсяные хлопья",
+        "овсянка",
+        "rolled oats",
+        "oats"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 350,
+        "max": 400
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2346396,
+        "dataType": "Foundation",
+        "description": "Oats, whole grain, rolled, old fashioned",
+        "publicationDate": "2022-10-28",
+        "caloriesPer100": 378.866123,
+        "url": "https://fdc.nal.usda.gov/food-details/2346396/nutrients"
+      }
+    },
+    {
+      "id": "apple",
+      "reference": "usda_verified",
+      "query": "яблоко",
+      "aliases": [
+        "яблоко",
+        "apple"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 45,
+        "max": 60
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 1105430,
+        "dataType": "Foundation",
+        "description": "Apples, red delicious, with skin, raw",
+        "publicationDate": "2020-10-30",
+        "caloriesPer100": 62,
+        "url": "https://fdc.nal.usda.gov/food-details/1105430/nutrients"
+      }
+    },
+    {
+      "id": "rice-cooked",
+      "reference": "usda_verified",
+      "query": "рис отварной",
+      "aliases": [
+        "рис отварной",
+        "рис вареный",
+        "cooked rice"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 105,
+        "max": 145
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 168875,
+        "dataType": "SR Legacy",
+        "description": "Rice, brown, medium-grain, cooked (Includes foods for USDA's Food Distribution Program)",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 112,
+        "url": "https://fdc.nal.usda.gov/food-details/168875/nutrients"
+      }
+    },
+    {
+      "id": "pasta-cooked",
+      "reference": "usda_verified",
+      "query": "макароны отварные",
+      "aliases": [
+        "макароны отварные",
+        "макароны",
+        "cooked pasta"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 115,
+        "max": 165
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 168901,
+        "dataType": "SR Legacy",
+        "description": "Pasta, homemade, made with egg, cooked",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 130,
+        "url": "https://fdc.nal.usda.gov/food-details/168901/nutrients"
+      }
+    },
+    {
+      "id": "potato-boiled",
+      "reference": "usda_verified",
+      "query": "картофель отварной",
+      "aliases": [
+        "картофель отварной",
+        "вареный картофель",
+        "boiled potato"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 70,
+        "max": 100
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceQuery": "potatoes boiled",
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 170114,
+        "dataType": "SR Legacy",
+        "description": "Potatoes, boiled, cooked in skin, flesh, with salt",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 87,
+        "url": "https://fdc.nal.usda.gov/food-details/170114/nutrients"
+      }
+    },
+    {
+      "id": "onion",
+      "reference": "usda_verified",
+      "query": "лук репчатый",
+      "aliases": [
+        "лук репчатый",
+        "лук",
+        "onion"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 30,
+        "max": 50
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 790577,
+        "dataType": "Foundation",
+        "description": "Onions, red, raw",
+        "publicationDate": "2020-04-01",
+        "caloriesPer100": 44,
+        "url": "https://fdc.nal.usda.gov/food-details/790577/nutrients"
+      }
+    },
+    {
+      "id": "garlic",
+      "reference": "usda_verified",
+      "query": "чеснок",
+      "aliases": [
+        "чеснок",
+        "garlic"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 120,
+        "max": 170
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 1104647,
+        "dataType": "Foundation",
+        "description": "Garlic, raw",
+        "publicationDate": "2020-10-30",
+        "caloriesPer100": 143,
+        "url": "https://fdc.nal.usda.gov/food-details/1104647/nutrients"
+      }
+    },
+    {
+      "id": "carrot",
+      "reference": "usda_verified",
+      "query": "морковь",
+      "aliases": [
+        "морковь",
+        "carrot"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 30,
+        "max": 50
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2258586,
+        "dataType": "Foundation",
+        "description": "Carrots, mature, raw",
+        "publicationDate": "2022-04-28",
+        "caloriesPer100": 44.978589,
+        "url": "https://fdc.nal.usda.gov/food-details/2258586/nutrients"
+      }
+    },
+    {
+      "id": "tomato",
+      "reference": "usda_verified",
+      "query": "помидор",
+      "aliases": [
+        "помидор",
+        "томат",
+        "tomato"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 12,
+        "max": 25
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 1750354,
+        "dataType": "Foundation",
+        "description": "Tomato, roma",
+        "publicationDate": "2021-04-28",
+        "caloriesPer100": 18.95436075,
+        "url": "https://fdc.nal.usda.gov/food-details/1750354/nutrients"
+      }
+    },
+    {
+      "id": "cucumber",
+      "reference": "usda_verified",
+      "query": "огурец",
+      "aliases": [
+        "огурец",
+        "cucumber"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 10,
+        "max": 20
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2346406,
+        "dataType": "Foundation",
+        "description": "Cucumber, with peel, raw",
+        "publicationDate": "2022-10-28",
+        "caloriesPer100": 15.9075,
+        "url": "https://fdc.nal.usda.gov/food-details/2346406/nutrients"
+      }
+    },
+    {
+      "id": "white-cabbage",
+      "reference": "seed_curated",
+      "query": "капуста белокочанная",
+      "aliases": [
+        "капуста белокочанная",
+        "капуста",
+        "white cabbage"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 20,
+        "max": 35
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ]
+    },
+    {
+      "id": "bell-pepper",
+      "reference": "usda_verified",
+      "query": "перец болгарский",
+      "aliases": [
+        "перец болгарский",
+        "сладкий перец",
+        "bell pepper"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 20,
+        "max": 40
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2258588,
+        "dataType": "Foundation",
+        "description": "Peppers, bell, green, raw",
+        "publicationDate": "2022-04-28",
+        "caloriesPer100": 19.692148,
+        "url": "https://fdc.nal.usda.gov/food-details/2258588/nutrients"
+      }
+    },
+    {
+      "id": "beet",
+      "reference": "seed_curated",
+      "query": "свекла",
+      "aliases": [
+        "свекла",
+        "beetroot"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 35,
+        "max": 55
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ]
+    },
+    {
+      "id": "beef",
+      "reference": "usda_verified",
+      "query": "говядина",
+      "aliases": [
+        "говядина",
+        "beef"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 200,
+        "max": 300
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 334849,
+        "dataType": "Foundation",
+        "description": "Beef, loin, top loin steak, boneless, lip-on, separable lean only, trimmed to 1/8\" fat, choice, raw",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 155,
+        "url": "https://fdc.nal.usda.gov/food-details/334849/nutrients"
+      }
+    },
+    {
+      "id": "pork",
+      "reference": "usda_verified",
+      "query": "свинина",
+      "aliases": [
+        "свинина",
+        "pork"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 220,
+        "max": 320
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2514745,
+        "dataType": "Foundation",
+        "description": "Pork, ground, raw",
+        "publicationDate": "2023-04-20",
+        "caloriesPer100": 228.2728,
+        "url": "https://fdc.nal.usda.gov/food-details/2514745/nutrients"
+      }
+    },
+    {
+      "id": "cod",
+      "reference": "usda_verified",
+      "query": "треска",
+      "aliases": [
+        "треска",
+        "cod"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 70,
+        "max": 100
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2747654,
+        "dataType": "Foundation",
+        "description": "Cod, Pacific or Alaskan, frozen, wild caught",
+        "publicationDate": "2025-12-18",
+        "caloriesPer100": 60.84,
+        "url": "https://fdc.nal.usda.gov/food-details/2747654/nutrients"
+      }
+    },
+    {
+      "id": "milk",
+      "reference": "usda_verified",
+      "query": "молоко",
+      "aliases": [
+        "молоко",
+        "milk"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 50,
+        "max": 70
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 321359,
+        "dataType": "Foundation",
+        "description": "Milk, reduced fat, fluid, 2% milkfat, with added vitamin A and vitamin D",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 50,
+        "url": "https://fdc.nal.usda.gov/food-details/321359/nutrients"
+      }
+    },
+    {
+      "id": "kefir",
+      "reference": "usda_verified",
+      "query": "кефир",
+      "aliases": [
+        "кефир",
+        "kefir"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 35,
+        "max": 55
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 170904,
+        "dataType": "SR Legacy",
+        "description": "Kefir, lowfat, plain, LIFEWAY",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 43,
+        "url": "https://fdc.nal.usda.gov/food-details/170904/nutrients"
+      }
+    },
+    {
+      "id": "natural-yogurt",
+      "reference": "usda_verified",
+      "query": "йогурт натуральный",
+      "aliases": [
+        "йогурт натуральный",
+        "натуральный йогурт",
+        "plain yogurt"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 50,
+        "max": 80
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 330137,
+        "dataType": "Foundation",
+        "description": "Yogurt, Greek, plain, nonfat",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 61,
+        "url": "https://fdc.nal.usda.gov/food-details/330137/nutrients"
+      }
+    },
+    {
+      "id": "wheat-bread",
+      "reference": "usda_verified",
+      "query": "хлеб пшеничный",
+      "aliases": [
+        "хлеб пшеничный",
+        "белый хлеб",
+        "wheat bread"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 230,
+        "max": 290
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 335240,
+        "dataType": "Foundation",
+        "description": "Bread, whole-wheat, commercially prepared",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 254,
+        "url": "https://fdc.nal.usda.gov/food-details/335240/nutrients"
+      }
+    },
+    {
+      "id": "walnut",
+      "reference": "usda_verified",
+      "query": "грецкий орех",
+      "aliases": [
+        "грецкий орех",
+        "грецкие орехи",
+        "walnut"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 620,
+        "max": 690
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "fattyAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2346394,
+        "dataType": "Foundation",
+        "description": "Nuts, walnuts, English, halves, raw",
+        "publicationDate": "2022-10-28",
+        "caloriesPer100": 678.66434,
+        "url": "https://fdc.nal.usda.gov/food-details/2346394/nutrients"
+      }
+    },
+    {
+      "id": "broccoli",
+      "reference": "usda_verified",
+      "query": "брокколи",
+      "aliases": [
+        "брокколи",
+        "broccoli"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 25,
+        "max": 45
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 321900,
+        "dataType": "Foundation",
+        "description": "Broccoli, raw",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 32,
+        "url": "https://fdc.nal.usda.gov/food-details/321900/nutrients"
+      }
+    },
+    {
+      "id": "orange",
+      "reference": "usda_verified",
+      "query": "апельсин",
+      "aliases": [
+        "апельсин",
+        "orange"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 40,
+        "max": 55
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 327501,
+        "dataType": "Foundation",
+        "description": "Oranges, raw, navels (Includes foods for USDA's Food Distribution Program)",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 47,
+        "url": "https://fdc.nal.usda.gov/food-details/327501/nutrients"
+      }
+    },
+    {
+      "id": "squid",
+      "reference": "usda_verified",
+      "query": "кальмар",
+      "aliases": [
+        "кальмар",
+        "squid"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 80,
+        "max": 105
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids"
+      ],
+      "referenceQuery": "squid raw",
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 174223,
+        "dataType": "SR Legacy",
+        "description": "Mollusks, squid, mixed species, raw",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 92,
+        "url": "https://fdc.nal.usda.gov/food-details/174223/nutrients"
+      }
+    },
+    {
+      "id": "red-caviar",
+      "reference": "seed_curated",
+      "query": "икра красная",
+      "aliases": [
+        "икра красная",
+        "лососевая икра",
+        "salmon roe"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 220,
+        "max": 290
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "fattyAcids"
+      ]
+    },
+    {
+      "id": "mozzarella",
+      "reference": "usda_verified",
+      "query": "сыр моцарелла",
+      "aliases": [
+        "сыр моцарелла",
+        "моцарелла",
+        "mozzarella"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 240,
+        "max": 320
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 329370,
+        "dataType": "Foundation",
+        "description": "Cheese, mozzarella, low moisture, part-skim",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 298,
+        "url": "https://fdc.nal.usda.gov/food-details/329370/nutrients"
+      }
+    },
+    {
+      "id": "pearl-barley-cooked",
+      "reference": "seed_curated",
+      "query": "перловка отварная",
+      "aliases": [
+        "перловка отварная",
+        "перловка",
+        "cooked pearl barley"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 95,
+        "max": 125
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ]
+    },
+    {
+      "id": "lentils-cooked",
+      "reference": "usda_verified",
+      "query": "чечевица отварная",
+      "aliases": [
+        "чечевица отварная",
+        "чечевица",
+        "cooked lentils"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 100,
+        "max": 135
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids",
+        "carbohydrateTypes"
+      ],
+      "referenceQuery": "lentils mature seeds cooked boiled",
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 172421,
+        "dataType": "SR Legacy",
+        "description": "Lentils, mature seeds, cooked, boiled, without salt",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 116,
+        "url": "https://fdc.nal.usda.gov/food-details/172421/nutrients"
+      }
+    },
+    {
+      "id": "red-beans-cooked",
+      "reference": "usda_verified",
+      "query": "фасоль красная отварная",
+      "aliases": [
+        "фасоль красная отварная",
+        "красная фасоль",
+        "cooked red beans"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 110,
+        "max": 145
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 173743,
+        "dataType": "SR Legacy",
+        "description": "Beans, kidney, california red, mature seeds, cooked, boiled, without salt",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 124,
+        "url": "https://fdc.nal.usda.gov/food-details/173743/nutrients"
+      }
+    },
+    {
+      "id": "chickpeas-cooked",
+      "reference": "usda_verified",
+      "query": "нут отварной",
+      "aliases": [
+        "нут отварной",
+        "нут",
+        "cooked chickpeas"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 145,
+        "max": 180
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 173757,
+        "dataType": "SR Legacy",
+        "description": "Chickpeas (garbanzo beans, bengal gram), mature seeds, cooked, boiled, without salt",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 164,
+        "url": "https://fdc.nal.usda.gov/food-details/173757/nutrients"
+      }
+    },
+    {
+      "id": "couscous-cooked",
+      "reference": "usda_verified",
+      "query": "кускус отварной",
+      "aliases": [
+        "кускус отварной",
+        "кускус",
+        "cooked couscous"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 100,
+        "max": 125
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 169700,
+        "dataType": "SR Legacy",
+        "description": "Couscous, cooked",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 112,
+        "url": "https://fdc.nal.usda.gov/food-details/169700/nutrients"
+      }
+    },
+    {
+      "id": "bulgur-cooked",
+      "reference": "usda_verified",
+      "query": "булгур отварной",
+      "aliases": [
+        "булгур отварной",
+        "булгур",
+        "cooked bulgur"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 70,
+        "max": 100
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 170287,
+        "dataType": "SR Legacy",
+        "description": "Bulgur, cooked",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 83,
+        "url": "https://fdc.nal.usda.gov/food-details/170287/nutrients"
+      }
+    },
+    {
+      "id": "almond",
+      "reference": "usda_verified",
+      "query": "миндаль",
+      "aliases": [
+        "миндаль",
+        "almond"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 550,
+        "max": 610
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "fattyAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2346393,
+        "dataType": "Foundation",
+        "description": "Nuts, almonds, whole, raw",
+        "publicationDate": "2022-10-28",
+        "caloriesPer100": 583.597022,
+        "url": "https://fdc.nal.usda.gov/food-details/2346393/nutrients"
+      }
+    },
+    {
+      "id": "cashew",
+      "reference": "usda_verified",
+      "query": "кешью",
+      "aliases": [
+        "кешью",
+        "cashew"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 520,
+        "max": 590
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "fattyAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2515374,
+        "dataType": "Foundation",
+        "description": "Nuts, cashew nuts, raw",
+        "publicationDate": "2023-04-20",
+        "caloriesPer100": 564.664,
+        "url": "https://fdc.nal.usda.gov/food-details/2515374/nutrients"
+      }
+    },
+    {
+      "id": "hazelnut",
+      "reference": "usda_verified",
+      "query": "фундук",
+      "aliases": [
+        "фундук",
+        "hazelnut"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 600,
+        "max": 660
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "fattyAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 169827,
+        "dataType": "SR Legacy",
+        "description": "Hazelnuts, beaked (Northern Plains Indians)",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 628,
+        "url": "https://fdc.nal.usda.gov/food-details/169827/nutrients"
+      }
+    },
+    {
+      "id": "peanut",
+      "reference": "usda_verified",
+      "query": "арахис",
+      "aliases": [
+        "арахис",
+        "peanut"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 530,
+        "max": 600
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "fattyAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2515376,
+        "dataType": "Foundation",
+        "description": "Peanuts, raw",
+        "publicationDate": "2023-04-20",
+        "caloriesPer100": 588.332,
+        "url": "https://fdc.nal.usda.gov/food-details/2515376/nutrients"
+      }
+    },
+    {
+      "id": "sunflower-seeds",
+      "reference": "usda_verified",
+      "query": "семечки подсолнечника",
+      "aliases": [
+        "семечки подсолнечника",
+        "семена подсолнечника",
+        "sunflower seeds"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 550,
+        "max": 620
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "fattyAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2515381,
+        "dataType": "Foundation",
+        "description": "Seeds, sunflower seed, kernel, raw",
+        "publicationDate": "2023-04-20",
+        "caloriesPer100": 609.456,
+        "url": "https://fdc.nal.usda.gov/food-details/2515381/nutrients"
+      }
+    },
+    {
+      "id": "pumpkin-seeds",
+      "reference": "usda_verified",
+      "query": "семена тыквы",
+      "aliases": [
+        "семена тыквы",
+        "тыквенные семечки",
+        "pumpkin seeds"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 520,
+        "max": 590
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "fattyAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2515380,
+        "dataType": "Foundation",
+        "description": "Seeds, pumpkin seeds (pepitas), raw",
+        "publicationDate": "2023-04-20",
+        "caloriesPer100": 554.602,
+        "url": "https://fdc.nal.usda.gov/food-details/2515380/nutrients"
+      }
+    },
+    {
+      "id": "sesame",
+      "reference": "usda_verified",
+      "query": "кунжут",
+      "aliases": [
+        "кунжут",
+        "sesame"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 540,
+        "max": 610
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "fattyAcids"
+      ],
+      "referenceQuery": "sesame seeds whole dried",
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 170150,
+        "dataType": "SR Legacy",
+        "description": "Seeds, sesame seeds, whole, dried",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 573,
+        "url": "https://fdc.nal.usda.gov/food-details/170150/nutrients"
+      }
+    },
+    {
+      "id": "olive-oil",
+      "reference": "usda_verified",
+      "query": "оливковое масло",
+      "aliases": [
+        "оливковое масло",
+        "olive oil"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 870,
+        "max": 900
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "fattyAcids"
+      ],
+      "referenceQuery": "oil olive",
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 171413,
+        "dataType": "SR Legacy",
+        "description": "Oil, olive, salad or cooking",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 884,
+        "url": "https://fdc.nal.usda.gov/food-details/171413/nutrients"
+      }
+    },
+    {
+      "id": "ginger",
+      "reference": "usda_verified",
+      "query": "имбирь",
+      "aliases": [
+        "имбирь",
+        "ginger"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 65,
+        "max": 95
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 169231,
+        "dataType": "SR Legacy",
+        "description": "Ginger root, raw",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 80,
+        "url": "https://fdc.nal.usda.gov/food-details/169231/nutrients"
+      }
+    },
+    {
+      "id": "mustard",
+      "reference": "usda_verified",
+      "query": "горчица",
+      "aliases": [
+        "горчица",
+        "mustard"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 130,
+        "max": 190
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "fattyAcids"
+      ],
+      "referenceQuery": "mustard prepared yellow",
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 326698,
+        "dataType": "Foundation",
+        "description": "Mustard, prepared, yellow",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 61,
+        "url": "https://fdc.nal.usda.gov/food-details/326698/nutrients"
+      }
+    },
+    {
+      "id": "tomato-paste",
+      "reference": "usda_verified",
+      "query": "томатная паста",
+      "aliases": [
+        "томатная паста",
+        "tomato paste"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 65,
+        "max": 100
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2685580,
+        "dataType": "Foundation",
+        "description": "Tomato, paste, canned, without salt added",
+        "publicationDate": "2024-04-18",
+        "caloriesPer100": 88.53450625,
+        "url": "https://fdc.nal.usda.gov/food-details/2685580/nutrients"
+      }
+    },
+    {
+      "id": "dark-chocolate",
+      "reference": "usda_verified",
+      "query": "шоколад темный",
+      "aliases": [
+        "шоколад темный",
+        "темный шоколад",
+        "dark chocolate"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 500,
+        "max": 600
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "fattyAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 168805,
+        "dataType": "SR Legacy",
+        "description": "Candies, MARS SNACKFOOD US, DOVE Dark Chocolate",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 520,
+        "url": "https://fdc.nal.usda.gov/food-details/168805/nutrients"
+      }
+    },
+    {
+      "id": "rye-bread",
+      "reference": "usda_verified",
+      "query": "хлеб ржаной",
+      "aliases": [
+        "хлеб ржаной",
+        "ржаной хлеб",
+        "rye bread"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 190,
+        "max": 245
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 172684,
+        "dataType": "SR Legacy",
+        "description": "Bread, rye",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 259,
+        "url": "https://fdc.nal.usda.gov/food-details/172684/nutrients"
+      }
+    },
+    {
+      "id": "orange-juice",
+      "reference": "usda_verified",
+      "query": "сок апельсиновый",
+      "aliases": [
+        "сок апельсиновый",
+        "апельсиновый сок",
+        "orange juice"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 35,
+        "max": 55
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 169098,
+        "dataType": "SR Legacy",
+        "description": "Orange juice, raw (Includes foods for USDA's Food Distribution Program)",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 45,
+        "url": "https://fdc.nal.usda.gov/food-details/169098/nutrients"
+      }
+    },
+    {
+      "id": "dumplings",
+      "reference": "seed_curated",
+      "query": "пельмени",
+      "aliases": [
+        "пельмени",
+        "dumplings"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 190,
+        "max": 250
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids",
+        "carbohydrateTypes"
+      ],
+      "referenceQuery": "meat filled dumpling"
+    },
+    {
+      "id": "pancakes",
+      "reference": "usda_verified",
+      "query": "блины готовые",
+      "aliases": [
+        "блины готовые",
+        "блины",
+        "pancakes"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 200,
+        "max": 270
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceQuery": "pancakes plain prepared recipe",
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 175009,
+        "dataType": "SR Legacy",
+        "description": "Pancakes, plain, prepared from recipe",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 227,
+        "url": "https://fdc.nal.usda.gov/food-details/175009/nutrients"
+      }
+    },
+    {
+      "id": "pollock",
+      "reference": "seed_curated",
+      "query": "минтай",
+      "aliases": [
+        "минтай",
+        "pollock"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 60,
+        "max": 85
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids"
+      ]
+    },
+    {
+      "id": "tofu",
+      "reference": "seed_curated",
+      "query": "тофу",
+      "aliases": [
+        "тофу",
+        "tofu"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 65,
+        "max": 95
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids"
+      ]
+    },
+    {
+      "id": "quinoa-cooked",
+      "reference": "seed_curated",
+      "query": "киноа отварная",
+      "aliases": [
+        "киноа отварная",
+        "киноа",
+        "cooked quinoa"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 105,
+        "max": 135
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids",
+        "carbohydrateTypes"
+      ]
+    },
+    {
+      "id": "pineapple",
+      "reference": "seed_curated",
+      "query": "ананас",
+      "aliases": [
+        "ананас",
+        "pineapple"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 40,
+        "max": 60
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ]
+    },
+    {
+      "id": "quail-egg",
+      "reference": "seed_curated",
+      "query": "яйцо перепелиное",
+      "aliases": [
+        "яйцо перепелиное",
+        "перепелиное яйцо",
+        "quail egg"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 140,
+        "max": 175
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids"
+      ]
+    }
   ],
   "voice": [
     {
@@ -70,154 +1951,456 @@
       "reference": "recipe_curated",
       "transcript": "На завтрак съел два яйца",
       "ingredients": [
-        { "aliases": ["яйцо", "egg"], "minGrams": 80, "maxGrams": 130 }
+        {
+          "aliases": [
+            "яйцо",
+            "egg"
+          ],
+          "minGrams": 80,
+          "maxGrams": 130
+        }
       ],
-      "totalCalories": { "min": 110, "max": 200 }
+      "totalCalories": {
+        "min": 110,
+        "max": 200
+      }
     },
     {
       "id": "chicken-rice",
       "reference": "recipe_curated",
       "transcript": "На обед куриная грудка 180 грамм и рис 150 грамм",
       "ingredients": [
-        { "aliases": ["куриная грудка", "куриное филе", "chicken breast"], "minGrams": 170, "maxGrams": 190 },
-        { "aliases": ["рис", "rice"], "minGrams": 140, "maxGrams": 160 }
+        {
+          "aliases": [
+            "куриная грудка",
+            "куриное филе",
+            "chicken breast"
+          ],
+          "minGrams": 170,
+          "maxGrams": 190
+        },
+        {
+          "aliases": [
+            "рис",
+            "rice"
+          ],
+          "minGrams": 140,
+          "maxGrams": 160
+        }
       ],
-      "totalCalories": { "min": 350, "max": 650 }
+      "totalCalories": {
+        "min": 350,
+        "max": 650
+      }
     },
     {
       "id": "oatmeal-banana",
       "reference": "recipe_curated",
       "transcript": "Овсяная каша с бананом: овсянка 60 грамм и банан 120 грамм",
       "ingredients": [
-        { "aliases": ["овсянка", "овсяные хлопья", "oats"], "minGrams": 50, "maxGrams": 70 },
-        { "aliases": ["банан", "banana"], "minGrams": 110, "maxGrams": 130 }
+        {
+          "aliases": [
+            "овсянка",
+            "овсяные хлопья",
+            "oats"
+          ],
+          "minGrams": 50,
+          "maxGrams": 70
+        },
+        {
+          "aliases": [
+            "банан",
+            "banana"
+          ],
+          "minGrams": 110,
+          "maxGrams": 130
+        }
       ],
-      "totalCalories": { "min": 250, "max": 420 }
+      "totalCalories": {
+        "min": 250,
+        "max": 420
+      }
     },
     {
       "id": "salmon-avocado",
       "reference": "recipe_curated",
       "transcript": "Ужин: лосось 200 грамм и авокадо 80 грамм",
       "ingredients": [
-        { "aliases": ["лосось", "семга", "salmon"], "minGrams": 190, "maxGrams": 210 },
-        { "aliases": ["авокадо", "avocado"], "minGrams": 70, "maxGrams": 90 }
+        {
+          "aliases": [
+            "лосось",
+            "семга",
+            "salmon"
+          ],
+          "minGrams": 190,
+          "maxGrams": 210
+        },
+        {
+          "aliases": [
+            "авокадо",
+            "avocado"
+          ],
+          "minGrams": 70,
+          "maxGrams": 90
+        }
       ],
-      "totalCalories": { "min": 400, "max": 700 }
+      "totalCalories": {
+        "min": 400,
+        "max": 700
+      }
     },
     {
       "id": "omelette",
       "reference": "recipe_curated",
       "transcript": "Омлет из трех яиц с молоком",
       "ingredients": [
-        { "aliases": ["яйцо", "egg"], "minGrams": 130, "maxGrams": 180 },
-        { "aliases": ["молоко", "milk"], "minGrams": 20, "maxGrams": 100 },
-        { "aliases": ["масло растительное", "растительное масло", "vegetable oil"], "minGrams": 3, "maxGrams": 15 }
+        {
+          "aliases": [
+            "яйцо",
+            "egg"
+          ],
+          "minGrams": 130,
+          "maxGrams": 180
+        },
+        {
+          "aliases": [
+            "молоко",
+            "milk"
+          ],
+          "minGrams": 20,
+          "maxGrams": 100
+        },
+        {
+          "aliases": [
+            "масло растительное",
+            "растительное масло",
+            "vegetable oil"
+          ],
+          "minGrams": 3,
+          "maxGrams": 15
+        }
       ],
-      "totalCalories": { "min": 220, "max": 380 }
+      "totalCalories": {
+        "min": 220,
+        "max": 380
+      }
     },
     {
       "id": "apple-yogurt",
       "reference": "recipe_curated",
       "transcript": "Перекус: яблоко 150 грамм и натуральный йогурт 200 грамм",
       "ingredients": [
-        { "aliases": ["яблоко", "apple"], "minGrams": 140, "maxGrams": 160 },
-        { "aliases": ["йогурт натуральный", "натуральный йогурт", "plain yogurt"], "minGrams": 190, "maxGrams": 210 }
+        {
+          "aliases": [
+            "яблоко",
+            "apple"
+          ],
+          "minGrams": 140,
+          "maxGrams": 160
+        },
+        {
+          "aliases": [
+            "йогурт натуральный",
+            "натуральный йогурт",
+            "plain yogurt"
+          ],
+          "minGrams": 190,
+          "maxGrams": 210
+        }
       ],
-      "totalCalories": { "min": 170, "max": 260 }
+      "totalCalories": {
+        "min": 170,
+        "max": 260
+      }
     },
     {
       "id": "beef-buckwheat",
       "reference": "recipe_curated",
       "transcript": "Говядина 150 грамм и гречка отварная 200 грамм",
       "ingredients": [
-        { "aliases": ["говядина", "beef"], "minGrams": 140, "maxGrams": 160 },
-        { "aliases": ["гречка", "гречка отварная", "buckwheat"], "minGrams": 190, "maxGrams": 210 }
+        {
+          "aliases": [
+            "говядина",
+            "beef"
+          ],
+          "minGrams": 140,
+          "maxGrams": 160
+        },
+        {
+          "aliases": [
+            "гречка",
+            "гречка отварная",
+            "buckwheat"
+          ],
+          "minGrams": 190,
+          "maxGrams": 210
+        }
       ],
-      "totalCalories": { "min": 500, "max": 700 }
+      "totalCalories": {
+        "min": 500,
+        "max": 700
+      }
     },
     {
       "id": "salmon-potato",
       "reference": "recipe_curated",
       "transcript": "Лосось 180 грамм и картофель отварной 200 грамм",
       "ingredients": [
-        { "aliases": ["лосось", "семга", "salmon"], "minGrams": 170, "maxGrams": 190 },
-        { "aliases": ["картофель", "картофель отварной", "boiled potato"], "minGrams": 190, "maxGrams": 210 }
+        {
+          "aliases": [
+            "лосось",
+            "семга",
+            "salmon"
+          ],
+          "minGrams": 170,
+          "maxGrams": 190
+        },
+        {
+          "aliases": [
+            "картофель",
+            "картофель отварной",
+            "boiled potato"
+          ],
+          "minGrams": 190,
+          "maxGrams": 210
+        }
       ],
-      "totalCalories": { "min": 450, "max": 650 }
+      "totalCalories": {
+        "min": 450,
+        "max": 650
+      }
     },
     {
       "id": "cottage-cheese-banana",
       "reference": "recipe_curated",
       "transcript": "Творог пять процентов 200 грамм и банан 120 грамм",
       "ingredients": [
-        { "aliases": ["творог", "творог 5", "cottage cheese"], "minGrams": 190, "maxGrams": 210 },
-        { "aliases": ["банан", "banana"], "minGrams": 110, "maxGrams": 130 }
+        {
+          "aliases": [
+            "творог",
+            "творог 5",
+            "cottage cheese"
+          ],
+          "minGrams": 190,
+          "maxGrams": 210
+        },
+        {
+          "aliases": [
+            "банан",
+            "banana"
+          ],
+          "minGrams": 110,
+          "maxGrams": 130
+        }
       ],
-      "totalCalories": { "min": 300, "max": 420 }
+      "totalCalories": {
+        "min": 300,
+        "max": 420
+      }
     },
     {
       "id": "pasta-chicken-tomato",
       "reference": "recipe_curated",
       "transcript": "Макароны отварные 200 грамм, куриное филе 150 грамм и помидор 100 грамм",
       "ingredients": [
-        { "aliases": ["макароны", "макароны отварные", "pasta"], "minGrams": 190, "maxGrams": 210 },
-        { "aliases": ["куриное филе", "куриная грудка", "chicken breast"], "minGrams": 140, "maxGrams": 160 },
-        { "aliases": ["помидор", "томат", "tomato"], "minGrams": 90, "maxGrams": 110 }
+        {
+          "aliases": [
+            "макароны",
+            "макароны отварные",
+            "pasta"
+          ],
+          "minGrams": 190,
+          "maxGrams": 210
+        },
+        {
+          "aliases": [
+            "куриное филе",
+            "куриная грудка",
+            "chicken breast"
+          ],
+          "minGrams": 140,
+          "maxGrams": 160
+        },
+        {
+          "aliases": [
+            "помидор",
+            "томат",
+            "tomato"
+          ],
+          "minGrams": 90,
+          "maxGrams": 110
+        }
       ],
-      "totalCalories": { "min": 450, "max": 620 }
+      "totalCalories": {
+        "min": 450,
+        "max": 620
+      }
     },
     {
       "id": "kefir-walnut",
       "reference": "recipe_curated",
       "transcript": "Кефир 250 миллилитров и грецкие орехи 30 грамм",
       "ingredients": [
-        { "aliases": ["кефир", "kefir"], "minGrams": 230, "maxGrams": 270 },
-        { "aliases": ["грецкий орех", "грецкие орехи", "walnut"], "minGrams": 25, "maxGrams": 35 }
+        {
+          "aliases": [
+            "кефир",
+            "kefir"
+          ],
+          "minGrams": 230,
+          "maxGrams": 270
+        },
+        {
+          "aliases": [
+            "грецкий орех",
+            "грецкие орехи",
+            "walnut"
+          ],
+          "minGrams": 25,
+          "maxGrams": 35
+        }
       ],
-      "totalCalories": { "min": 250, "max": 350 }
+      "totalCalories": {
+        "min": 250,
+        "max": 350
+      }
     },
     {
       "id": "vegetable-salad",
       "reference": "recipe_curated",
       "transcript": "Салат: помидор 150 грамм, огурец 150 грамм, болгарский перец 100 грамм и растительное масло 10 грамм",
       "ingredients": [
-        { "aliases": ["помидор", "томат", "tomato"], "minGrams": 140, "maxGrams": 160 },
-        { "aliases": ["огурец", "cucumber"], "minGrams": 140, "maxGrams": 160 },
-        { "aliases": ["перец болгарский", "сладкий перец", "bell pepper"], "minGrams": 90, "maxGrams": 110 },
-        { "aliases": ["масло растительное", "растительное масло", "vegetable oil"], "minGrams": 8, "maxGrams": 12 }
+        {
+          "aliases": [
+            "помидор",
+            "томат",
+            "tomato"
+          ],
+          "minGrams": 140,
+          "maxGrams": 160
+        },
+        {
+          "aliases": [
+            "огурец",
+            "cucumber"
+          ],
+          "minGrams": 140,
+          "maxGrams": 160
+        },
+        {
+          "aliases": [
+            "перец болгарский",
+            "сладкий перец",
+            "bell pepper"
+          ],
+          "minGrams": 90,
+          "maxGrams": 110
+        },
+        {
+          "aliases": [
+            "масло растительное",
+            "растительное масло",
+            "vegetable oil"
+          ],
+          "minGrams": 8,
+          "maxGrams": 12
+        }
       ],
-      "totalCalories": { "min": 130, "max": 220 }
+      "totalCalories": {
+        "min": 130,
+        "max": 220
+      }
     },
     {
       "id": "cod-rice",
       "reference": "recipe_curated",
       "transcript": "Треска 200 грамм и рис отварной 200 грамм",
       "ingredients": [
-        { "aliases": ["треска", "cod"], "minGrams": 190, "maxGrams": 210 },
-        { "aliases": ["рис", "рис отварной", "cooked rice"], "minGrams": 190, "maxGrams": 210 }
+        {
+          "aliases": [
+            "треска",
+            "cod"
+          ],
+          "minGrams": 190,
+          "maxGrams": 210
+        },
+        {
+          "aliases": [
+            "рис",
+            "рис отварной",
+            "cooked rice"
+          ],
+          "minGrams": 190,
+          "maxGrams": 210
+        }
       ],
-      "totalCalories": { "min": 330, "max": 480 }
+      "totalCalories": {
+        "min": 330,
+        "max": 480
+      }
     },
     {
       "id": "pork-potato",
       "reference": "recipe_curated",
       "transcript": "Свинина 180 грамм и картофель отварной 200 грамм",
       "ingredients": [
-        { "aliases": ["свинина", "pork"], "minGrams": 170, "maxGrams": 190 },
-        { "aliases": ["картофель", "картофель отварной", "boiled potato"], "minGrams": 190, "maxGrams": 210 }
+        {
+          "aliases": [
+            "свинина",
+            "pork"
+          ],
+          "minGrams": 170,
+          "maxGrams": 190
+        },
+        {
+          "aliases": [
+            "картофель",
+            "картофель отварной",
+            "boiled potato"
+          ],
+          "minGrams": 190,
+          "maxGrams": 210
+        }
       ],
-      "totalCalories": { "min": 550, "max": 750 }
+      "totalCalories": {
+        "min": 550,
+        "max": 750
+      }
     },
     {
       "id": "oats-milk-apple",
       "reference": "recipe_curated",
       "transcript": "Овсяные хлопья 60 грамм, молоко 200 миллилитров и яблоко 100 грамм",
       "ingredients": [
-        { "aliases": ["овсяные хлопья", "овсянка", "oats"], "minGrams": 50, "maxGrams": 70 },
-        { "aliases": ["молоко", "milk"], "minGrams": 180, "maxGrams": 220 },
-        { "aliases": ["яблоко", "apple"], "minGrams": 90, "maxGrams": 110 }
+        {
+          "aliases": [
+            "овсяные хлопья",
+            "овсянка",
+            "oats"
+          ],
+          "minGrams": 50,
+          "maxGrams": 70
+        },
+        {
+          "aliases": [
+            "молоко",
+            "milk"
+          ],
+          "minGrams": 180,
+          "maxGrams": 220
+        },
+        {
+          "aliases": [
+            "яблоко",
+            "apple"
+          ],
+          "minGrams": 90,
+          "maxGrams": 110
+        }
       ],
-      "totalCalories": { "min": 330, "max": 450 }
+      "totalCalories": {
+        "min": 330,
+        "max": 450
+      }
     }
   ],
   "thresholds": {
@@ -228,6 +2411,7 @@
     "voiceIngredientPrecision": 0.7,
     "voiceWeightRangeAccuracy": 0.75,
     "voiceCaloriesRangeAccuracy": 0.7,
-    "voiceCalorieAccuracy": 0.8
+    "voiceCalorieAccuracy": 0.8,
+    "productUsdaCalorieAccuracy": 0.8
   }
 }

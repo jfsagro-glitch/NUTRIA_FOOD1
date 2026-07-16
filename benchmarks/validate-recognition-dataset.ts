@@ -28,6 +28,7 @@ validateUniqueIds(dataset.voice || [], "voice");
 
 for (const product of dataset.productSearch || []) {
   if (!String(product.query || "").trim()) errors.push(`${product.id}: missing product query`);
+  if (product.referenceQuery && !/^[a-z0-9 ,%-]+$/i.test(String(product.referenceQuery))) errors.push(`${product.id}: invalid referenceQuery`);
   if (!Array.isArray(product.aliases) || product.aliases.length === 0) errors.push(`${product.id}: missing aliases`);
   if (!Array.isArray(product.allowedSources) || product.allowedSources.length === 0) errors.push(`${product.id}: missing allowedSources`);
   if (!validRange(product.caloriesPer100)) errors.push(`${product.id}: invalid caloriesPer100 range`);
@@ -35,6 +36,15 @@ for (const product of dataset.productSearch || []) {
     errors.push(`${product.id}: missing requiredNutrientGroups`);
   }
   if (!String(product.reference || "").trim()) errors.push(`${product.id}: missing reference provenance`);
+  if (product.reference === "usda_verified") {
+    const details = product.referenceDetails;
+    if (details?.provider !== "USDA FoodData Central") errors.push(`${product.id}: invalid USDA provider`);
+    if (!Number.isInteger(details?.fdcId) || details.fdcId <= 0) errors.push(`${product.id}: invalid USDA fdcId`);
+    if (!["Foundation", "SR Legacy"].includes(details?.dataType)) errors.push(`${product.id}: invalid USDA dataType`);
+    if (!String(details?.description || "").trim()) errors.push(`${product.id}: missing USDA description`);
+    if (!Number.isFinite(details?.caloriesPer100) || details.caloriesPer100 <= 0) errors.push(`${product.id}: missing USDA calories per 100g`);
+    if (!String(details?.url || "").includes(String(details?.fdcId))) errors.push(`${product.id}: invalid USDA URL`);
+  }
 }
 
 for (const voice of dataset.voice || []) {

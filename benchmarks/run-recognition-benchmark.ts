@@ -18,6 +18,7 @@ type ProductCase = {
   allowedSources: string[];
   caloriesPer100: ExpectedRange;
   requiredNutrientGroups: string[];
+  referenceDetails?: { caloriesPer100?: number };
 };
 type VoiceCase = {
   id: string;
@@ -47,6 +48,8 @@ let productPassed = 0;
 let productCaloriesInRange = 0;
 let requiredNutrientGroups = 0;
 let populatedNutrientGroups = 0;
+let usdaReferenceCount = 0;
+let usdaCalorieErrorTotal = 0;
 const productDetails = [] as Array<Record<string, unknown>>;
 for (const testCase of config.productSearch) {
   const products = await fetchJson(`/api/products/search?q=${encodeURIComponent(testCase.query)}`) as any[];
@@ -58,6 +61,14 @@ for (const testCase of config.productSearch) {
   const passed = Boolean(match) && sourceAllowed && macrosPresent;
   if (passed) productPassed += 1;
   const calorieError = rangeRelativeError(Number(match?.calories), testCase.caloriesPer100);
+  const usdaCalories = Number(testCase.referenceDetails?.caloriesPer100 || 0);
+  const usdaCalorieError = usdaCalories > 0
+    ? Math.abs(Number(match?.calories || 0) - usdaCalories) / usdaCalories
+    : null;
+  if (usdaCalorieError !== null) {
+    usdaReferenceCount += 1;
+    usdaCalorieErrorTotal += Math.min(1, usdaCalorieError);
+  }
   if (match && calorieError === 0) productCaloriesInRange += 1;
   const groupCoverage = testCase.requiredNutrientGroups.map((group) => ({
     group,
@@ -72,6 +83,8 @@ for (const testCase of config.productSearch) {
     source: source || null,
     caloriesPer100: Number(match?.calories || 0),
     calorieError,
+    usdaCaloriesPer100: usdaCalories || null,
+    usdaCalorieRelativeError: usdaCalorieError,
     nutrientGroups: groupCoverage,
   });
 }
@@ -111,6 +124,8 @@ const metrics = {
   productTop3Accuracy: config.productSearch.length ? productPassed / config.productSearch.length : 0,
   productCaloriesRangeAccuracy: config.productSearch.length ? productCaloriesInRange / config.productSearch.length : 0,
   productMicronutrientCoverage: requiredNutrientGroups ? populatedNutrientGroups / requiredNutrientGroups : 0,
+  productUsdaCalorieMeanRelativeError: usdaReferenceCount ? usdaCalorieErrorTotal / usdaReferenceCount : 1,
+  productUsdaCalorieAccuracy: usdaReferenceCount ? 1 - usdaCalorieErrorTotal / usdaReferenceCount : 0,
   voiceIngredientRecall: voiceExpected ? voiceMatched / voiceExpected : 0,
   voiceIngredientPrecision: voiceActual ? voiceMatched / voiceActual : 0,
   voiceWeightRangeAccuracy: voiceMatched ? voiceWeightsInRange / voiceMatched : 0,
@@ -132,6 +147,7 @@ const report = {
   failures,
   dataset: {
     productSearch: { actual: config.productSearch.length, target: config.targetCases.productSearch },
+    independentUsdaReferences: usdaReferenceCount,
     voice: { actual: config.voice.length, target: config.targetCases.voice },
     complete: config.productSearch.length >= config.targetCases.productSearch && config.voice.length >= config.targetCases.voice,
   },
