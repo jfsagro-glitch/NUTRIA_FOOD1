@@ -1061,8 +1061,18 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
     3
   );
 
-  const localProducts = dbReady
-    ? await prisma.product.findMany({
+  const [exactLocalProducts, broadLocalProducts] = dbReady
+    ? await Promise.all([
+      prisma.product.findMany({
+        where: {
+          OR: [
+            { name: { equals: normalizedInput, mode: "insensitive" } },
+            { name: { equals: normalizedQuery, mode: "insensitive" } },
+          ],
+        },
+        take: 10,
+      }),
+      prisma.product.findMany({
         where: {
           OR: [
             { name: { contains: normalizedQuery, mode: "insensitive" } },
@@ -1075,8 +1085,12 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
           ],
         },
         take: 50,
-      })
-    : [];
+      }),
+    ])
+    : [[], []];
+  const localProducts = [...new Map(
+    [...exactLocalProducts, ...broadLocalProducts].map((product) => [product.id, product])
+  ).values()];
 
   const parsedLocal = localProducts.map((product) => {
     const micro = buildCompleteMicronutrients(parseMicronutrients(product.micronutrients), product.fiber);
