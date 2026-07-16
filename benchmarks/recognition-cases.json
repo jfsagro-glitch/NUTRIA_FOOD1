@@ -1943,6 +1943,2909 @@
         "minerals",
         "aminoAcids"
       ]
+    },
+    {
+      "id": "seed-гречка-отварная",
+      "reference": "seed_curated",
+      "query": "Гречка отварная",
+      "aliases": [
+        "Гречка отварная"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 101.2,
+        "max": 118.8
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-мука-пшеничная",
+      "reference": "seed_curated",
+      "query": "Мука пшеничная",
+      "aliases": [
+        "Мука пшеничная"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 334.88,
+        "max": 393.12
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-сахар",
+      "reference": "seed_curated",
+      "query": "Сахар",
+      "aliases": [
+        "Сахар"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 366.16,
+        "max": 429.84
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-масло-сливочное",
+      "reference": "seed_curated",
+      "query": "Масло сливочное",
+      "aliases": [
+        "Масло сливочное"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 659.64,
+        "max": 774.36
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-разрыхлитель-теста",
+      "reference": "seed_curated",
+      "query": "Разрыхлитель теста",
+      "aliases": [
+        "Разрыхлитель теста"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 48.76,
+        "max": 57.24
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-дрожжи",
+      "reference": "seed_curated",
+      "query": "Дрожжи",
+      "aliases": [
+        "Дрожжи"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 96.6,
+        "max": 113.4
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-масло-растительное",
+      "reference": "seed_curated",
+      "query": "Масло растительное",
+      "aliases": [
+        "Масло растительное"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 827.08,
+        "max": 970.92
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-ванильный-сахар",
+      "reference": "seed_curated",
+      "query": "Ванильный сахар",
+      "aliases": [
+        "Ванильный сахар"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 365.24,
+        "max": 428.76
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-корица",
+      "reference": "seed_curated",
+      "query": "Корица",
+      "aliases": [
+        "Корица"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 227.24,
+        "max": 266.76
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-овсянка-на-воде",
+      "reference": "seed_curated",
+      "query": "Овсянка на воде",
+      "aliases": [
+        "Овсянка на воде"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 80.96,
+        "max": 95.04
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-куриное-филе",
+      "reference": "seed_curated",
+      "query": "Куриное филе",
+      "aliases": [
+        "Куриное филе"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 151.8,
+        "max": 178.2
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-куриное-бедро",
+      "reference": "seed_curated",
+      "query": "Куриное бедро",
+      "aliases": [
+        "Куриное бедро"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 170.2,
+        "max": 199.8
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-фарш-говяжий",
+      "reference": "seed_curated",
+      "query": "Фарш говяжий",
+      "aliases": [
+        "Фарш говяжий"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 233.68,
+        "max": 274.32
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-сметана",
+      "reference": "seed_curated",
+      "query": "Сметана",
+      "aliases": [
+        "Сметана"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 189.52,
+        "max": 222.48
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-сыр-твердый",
+      "reference": "seed_curated",
+      "query": "Сыр твердый",
+      "aliases": [
+        "Сыр твердый"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 331.2,
+        "max": 388.8
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-сливки",
+      "reference": "seed_curated",
+      "query": "Сливки",
+      "aliases": [
+        "Сливки"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 188.6,
+        "max": 221.4
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-мед",
+      "reference": "seed_curated",
+      "query": "Мёд",
+      "aliases": [
+        "Мёд"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 279.68,
+        "max": 328.32
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-майонез",
+      "reference": "seed_curated",
+      "query": "Майонез",
+      "aliases": [
+        "Майонез"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 625.6,
+        "max": 734.4
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-кетчуп",
+      "reference": "seed_curated",
+      "query": "Кетчуп",
+      "aliases": [
+        "Кетчуп"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 103.04,
+        "max": 120.96
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-соевый-соус",
+      "reference": "seed_curated",
+      "query": "Соевый соус",
+      "aliases": [
+        "Соевый соус"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 48.76,
+        "max": 57.24
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-уксус",
+      "reference": "seed_curated",
+      "query": "Уксус",
+      "aliases": [
+        "Уксус"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 19,
+        "max": 23
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-панировочные-сухари",
+      "reference": "seed_curated",
+      "query": "Панировочные сухари",
+      "aliases": [
+        "Панировочные сухари"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 319.24,
+        "max": 374.76
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-кабачок",
+      "reference": "seed_curated",
+      "query": "Кабачок",
+      "aliases": [
+        "Кабачок"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 22,
+        "max": 26
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-баклажан",
+      "reference": "seed_curated",
+      "query": "Баклажан",
+      "aliases": [
+        "Баклажан"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 23,
+        "max": 27
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-тыква",
+      "reference": "seed_curated",
+      "query": "Тыква",
+      "aliases": [
+        "Тыква"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 23.92,
+        "max": 28.08
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-цветная-капуста",
+      "reference": "seed_curated",
+      "query": "Цветная капуста",
+      "aliases": [
+        "Цветная капуста"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 23,
+        "max": 27
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-шпинат",
+      "reference": "seed_curated",
+      "query": "Шпинат",
+      "aliases": [
+        "Шпинат"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 21,
+        "max": 25
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-зеленый-горошек",
+      "reference": "seed_curated",
+      "query": "Зелёный горошек",
+      "aliases": [
+        "Зелёный горошек"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 74.52,
+        "max": 87.48
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-фасоль-стручковая",
+      "reference": "seed_curated",
+      "query": "Фасоль стручковая",
+      "aliases": [
+        "Фасоль стручковая"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 28.52,
+        "max": 33.48
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-редис",
+      "reference": "seed_curated",
+      "query": "Редис",
+      "aliases": [
+        "Редис"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 14,
+        "max": 18
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-кукуруза-отварная",
+      "reference": "seed_curated",
+      "query": "Кукуруза отварная",
+      "aliases": [
+        "Кукуруза отварная"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 88.32,
+        "max": 103.68
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-грибы-шампиньоны",
+      "reference": "seed_curated",
+      "query": "Грибы шампиньоны",
+      "aliases": [
+        "Грибы шампиньоны"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 24.84,
+        "max": 29.16
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-укроп",
+      "reference": "seed_curated",
+      "query": "Укроп",
+      "aliases": [
+        "Укроп"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 39.56,
+        "max": 46.44
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-петрушка",
+      "reference": "seed_curated",
+      "query": "Петрушка",
+      "aliases": [
+        "Петрушка"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 33.12,
+        "max": 38.88
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-листья-салата",
+      "reference": "seed_curated",
+      "query": "Листья салата",
+      "aliases": [
+        "Листья салата"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 13,
+        "max": 17
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-мандарин",
+      "reference": "seed_curated",
+      "query": "Мандарин",
+      "aliases": [
+        "Мандарин"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 48.76,
+        "max": 57.24
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-груша",
+      "reference": "seed_curated",
+      "query": "Груша",
+      "aliases": [
+        "Груша"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 52.44,
+        "max": 61.56
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-виноград",
+      "reference": "seed_curated",
+      "query": "Виноград",
+      "aliases": [
+        "Виноград"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 63.48,
+        "max": 74.52
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-клубника",
+      "reference": "seed_curated",
+      "query": "Клубника",
+      "aliases": [
+        "Клубника"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 29.44,
+        "max": 34.56
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-малина",
+      "reference": "seed_curated",
+      "query": "Малина",
+      "aliases": [
+        "Малина"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 47.84,
+        "max": 56.16
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-черника",
+      "reference": "seed_curated",
+      "query": "Черника",
+      "aliases": [
+        "Черника"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 52.44,
+        "max": 61.56
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-лимон",
+      "reference": "seed_curated",
+      "query": "Лимон",
+      "aliases": [
+        "Лимон"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 26.68,
+        "max": 31.32
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-грейпфрут",
+      "reference": "seed_curated",
+      "query": "Грейпфрут",
+      "aliases": [
+        "Грейпфрут"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 38.64,
+        "max": 45.36
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-киви",
+      "reference": "seed_curated",
+      "query": "Киви",
+      "aliases": [
+        "Киви"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 56.12,
+        "max": 65.88
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-персик",
+      "reference": "seed_curated",
+      "query": "Персик",
+      "aliases": [
+        "Персик"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 35.88,
+        "max": 42.12
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-абрикос",
+      "reference": "seed_curated",
+      "query": "Абрикос",
+      "aliases": [
+        "Абрикос"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 44.16,
+        "max": 51.84
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-слива",
+      "reference": "seed_curated",
+      "query": "Слива",
+      "aliases": [
+        "Слива"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 42.32,
+        "max": 49.68
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-арбуз",
+      "reference": "seed_curated",
+      "query": "Арбуз",
+      "aliases": [
+        "Арбуз"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 27.6,
+        "max": 32.4
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-дыня",
+      "reference": "seed_curated",
+      "query": "Дыня",
+      "aliases": [
+        "Дыня"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 31.28,
+        "max": 36.72
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-гранат",
+      "reference": "seed_curated",
+      "query": "Гранат",
+      "aliases": [
+        "Гранат"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 76.36,
+        "max": 89.64
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-изюм",
+      "reference": "seed_curated",
+      "query": "Изюм",
+      "aliases": [
+        "Изюм"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 275.08,
+        "max": 322.92
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-чернослив",
+      "reference": "seed_curated",
+      "query": "Чернослив",
+      "aliases": [
+        "Чернослив"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 220.8,
+        "max": 259.2
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-курага",
+      "reference": "seed_curated",
+      "query": "Курага",
+      "aliases": [
+        "Курага"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 221.72,
+        "max": 260.28
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-индейка-филе",
+      "reference": "seed_curated",
+      "query": "Индейка филе",
+      "aliases": [
+        "Индейка филе"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 103.96,
+        "max": 122.04
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-баранина",
+      "reference": "seed_curated",
+      "query": "Баранина",
+      "aliases": [
+        "Баранина"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 270.48,
+        "max": 317.52
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-печень-куриная",
+      "reference": "seed_curated",
+      "query": "Печень куриная",
+      "aliases": [
+        "Печень куриная"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 128.8,
+        "max": 151.2
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-печень-говяжья",
+      "reference": "seed_curated",
+      "query": "Печень говяжья",
+      "aliases": [
+        "Печень говяжья"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 116.84,
+        "max": 137.16
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-бекон",
+      "reference": "seed_curated",
+      "query": "Бекон",
+      "aliases": [
+        "Бекон"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 497.72,
+        "max": 584.28
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-колбаса-вареная",
+      "reference": "seed_curated",
+      "query": "Колбаса варёная",
+      "aliases": [
+        "Колбаса варёная"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 236.44,
+        "max": 277.56
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-сосиски",
+      "reference": "seed_curated",
+      "query": "Сосиски",
+      "aliases": [
+        "Сосиски"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 244.72,
+        "max": 287.28
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-ветчина",
+      "reference": "seed_curated",
+      "query": "Ветчина",
+      "aliases": [
+        "Ветчина"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 133.4,
+        "max": 156.6
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-тунец-консервированный",
+      "reference": "seed_curated",
+      "query": "Тунец консервированный",
+      "aliases": [
+        "Тунец консервированный"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 121.44,
+        "max": 142.56
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-скумбрия",
+      "reference": "seed_curated",
+      "query": "Скумбрия",
+      "aliases": [
+        "Скумбрия"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 188.6,
+        "max": 221.4
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-сельдь",
+      "reference": "seed_curated",
+      "query": "Сельдь",
+      "aliases": [
+        "Сельдь"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 145.36,
+        "max": 170.64
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-креветки",
+      "reference": "seed_curated",
+      "query": "Креветки",
+      "aliases": [
+        "Креветки"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 91.08,
+        "max": 106.92
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-сыр-плавленый",
+      "reference": "seed_curated",
+      "query": "Сыр плавленый",
+      "aliases": [
+        "Сыр плавленый"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 236.44,
+        "max": 277.56
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-ряженка",
+      "reference": "seed_curated",
+      "query": "Ряженка",
+      "aliases": [
+        "Ряженка"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 61.64,
+        "max": 72.36
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-молоко-сгущенное",
+      "reference": "seed_curated",
+      "query": "Молоко сгущённое",
+      "aliases": [
+        "Молоко сгущённое"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 294.4,
+        "max": 345.6
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-пшено-отварное",
+      "reference": "seed_curated",
+      "query": "Пшено отварное",
+      "aliases": [
+        "Пшено отварное"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 109.48,
+        "max": 128.52
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-манная-каша-на-молоке",
+      "reference": "seed_curated",
+      "query": "Манная каша на молоке",
+      "aliases": [
+        "Манная каша на молоке"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 90.16,
+        "max": 105.84
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-крахмал-картофельный",
+      "reference": "seed_curated",
+      "query": "Крахмал картофельный",
+      "aliases": [
+        "Крахмал картофельный"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 315.56,
+        "max": 370.44
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-фисташки",
+      "reference": "seed_curated",
+      "query": "Фисташки",
+      "aliases": [
+        "Фисташки"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 517.04,
+        "max": 606.96
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-сало",
+      "reference": "seed_curated",
+      "query": "Сало",
+      "aliases": [
+        "Сало"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 733.24,
+        "max": 860.76
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-перец-черный-молотый",
+      "reference": "seed_curated",
+      "query": "Перец черный молотый",
+      "aliases": [
+        "Перец черный молотый"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 230.92,
+        "max": 271.08
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-паприка",
+      "reference": "seed_curated",
+      "query": "Паприка",
+      "aliases": [
+        "Паприка"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 259.44,
+        "max": 304.56
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-куркума",
+      "reference": "seed_curated",
+      "query": "Куркума",
+      "aliases": [
+        "Куркума"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 287.04,
+        "max": 336.96
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-лавровый-лист",
+      "reference": "seed_curated",
+      "query": "Лавровый лист",
+      "aliases": [
+        "Лавровый лист"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 287.96,
+        "max": 338.04
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-варенье",
+      "reference": "seed_curated",
+      "query": "Варенье",
+      "aliases": [
+        "Варенье"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 249.32,
+        "max": 292.68
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-шоколад-молочный",
+      "reference": "seed_curated",
+      "query": "Шоколад молочный",
+      "aliases": [
+        "Шоколад молочный"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 491.28,
+        "max": 576.72
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-печенье-овсяное",
+      "reference": "seed_curated",
+      "query": "Печенье овсяное",
+      "aliases": [
+        "Печенье овсяное"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 402.04,
+        "max": 471.96
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-мороженое-сливочное",
+      "reference": "seed_curated",
+      "query": "Мороженое сливочное",
+      "aliases": [
+        "Мороженое сливочное"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 190.44,
+        "max": 223.56
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-сахар-коричневый",
+      "reference": "seed_curated",
+      "query": "Сахар коричневый",
+      "aliases": [
+        "Сахар коричневый"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 349.6,
+        "max": 410.4
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-батон",
+      "reference": "seed_curated",
+      "query": "Батон",
+      "aliases": [
+        "Батон"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 241.04,
+        "max": 282.96
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-лаваш",
+      "reference": "seed_curated",
+      "query": "Лаваш",
+      "aliases": [
+        "Лаваш"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 254.84,
+        "max": 299.16
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-какао-на-молоке",
+      "reference": "seed_curated",
+      "query": "Какао на молоке",
+      "aliases": [
+        "Какао на молоке"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 73.6,
+        "max": 86.4
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-тесто-для-пирога-готовое",
+      "reference": "seed_curated",
+      "query": "Тесто для пирога готовое",
+      "aliases": [
+        "Тесто для пирога готовое"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 285.2,
+        "max": 334.8
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-тесто-слоеное-готовое",
+      "reference": "seed_curated",
+      "query": "Тесто слоёное готовое",
+      "aliases": [
+        "Тесто слоёное готовое"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 322,
+        "max": 378
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-тесто-дрожжевое-готовое",
+      "reference": "seed_curated",
+      "query": "Тесто дрожжевое готовое",
+      "aliases": [
+        "Тесто дрожжевое готовое"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 239.2,
+        "max": 280.8
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-тесто-песочное-готовое",
+      "reference": "seed_curated",
+      "query": "Тесто песочное готовое",
+      "aliases": [
+        "Тесто песочное готовое"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 395.6,
+        "max": 464.4
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-вареники",
+      "reference": "seed_curated",
+      "query": "Вареники",
+      "aliases": [
+        "Вареники"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 179.4,
+        "max": 210.6
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-хек",
+      "reference": "seed_curated",
+      "query": "Хек",
+      "aliases": [
+        "Хек"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 79.12,
+        "max": 92.88
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-морской-окунь",
+      "reference": "seed_curated",
+      "query": "Морской окунь",
+      "aliases": [
+        "Морской окунь"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 94.76,
+        "max": 111.24
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-дорадо",
+      "reference": "seed_curated",
+      "query": "Дорадо",
+      "aliases": [
+        "Дорадо"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 88.32,
+        "max": 103.68
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-утка",
+      "reference": "seed_curated",
+      "query": "Утка",
+      "aliases": [
+        "Утка"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 283.36,
+        "max": 332.64
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-кролик",
+      "reference": "seed_curated",
+      "query": "Кролик",
+      "aliases": [
+        "Кролик"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 143.52,
+        "max": 168.48
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-сыр-фета",
+      "reference": "seed_curated",
+      "query": "Сыр фета",
+      "aliases": [
+        "Сыр фета"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 242.88,
+        "max": 285.12
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-сыр-пармезан",
+      "reference": "seed_curated",
+      "query": "Сыр пармезан",
+      "aliases": [
+        "Сыр пармезан"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 360.64,
+        "max": 423.36
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-сливочный-сыр",
+      "reference": "seed_curated",
+      "query": "Сливочный сыр",
+      "aliases": [
+        "Сливочный сыр"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 314.64,
+        "max": 369.36
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-маскарпоне",
+      "reference": "seed_curated",
+      "query": "Маскарпоне",
+      "aliases": [
+        "Маскарпоне"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 379.04,
+        "max": 444.96
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-творог-обезжиренный",
+      "reference": "seed_curated",
+      "query": "Творог обезжиренный",
+      "aliases": [
+        "Творог обезжиренный"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 65.32,
+        "max": 76.68
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-сельдерей",
+      "reference": "seed_curated",
+      "query": "Сельдерей",
+      "aliases": [
+        "Сельдерей"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 14,
+        "max": 18
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-спаржа",
+      "reference": "seed_curated",
+      "query": "Спаржа",
+      "aliases": [
+        "Спаржа"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 18,
+        "max": 22
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-цукини",
+      "reference": "seed_curated",
+      "query": "Цукини",
+      "aliases": [
+        "Цукини"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 22,
+        "max": 26
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-перец-чили",
+      "reference": "seed_curated",
+      "query": "Перец чили",
+      "aliases": [
+        "Перец чили"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 36.8,
+        "max": 43.2
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-квашеная-капуста",
+      "reference": "seed_curated",
+      "query": "Квашеная капуста",
+      "aliases": [
+        "Квашеная капуста"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 17,
+        "max": 21
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-маринованный-огурец",
+      "reference": "seed_curated",
+      "query": "Маринованный огурец",
+      "aliases": [
+        "Маринованный огурец"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 14,
+        "max": 18
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-манго",
+      "reference": "seed_curated",
+      "query": "Манго",
+      "aliases": [
+        "Манго"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 55.2,
+        "max": 64.8
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-хурма",
+      "reference": "seed_curated",
+      "query": "Хурма",
+      "aliases": [
+        "Хурма"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 61.64,
+        "max": 72.36
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-инжир",
+      "reference": "seed_curated",
+      "query": "Инжир",
+      "aliases": [
+        "Инжир"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 68.08,
+        "max": 79.92
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-овсяные-хлопья-сырые",
+      "reference": "seed_curated",
+      "query": "Овсяные хлопья сырые",
+      "aliases": [
+        "Овсяные хлопья сырые"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 336.72,
+        "max": 395.28
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-мюсли",
+      "reference": "seed_curated",
+      "query": "Мюсли",
+      "aliases": [
+        "Мюсли"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 331.2,
+        "max": 388.8
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-гречневая-лапша-соба",
+      "reference": "seed_curated",
+      "query": "Гречневая лапша соба",
+      "aliases": [
+        "Гречневая лапша соба"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 91.08,
+        "max": 106.92
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-рисовая-лапша",
+      "reference": "seed_curated",
+      "query": "Рисовая лапша",
+      "aliases": [
+        "Рисовая лапша"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 100.28,
+        "max": 117.72
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-тортилья-пшеничная",
+      "reference": "seed_curated",
+      "query": "Тортилья пшеничная",
+      "aliases": [
+        "Тортилья пшеничная"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 266.8,
+        "max": 313.2
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-сдобная-булочка",
+      "reference": "seed_curated",
+      "query": "Сдобная булочка",
+      "aliases": [
+        "Сдобная булочка"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 276,
+        "max": 324
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-круассан",
+      "reference": "seed_curated",
+      "query": "Круассан",
+      "aliases": [
+        "Круассан"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 373.52,
+        "max": 438.48
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-соус-терияки",
+      "reference": "seed_curated",
+      "query": "Соус терияки",
+      "aliases": [
+        "Соус терияки"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 81.88,
+        "max": 96.12
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-соус-барбекю",
+      "reference": "seed_curated",
+      "query": "Соус барбекю",
+      "aliases": [
+        "Соус барбекю"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 158.24,
+        "max": 185.76
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-бальзамический-уксус",
+      "reference": "seed_curated",
+      "query": "Бальзамический уксус",
+      "aliases": [
+        "Бальзамический уксус"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 80.96,
+        "max": 95.04
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-песто",
+      "reference": "seed_curated",
+      "query": "Песто",
+      "aliases": [
+        "Песто"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 278.76,
+        "max": 327.24
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-хумус",
+      "reference": "seed_curated",
+      "query": "Хумус",
+      "aliases": [
+        "Хумус"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 152.72,
+        "max": 179.28
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-тахини",
+      "reference": "seed_curated",
+      "query": "Тахини",
+      "aliases": [
+        "Тахини"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 547.4,
+        "max": 642.6
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-кокосовое-молоко",
+      "reference": "seed_curated",
+      "query": "Кокосовое молоко",
+      "aliases": [
+        "Кокосовое молоко"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 211.6,
+        "max": 248.4
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-кокосовая-стружка",
+      "reference": "seed_curated",
+      "query": "Кокосовая стружка",
+      "aliases": [
+        "Кокосовая стружка"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 607.2,
+        "max": 712.8
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-горох-сухой",
+      "reference": "seed_curated",
+      "query": "Горох сухой",
+      "aliases": [
+        "Горох сухой"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 274.16,
+        "max": 321.84
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-маш-отварной",
+      "reference": "seed_curated",
+      "query": "Маш отварной",
+      "aliases": [
+        "Маш отварной"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 96.6,
+        "max": 113.4
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-чай-черный",
+      "reference": "seed_curated",
+      "query": "Чай чёрный",
+      "aliases": [
+        "Чай чёрный"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 0,
+        "max": 3
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-кофе-черный",
+      "reference": "seed_curated",
+      "query": "Кофе чёрный",
+      "aliases": [
+        "Кофе чёрный"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 0,
+        "max": 4
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-компот",
+      "reference": "seed_curated",
+      "query": "Компот",
+      "aliases": [
+        "Компот"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 55.2,
+        "max": 64.8
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-морс",
+      "reference": "seed_curated",
+      "query": "Морс",
+      "aliases": [
+        "Морс"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 44.16,
+        "max": 51.84
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-халва",
+      "reference": "seed_curated",
+      "query": "Халва",
+      "aliases": [
+        "Халва"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 469.2,
+        "max": 550.8
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-зефир",
+      "reference": "seed_curated",
+      "query": "Зефир",
+      "aliases": [
+        "Зефир"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 279.68,
+        "max": 328.32
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "seed-мармелад",
+      "reference": "seed_curated",
+      "query": "Мармелад",
+      "aliases": [
+        "Мармелад"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog"
+      ],
+      "caloriesPer100": {
+        "min": 272.32,
+        "max": 319.68
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals"
+      ]
+    },
+    {
+      "id": "alias-egg-яйцо",
+      "reference": "usda_verified",
+      "query": "яйцо",
+      "aliases": [
+        "яйцо",
+        "egg"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 130,
+        "max": 170
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 323604,
+        "dataType": "Foundation",
+        "description": "Egg, whole, raw, frozen, pasteurized",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 150,
+        "url": "https://fdc.nal.usda.gov/food-details/323604/nutrients"
+      }
+    },
+    {
+      "id": "alias-buckwheat-гречка",
+      "reference": "usda_verified",
+      "query": "гречка",
+      "aliases": [
+        "гречневая крупа",
+        "гречка",
+        "buckwheat"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 300,
+        "max": 370
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2512378,
+        "dataType": "Foundation",
+        "description": "Buckwheat, whole grain",
+        "publicationDate": "2023-04-20",
+        "caloriesPer100": 331.6005206,
+        "url": "https://fdc.nal.usda.gov/food-details/2512378/nutrients"
+      }
+    },
+    {
+      "id": "alias-salmon-семга",
+      "reference": "usda_verified",
+      "query": "семга",
+      "aliases": [
+        "лосось",
+        "семга",
+        "salmon"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 180,
+        "max": 250
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids",
+        "fattyAcids"
+      ],
+      "referenceQuery": "salmon raw",
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2684440,
+        "dataType": "Foundation",
+        "description": "Fish, salmon, sockeye, wild caught, raw",
+        "publicationDate": "2024-04-18",
+        "caloriesPer100": 136.22202,
+        "url": "https://fdc.nal.usda.gov/food-details/2684440/nutrients"
+      }
+    },
+    {
+      "id": "alias-oats-овсянка",
+      "reference": "usda_verified",
+      "query": "овсянка",
+      "aliases": [
+        "овсяные хлопья",
+        "овсянка",
+        "rolled oats",
+        "oats"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 350,
+        "max": 400
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "aminoAcids",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 2346396,
+        "dataType": "Foundation",
+        "description": "Oats, whole grain, rolled, old fashioned",
+        "publicationDate": "2022-10-28",
+        "caloriesPer100": 378.866123,
+        "url": "https://fdc.nal.usda.gov/food-details/2346396/nutrients"
+      }
+    },
+    {
+      "id": "alias-rice-cooked-рис-вареный",
+      "reference": "usda_verified",
+      "query": "рис вареный",
+      "aliases": [
+        "рис отварной",
+        "рис вареный",
+        "cooked rice"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 105,
+        "max": 145
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 168875,
+        "dataType": "SR Legacy",
+        "description": "Rice, brown, medium-grain, cooked (Includes foods for USDA's Food Distribution Program)",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 112,
+        "url": "https://fdc.nal.usda.gov/food-details/168875/nutrients"
+      }
+    },
+    {
+      "id": "alias-pasta-cooked-макароны",
+      "reference": "usda_verified",
+      "query": "макароны",
+      "aliases": [
+        "макароны отварные",
+        "макароны",
+        "cooked pasta"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 115,
+        "max": 165
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 168901,
+        "dataType": "SR Legacy",
+        "description": "Pasta, homemade, made with egg, cooked",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 130,
+        "url": "https://fdc.nal.usda.gov/food-details/168901/nutrients"
+      }
+    },
+    {
+      "id": "alias-potato-boiled-вареный-картофель",
+      "reference": "usda_verified",
+      "query": "вареный картофель",
+      "aliases": [
+        "картофель отварной",
+        "вареный картофель",
+        "boiled potato"
+      ],
+      "allowedSources": [
+        "local",
+        "catalog",
+        "usda",
+        "usda_fdc"
+      ],
+      "caloriesPer100": {
+        "min": 70,
+        "max": 100
+      },
+      "requiredNutrientGroups": [
+        "vitamins",
+        "minerals",
+        "carbohydrateTypes"
+      ],
+      "referenceQuery": "potatoes boiled",
+      "referenceDetails": {
+        "provider": "USDA FoodData Central",
+        "fdcId": 170114,
+        "dataType": "SR Legacy",
+        "description": "Potatoes, boiled, cooked in skin, flesh, with salt",
+        "publicationDate": "2019-04-01",
+        "caloriesPer100": 87,
+        "url": "https://fdc.nal.usda.gov/food-details/170114/nutrients"
+      }
     }
   ],
   "voice": [
@@ -2400,6 +5303,2131 @@
       "totalCalories": {
         "min": 330,
         "max": 450
+      }
+    },
+    {
+      "id": "seed-pair-куриная-грудка-чеснок",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Куриная грудка 120 грамм и Чеснок 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Куриная грудка"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Чеснок"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 301.34,
+        "max": 333.06
+      }
+    },
+    {
+      "id": "seed-pair-яблоко-говядина",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Яблоко 140 грамм и Говядина 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Яблоко"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Говядина"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 306.66,
+        "max": 338.94
+      }
+    },
+    {
+      "id": "seed-pair-гречка-отварная-сметана",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Гречка отварная 160 грамм и Сметана 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Гречка отварная"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Сметана"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 402.04,
+        "max": 444.36
+      }
+    },
+    {
+      "id": "seed-pair-яйцо-куриное-кетчуп",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Яйцо куриное 180 грамм и Кетчуп 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Яйцо куриное"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Кетчуп"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 328.89,
+        "max": 363.51
+      }
+    },
+    {
+      "id": "seed-pair-творог-5-баклажан",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Творог 5% 100 грамм и Баклажан 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Творог 5%"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Баклажан"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 133.95,
+        "max": 148.05
+      }
+    },
+    {
+      "id": "seed-pair-банан-редис",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Банан 120 грамм и Редис 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Банан"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Редис"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 116.66,
+        "max": 128.94
+      }
+    },
+    {
+      "id": "seed-pair-авокадо-мандарин",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Авокадо 140 грамм и Мандарин 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Авокадо"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Мандарин"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 273.22,
+        "max": 301.98
+      }
+    },
+    {
+      "id": "seed-pair-мука-пшеничная-грейпфрут",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Мука пшеничная 160 грамм и Грейпфрут 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Мука пшеничная"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Грейпфрут"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 577.22,
+        "max": 637.98
+      }
+    },
+    {
+      "id": "seed-pair-сахар-гранат",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Сахар 180 грамм и Гранат 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Сахар"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Гранат"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 743.66,
+        "max": 821.94
+      }
+    },
+    {
+      "id": "seed-pair-молоко-печень-говяжья",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Молоко 100 грамм и Печень говяжья 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Молоко"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Печень говяжья"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 177.65,
+        "max": 196.35
+      }
+    },
+    {
+      "id": "seed-pair-разрыхлитель-теста-сельдь",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Разрыхлитель теста 120 грамм и Сельдь 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Разрыхлитель теста"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Сельдь"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 240.54,
+        "max": 265.86
+      }
+    },
+    {
+      "id": "seed-pair-дрожжи-молоко-сгущенное",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Дрожжи 140 грамм и Молоко сгущённое 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Дрожжи"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Молоко сгущённое"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 322.05,
+        "max": 355.95
+      }
+    },
+    {
+      "id": "seed-pair-ванильный-сахар-кускус-отварной",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Ванильный сахар 160 грамм и Кускус отварной 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Ванильный сахар"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Кускус отварной"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 688.56,
+        "max": 761.04
+      }
+    },
+    {
+      "id": "seed-pair-корица-семечки-подсолнечника",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Корица 180 грамм и Семечки подсолнечника 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Корица"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Семечки подсолнечника"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 977.17,
+        "max": 1080.03
+      }
+    },
+    {
+      "id": "seed-pair-рис-отварной-имбирь",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Рис отварной 100 грамм и Имбирь 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Рис отварной"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Имбирь"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 201.4,
+        "max": 222.6
+      }
+    },
+    {
+      "id": "seed-pair-макароны-отварные-печенье-овсяное",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Макароны отварные 120 грамм и Печенье овсяное 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Макароны отварные"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Печенье овсяное"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 398.43,
+        "max": 440.37
+      }
+    },
+    {
+      "id": "seed-pair-овсянка-на-воде-какао-на-молоке",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Овсянка на воде 140 грамм и Какао на молоке 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Овсянка на воде"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Какао на молоке"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 177.84,
+        "max": 196.56
+      }
+    },
+    {
+      "id": "seed-pair-картофель-отварной-блины-готовые",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Картофель отварной 160 грамм и Блины готовые 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Картофель отварной"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Блины готовые"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 347.89,
+        "max": 384.51
+      }
+    },
+    {
+      "id": "seed-pair-лук-репчатый-сыр-фета",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Лук репчатый 180 грамм и Сыр фета 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Лук репчатый"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Сыр фета"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 371.07,
+        "max": 410.13
+      }
+    },
+    {
+      "id": "seed-pair-чеснок-цукини",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Чеснок 100 грамм и Цукини 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Чеснок"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Цукини"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 155.23,
+        "max": 171.57
+      }
+    },
+    {
+      "id": "seed-pair-морковь-инжир",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Морковь 120 грамм и Инжир 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Морковь"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Инжир"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 102.98,
+        "max": 113.82
+      }
+    },
+    {
+      "id": "seed-pair-помидор-сдобная-булочка",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Помидор 140 грамм и Сдобная булочка 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Помидор"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Сдобная булочка"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 308.94,
+        "max": 341.46
+      }
+    },
+    {
+      "id": "seed-pair-огурец-тахини",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Огурец 160 грамм и Тахини 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Огурец"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Тахини"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 701.1,
+        "max": 774.9
+      }
+    },
+    {
+      "id": "seed-pair-капуста-белокочанная-компот",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Капуста белокочанная 180 грамм и Компот 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Капуста белокочанная"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Компот"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 76.95,
+        "max": 85.05
+      }
+    },
+    {
+      "id": "seed-pair-перец-болгарский-гречка-отварная",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Перец болгарский 100 грамм и Гречка отварная 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Перец болгарский"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Гречка отварная"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 109.25,
+        "max": 120.75
+      }
+    },
+    {
+      "id": "seed-pair-свекла-молоко",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Свекла 120 грамм и Молоко 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Свекла"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Молоко"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 106.02,
+        "max": 117.18
+      }
+    },
+    {
+      "id": "seed-pair-говядина-овсянка-на-воде",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Говядина 140 грамм и Овсянка на воде 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Говядина"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Овсянка на воде"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 432.82,
+        "max": 478.38
+      }
+    },
+    {
+      "id": "seed-pair-свинина-капуста-белокочанная",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Свинина 160 грамм и Капуста белокочанная 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Свинина"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Капуста белокочанная"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 414.01,
+        "max": 457.59
+      }
+    },
+    {
+      "id": "seed-pair-куриное-филе-фарш-говяжий",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Куриное филе 180 грамм и Фарш говяжий 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Куриное филе"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Фарш говяжий"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 475.19,
+        "max": 525.21
+      }
+    },
+    {
+      "id": "seed-pair-куриное-бедро-йогурт-натуральный",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Куриное бедро 100 грамм и Йогурт натуральный 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Куриное бедро"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Йогурт натуральный"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 232.75,
+        "max": 257.25
+      }
+    },
+    {
+      "id": "seed-pair-фарш-говяжий-хлеб-пшеничный",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Фарш говяжий 120 грамм и Хлеб пшеничный 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Фарш говяжий"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Хлеб пшеничный"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 591.66,
+        "max": 653.94
+      }
+    },
+    {
+      "id": "seed-pair-лосось-шпинат",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Лосось 140 грамм и Шпинат 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Лосось"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Шпинат"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 289.75,
+        "max": 320.25
+      }
+    },
+    {
+      "id": "seed-pair-треска-петрушка",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Треска 160 грамм и Петрушка 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Треска"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Петрушка"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 152,
+        "max": 168
+      }
+    },
+    {
+      "id": "seed-pair-сметана-малина",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Сметана 180 грамм и Малина 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Сметана"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Малина"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 401.66,
+        "max": 443.94
+      }
+    },
+    {
+      "id": "seed-pair-сыр-твердый-слива",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Сыр твердый 100 грамм и Слива 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Сыр твердый"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Слива"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 394.44,
+        "max": 435.96
+      }
+    },
+    {
+      "id": "seed-pair-кефир-индейка-филе",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Кефир 120 грамм и Индейка филе 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Кефир"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Индейка филе"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 111.15,
+        "max": 122.85
+      }
+    },
+    {
+      "id": "seed-pair-сливки-ветчина",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Сливки 140 грамм и Ветчина 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Сливки"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Ветчина"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 382.85,
+        "max": 423.15
+      }
+    },
+    {
+      "id": "seed-pair-йогурт-натуральный-сыр-плавленый",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Йогурт натуральный 160 грамм и Сыр плавленый 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Йогурт натуральный"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Сыр плавленый"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 335.35,
+        "max": 370.65
+      }
+    },
+    {
+      "id": "seed-pair-мед-чечевица-отварная",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Мёд 180 грамм и Чечевица отварная 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Мёд"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Чечевица отварная"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 652.08,
+        "max": 720.72
+      }
+    },
+    {
+      "id": "seed-pair-майонез-кешью",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Майонез 100 грамм и Кешью 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Майонез"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Кешью"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 961.21,
+        "max": 1062.39
+      }
+    },
+    {
+      "id": "seed-pair-кетчуп-перец-черный-молотый",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Кетчуп 120 грамм и Перец черный молотый 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Кетчуп"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Перец черный молотый"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 318.44,
+        "max": 351.96
+      }
+    },
+    {
+      "id": "seed-pair-соевый-соус-варенье",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Соевый соус 140 грамм и Варенье 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Соевый соус"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Варенье"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 327.94,
+        "max": 362.46
+      }
+    },
+    {
+      "id": "seed-pair-уксус-батон",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Уксус 160 грамм и Батон 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Уксус"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Батон"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 330.6,
+        "max": 365.4
+      }
+    },
+    {
+      "id": "seed-pair-панировочные-сухари-тесто-песочное-готовое",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Панировочные сухари 180 грамм и Тесто песочное готовое 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Панировочные сухари"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Тесто песочное готовое"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 838.47,
+        "max": 926.73
+      }
+    },
+    {
+      "id": "seed-pair-хлеб-пшеничный-дорадо",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Хлеб пшеничный 100 грамм и Дорадо 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Хлеб пшеничный"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Дорадо"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 324.71,
+        "max": 358.89
+      }
+    },
+    {
+      "id": "seed-pair-грецкий-орех-творог-обезжиренный",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Грецкий орех 120 грамм и Творог обезжиренный 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Грецкий орех"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Творог обезжиренный"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 813.01,
+        "max": 898.59
+      }
+    },
+    {
+      "id": "seed-pair-кабачок-ананас",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Кабачок 140 грамм и Ананас 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Кабачок"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Ананас"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 88.92,
+        "max": 98.28
+      }
+    },
+    {
+      "id": "seed-pair-баклажан-гречневая-лапша-соба",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Баклажан 160 грамм и Гречневая лапша соба 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Баклажан"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Гречневая лапша соба"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 94.43,
+        "max": 104.37
+      }
+    },
+    {
+      "id": "seed-pair-тыква-бальзамический-уксус",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Тыква 180 грамм и Бальзамический уксус 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Тыква"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Бальзамический уксус"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 111.34,
+        "max": 123.06
+      }
+    },
+    {
+      "id": "seed-pair-брокколи-горох-сухой",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Брокколи 100 грамм и Горох сухой 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Брокколи"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Горох сухой"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 315.4,
+        "max": 348.6
+      }
+    },
+    {
+      "id": "seed-pair-цветная-капуста-мармелад",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Цветная капуста 120 грамм и Мармелад 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Цветная капуста"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Мармелад"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 365.94,
+        "max": 404.46
+      }
+    },
+    {
+      "id": "seed-pair-шпинат-авокадо",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Шпинат 140 грамм и Авокадо 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Шпинат"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Авокадо"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 121.79,
+        "max": 134.61
+      }
+    },
+    {
+      "id": "seed-pair-зеленый-горошек-корица",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Зелёный горошек 160 грамм и Корица 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Зелёный горошек"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Корица"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 310.84,
+        "max": 343.56
+      }
+    },
+    {
+      "id": "seed-pair-фасоль-стручковая-морковь",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Фасоль стручковая 180 грамм и Морковь 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Фасоль стручковая"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Морковь"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 91.96,
+        "max": 101.64
+      }
+    },
+    {
+      "id": "seed-pair-редис-свинина",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Редис 100 грамм и Свинина 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Редис"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Свинина"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 315.02,
+        "max": 348.18
+      }
+    },
+    {
+      "id": "seed-pair-кукуруза-отварная-сыр-твердый",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Кукуруза отварная 120 грамм и Сыр твердый 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Кукуруза отварная"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Сыр твердый"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 314.64,
+        "max": 347.76
+      }
+    },
+    {
+      "id": "seed-pair-грибы-шампиньоны-соевый-соус",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Грибы шампиньоны 140 грамм и Соевый соус 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Грибы шампиньоны"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Соевый соус"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 76.19,
+        "max": 84.21
+      }
+    },
+    {
+      "id": "seed-pair-укроп-тыква",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Укроп 160 грамм и Тыква 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Укроп"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Тыква"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 90.06,
+        "max": 99.54
+      }
+    },
+    {
+      "id": "seed-pair-петрушка-кукуруза-отварная",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Петрушка 180 грамм и Кукуруза отварная 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Петрушка"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Кукуруза отварная"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 171,
+        "max": 189
+      }
+    },
+    {
+      "id": "seed-pair-листья-салата-груша",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Листья салата 100 грамм и Груша 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Листья салата"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Груша"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 46.74,
+        "max": 51.66
+      }
+    },
+    {
+      "id": "seed-pair-апельсин-киви",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Апельсин 120 грамм и Киви 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Апельсин"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Киви"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 99.94,
+        "max": 110.46
+      }
+    },
+    {
+      "id": "seed-pair-мандарин-изюм",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Мандарин 140 грамм и Изюм 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Мандарин"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Изюм"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 354.54,
+        "max": 391.86
+      }
+    },
+    {
+      "id": "seed-pair-груша-бекон",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Груша 160 грамм и Бекон 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Груша"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Бекон"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 703.38,
+        "max": 777.42
+      }
+    },
+    {
+      "id": "seed-pair-виноград-креветки",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Виноград 180 грамм и Креветки 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Виноград"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Креветки"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 174.42,
+        "max": 192.78
+      }
+    },
+    {
+      "id": "seed-pair-клубника-перловка-отварная",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Клубника 100 грамм и Перловка отварная 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Клубника"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Перловка отварная"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 113.24,
+        "max": 125.16
+      }
+    },
+    {
+      "id": "seed-pair-малина-булгур-отварной",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Малина 120 грамм и Булгур отварной 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Малина"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Булгур отварной"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 138.13,
+        "max": 152.67
+      }
+    },
+    {
+      "id": "seed-pair-черника-семена-тыквы",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Черника 140 грамм и Семена тыквы 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Черника"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Семена тыквы"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 713.07,
+        "max": 788.13
+      }
+    },
+    {
+      "id": "seed-pair-лимон-лавровый-лист",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Лимон 160 грамм и Лавровый лист 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Лимон"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Лавровый лист"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 222.49,
+        "max": 245.91
+      }
+    },
+    {
+      "id": "seed-pair-грейпфрут-мороженое-сливочное",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Грейпфрут 180 грамм и Мороженое сливочное 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Грейпфрут"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Мороженое сливочное"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 229.14,
+        "max": 253.26
+      }
+    },
+    {
+      "id": "seed-pair-киви-тесто-для-пирога-готовое",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Киви 100 грамм и Тесто для пирога готовое 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Киви"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Тесто для пирога готовое"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 352.45,
+        "max": 389.55
+      }
+    },
+    {
+      "id": "seed-pair-персик-минтай",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Персик 120 грамм и Минтай 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Персик"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Минтай"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 126.54,
+        "max": 139.86
+      }
+    },
+    {
+      "id": "seed-pair-абрикос-сыр-пармезан",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Абрикос 140 грамм и Сыр пармезан 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Абрикос"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Сыр пармезан"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 287.28,
+        "max": 317.52
+      }
+    },
+    {
+      "id": "seed-pair-слива-перец-чили",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Слива 160 грамм и Перец чили 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Слива"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Перец чили"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 100.32,
+        "max": 110.88
+      }
+    },
+    {
+      "id": "seed-pair-арбуз-киноа-отварная",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Арбуз 180 грамм и Киноа отварная 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Арбуз"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Киноа отварная"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 165.3,
+        "max": 182.7
+      }
+    },
+    {
+      "id": "seed-pair-дыня-круассан",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Дыня 100 грамм и Круассан 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Дыня"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Круассан"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 495.14,
+        "max": 547.26
+      }
+    },
+    {
+      "id": "seed-pair-гранат-кокосовое-молоко",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Гранат 120 грамм и Кокосовое молоко 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Гранат"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Кокосовое молоко"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 225.72,
+        "max": 249.48
+      }
+    },
+    {
+      "id": "seed-pair-изюм-морс",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Изюм 140 грамм и Морс 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Изюм"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Морс"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 434.15,
+        "max": 479.85
+      }
+    },
+    {
+      "id": "seed-pair-чернослив-яйцо-куриное",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Чернослив 160 грамм и Яйцо куриное 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Чернослив"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Яйцо куриное"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 512.05,
+        "max": 565.95
+      }
+    },
+    {
+      "id": "seed-pair-курага-разрыхлитель-теста",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Курага 180 грамм и Разрыхлитель теста 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Курага"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Разрыхлитель теста"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 472.53,
+        "max": 522.27
+      }
+    },
+    {
+      "id": "seed-pair-индейка-филе-картофель-отварной",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Индейка филе 100 грамм и Картофель отварной 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Индейка филе"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Картофель отварной"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 154.09,
+        "max": 170.31
+      }
+    },
+    {
+      "id": "seed-pair-баранина-перец-болгарский",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Баранина 120 грамм и Перец болгарский 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Баранина"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        },
+        {
+          "aliases": [
+            "Перец болгарский"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 355.68,
+        "max": 393.12
+      }
+    },
+    {
+      "id": "seed-pair-печень-куриная-лосось",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Печень куриная 140 грамм и Лосось 100 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Печень куриная"
+          ],
+          "minGrams": 135,
+          "maxGrams": 145
+        },
+        {
+          "aliases": [
+            "Лосось"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        }
+      ],
+      "totalCalories": {
+        "min": 383.8,
+        "max": 424.2
+      }
+    },
+    {
+      "id": "seed-pair-печень-говяжья-мед",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Печень говяжья 160 грамм и Мёд 120 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Печень говяжья"
+          ],
+          "minGrams": 155,
+          "maxGrams": 165
+        },
+        {
+          "aliases": [
+            "Мёд"
+          ],
+          "minGrams": 115,
+          "maxGrams": 125
+        }
+      ],
+      "totalCalories": {
+        "min": 539.6,
+        "max": 596.4
+      }
+    },
+    {
+      "id": "seed-pair-бекон-грецкий-орех",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Бекон 180 грамм и Грецкий орех 60 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Бекон"
+          ],
+          "minGrams": 175,
+          "maxGrams": 185
+        },
+        {
+          "aliases": [
+            "Грецкий орех"
+          ],
+          "minGrams": 55,
+          "maxGrams": 65
+        }
+      ],
+      "totalCalories": {
+        "min": 1297.89,
+        "max": 1434.51
+      }
+    },
+    {
+      "id": "seed-pair-колбаса-вареная-зеленый-горошек",
+      "reference": "generated_seed_composition",
+      "transcript": "На прием пищи: Колбаса варёная 100 грамм и Зелёный горошек 80 грамм",
+      "ingredients": [
+        {
+          "aliases": [
+            "Колбаса варёная"
+          ],
+          "minGrams": 95,
+          "maxGrams": 105
+        },
+        {
+          "aliases": [
+            "Зелёный горошек"
+          ],
+          "minGrams": 75,
+          "maxGrams": 85
+        }
+      ],
+      "totalCalories": {
+        "min": 305.71,
+        "max": 337.89
       }
     }
   ],

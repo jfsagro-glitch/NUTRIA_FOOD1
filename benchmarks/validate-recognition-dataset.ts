@@ -26,6 +26,15 @@ function validRange(range: any) {
 validateUniqueIds(dataset.productSearch || [], "productSearch");
 validateUniqueIds(dataset.voice || [], "voice");
 
+const productTarget = Number(dataset.targetCases?.productSearch || 0);
+const voiceTarget = Number(dataset.targetCases?.voice || 0);
+if ((dataset.productSearch?.length || 0) < productTarget) {
+  errors.push(`productSearch: only ${dataset.productSearch?.length || 0}/${productTarget} target cases`);
+}
+if ((dataset.voice?.length || 0) < voiceTarget) {
+  errors.push(`voice: only ${dataset.voice?.length || 0}/${voiceTarget} target cases`);
+}
+
 for (const product of dataset.productSearch || []) {
   if (!String(product.query || "").trim()) errors.push(`${product.id}: missing product query`);
   if (product.referenceQuery && !/^[a-z0-9 ,%-]+$/i.test(String(product.referenceQuery))) errors.push(`${product.id}: invalid referenceQuery`);
@@ -67,9 +76,17 @@ const references = [...(dataset.productSearch || []), ...(dataset.voice || [])].
   counts[reference] = (counts[reference] || 0) + 1;
   return counts;
 }, {} as Record<string, number>);
-const independentReferences = (dataset.productSearch || []).filter((testCase: any) =>
-  ["usda_verified", "manufacturer_verified"].includes(String(testCase.reference || ""))
-).length;
+const independentReferenceIds = new Set((dataset.productSearch || []).flatMap((testCase: any) => {
+  if (testCase.reference === "usda_verified" && Number.isInteger(testCase.referenceDetails?.fdcId)) {
+    return [`usda:${testCase.referenceDetails.fdcId}`];
+  }
+  if (testCase.reference === "manufacturer_verified") {
+    const identifier = String(testCase.referenceDetails?.url || testCase.referenceDetails?.productId || "").trim();
+    return identifier ? [`manufacturer:${identifier}`] : [];
+  }
+  return [];
+}));
+const independentReferences = independentReferenceIds.size;
 
 const summary = {
   version: dataset.version,

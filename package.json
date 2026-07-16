@@ -27,6 +27,7 @@
     "benchmark:recognition": "tsx benchmarks/run-recognition-benchmark.ts",
     "benchmark:validate": "tsx benchmarks/validate-recognition-dataset.ts",
     "benchmark:import-usda": "tsx benchmarks/import-usda-references.ts",
+    "benchmark:expand": "tsx benchmarks/expand-recognition-dataset.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
