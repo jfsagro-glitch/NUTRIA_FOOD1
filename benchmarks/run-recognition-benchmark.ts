@@ -39,6 +39,9 @@ const config = JSON.parse(await readFile(join(currentDir, "recognition-cases.jso
 const apiBaseUrl = (process.env.NUTRIA_API_BASE_URL || "http://localhost:3000").replace(/\/$/, "");
 const requestDelayMs = Math.max(0, Number(process.env.BENCHMARK_REQUEST_DELAY_MS || 0));
 const reportPath = process.env.BENCHMARK_REPORT_PATH?.trim();
+const benchmarkScope = ["all", "product", "voice"].includes(String(process.env.BENCHMARK_SCOPE))
+  ? String(process.env.BENCHMARK_SCOPE)
+  : "all";
 let completedRequests = 0;
 const productDurations: number[] = [];
 const voiceDurations: number[] = [];
@@ -84,7 +87,7 @@ let populatedNutrientGroups = 0;
 const usdaReferenceIds = new Set<number>();
 let usdaCalorieErrorTotal = 0;
 const productDetails = [] as Array<Record<string, unknown>>;
-for (const testCase of config.productSearch) {
+for (const testCase of benchmarkScope === "voice" ? [] : config.productSearch) {
   const products = await fetchJson(`/api/products/search?q=${encodeURIComponent(testCase.query)}`) as any[];
   const top3 = products.slice(0, 3);
   const match = top3.find((product) => namesMatch(product.name, testCase.aliases));
@@ -132,7 +135,7 @@ let voiceWeightsInRange = 0;
 let voiceCaloriesInRange = 0;
 let voiceCalorieErrorTotal = 0;
 const voiceDetails = [] as Array<Record<string, unknown>>;
-for (const testCase of config.voice) {
+for (const testCase of benchmarkScope === "product" ? [] : config.voice) {
   const response = await fetchJson("/api/voice/parse", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -170,11 +173,15 @@ const metrics = {
   voiceCalorieAccuracy: config.voice.length ? 1 - voiceCalorieErrorTotal / config.voice.length : 0,
 };
 const failures = Object.entries(config.thresholds)
+  .filter(([name]) => benchmarkScope === "all"
+    || (benchmarkScope === "product" && name.startsWith("product"))
+    || (benchmarkScope === "voice" && name.startsWith("voice")))
   .filter(([name, threshold]) => Number((metrics as any)[name] || 0) < threshold)
   .map(([name, threshold]) => `${name}: ${(metrics as any)[name]?.toFixed(3)} < ${threshold}`);
 
 const report = {
   benchmarkVersion: config.version,
+  scope: benchmarkScope,
   apiBaseUrl,
   generatedAt: new Date().toISOString(),
   metrics,
