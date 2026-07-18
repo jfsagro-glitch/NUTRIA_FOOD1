@@ -995,6 +995,19 @@ async function estimateMicronutrientsByName(name: string): Promise<{ micronutrie
   return { micronutrients: JSON.stringify(buildCompleteMicronutrients(est, fiber)), fiber };
 }
 
+function hydrateLocalProductForSearch(product: any) {
+  const micro = buildCompleteMicronutrients(parseMicronutrients(product.micronutrients), product.fiber);
+  if (isMicronutrientDataEffectivelyEmpty(micro)) {
+    enrichProductMicronutrientsInBackground(product).catch(() => {});
+  }
+  return {
+    ...product,
+    ...micro,
+    servings: parseProductServings(product.servingsJson),
+    source: "local",
+  };
+}
+
 async function searchProductsEngine(query: string, options: ProductSearchOptions = {}) {
   const normalizedInput = String(query || "").trim();
   if (!normalizedInput) return [] as any[];
@@ -1013,6 +1026,26 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
   }
 
   const dbReady = isDatabaseConfigured();
+  if (dbReady) {
+    const directMatches = await prisma.product.findMany({
+      where: { name: { equals: normalizedInput, mode: "insensitive" } },
+      orderBy: [{ brand: "asc" }, { name: "asc" }],
+      take: limit,
+    });
+    if (directMatches.length > 0) {
+      const hydrated = directMatches.map((product) => ({
+        ...hydrateLocalProductForSearch(product),
+        matchScore: 1,
+      }));
+      const localized = localize
+        ? await Promise.all(hydrated.map((product) => localizeProductForRussianAudience(product)))
+        : hydrated;
+      const responseResults = localized.map((product) => ({ ...product, nutriScore: calcNutriScore(product) }));
+      if (useCache) cacheProductSearch(`${normalizedInput}::${limit}`, responseResults);
+      return responseResults;
+    }
+  }
+
   let normalizedQuery = normalizedInput;
   let englishQuery = normalizedInput;
   let searchTerms: string[] = [normalizedInput];
@@ -1092,14 +1125,7 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
     [...exactLocalProducts, ...broadLocalProducts].map((product) => [product.id, product])
   ).values()];
 
-  const parsedLocal = localProducts.map((product) => {
-    const micro = buildCompleteMicronutrients(parseMicronutrients(product.micronutrients), product.fiber);
-    if (isMicronutrientDataEffectivelyEmpty(micro)) {
-      enrichProductMicronutrientsInBackground(product).catch(() => {});
-    }
-    const servings = parseProductServings((product as any).servingsJson);
-    return { ...product, ...micro, servings, source: "local" };
-  });
+  const parsedLocal = localProducts.map(hydrateLocalProductForSearch);
 
   let usdaProducts: any[] = [];
   const usdaKey = process.env.USDA_FDC_API_KEY;
