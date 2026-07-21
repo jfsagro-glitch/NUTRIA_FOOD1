@@ -175,6 +175,23 @@ export function restoreExactCatalogMatch(query: string, scoredCandidates: any[],
   ];
 }
 
+// Схлопывает кандидатов с одинаковым нормализованным именем (напр. локальный продукт и его
+// локализованный USDA-дубль). Ожидает список, УЖЕ отсортированный по релевантности — оставляет
+// первое (высшее) вхождение каждого имени. Разные варианты («Молоко 2.5%» ≠ «Молоко 3.2%»)
+// не схлопываются: проценты/цифры сохраняются в нормализованном ключе.
+export function dedupeSearchCandidatesByName(sortedCandidates: any[]): any[] {
+  const seen = new Set<string>();
+  const result: any[] = [];
+  for (const candidate of sortedCandidates) {
+    const key = normalizeComparableText(candidate?.name);
+    if (!key) { result.push(candidate); continue; }
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(candidate);
+  }
+  return result;
+}
+
 export function parseProductSearchPagination(offsetValue: unknown, limitValue: unknown) {
   return {
     offset: Math.max(0, Math.min(40, Number(offsetValue) || 0)),
@@ -1266,7 +1283,11 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
 
   scoredCandidates.sort((left, right) => numberOrZero(right.rankScore) - numberOrZero(left.rankScore));
 
-  let finalResults = scoredCandidates.slice(0, 15);
+  // Кросс-источниковая дедупликация: локальный «Молоко» и локализованный USDA «Milk»→«Молоко»
+  // — это один продукт для пользователя, но раньше оба попадали в выдачу как дубли. Список
+  // уже отсортирован по rankScore, поэтому оставляем первое (высшее) вхождение каждого
+  // нормализованного имени — а это как раз локальный/базовый вариант (бонусы источника/базы).
+  let finalResults = dedupeSearchCandidatesByName(scoredCandidates).slice(0, 15);
 
   if (allowAiEstimate && (finalResults.length === 0 || numberOrZero(finalResults[0]?.matchScore) < 0.6)) {
     const estimateData = await aiEstimateNutrientsByName(normalizedInput);

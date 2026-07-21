@@ -20,6 +20,7 @@ import {
   buildDishEstimateProduct,
   restoreExactCatalogMatch,
   micronutrientSchemaHint,
+  dedupeSearchCandidatesByName,
 } from "../server.ts";
 
 describe("русский стемминг (единственное ↔ множественное)", () => {
@@ -222,6 +223,25 @@ describe("восстановление точного каталожного с�
     const weak = [{ id: "c", name: "Пищевой краситель красный", source: "local", matchScore: 0.4 }];
     const ranked = [{ id: "z", name: "Что-то", source: "local", matchScore: 0.5 }];
     expect(restoreExactCatalogMatch("красная фасоль", weak, ranked)).toBe(ranked);
+  });
+});
+
+describe("кросс-источниковая дедупликация выдачи", () => {
+  it("схлопывает локальный и USDA-дубль одного имени, оставляя высший по релевантности", () => {
+    const sorted = [
+      { id: "loc", name: "Молоко", source: "local", rankScore: 1.2 },
+      { id: "usda", name: "молоко", source: "usda", rankScore: 0.8 },
+    ];
+    const out = dedupeSearchCandidatesByName(sorted);
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe("loc");
+  });
+  it("разные варианты (проценты) не схлопываются", () => {
+    const sorted = [
+      { id: "a", name: "Молоко 2.5%", source: "local", rankScore: 1 },
+      { id: "b", name: "Молоко 3.2%", source: "local", rankScore: 0.9 },
+    ];
+    expect(dedupeSearchCandidatesByName(sorted)).toHaveLength(2);
   });
 });
 
