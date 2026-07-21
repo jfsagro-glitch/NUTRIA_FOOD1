@@ -2077,7 +2077,7 @@
       ],
       "caloriesPer100": {
         "min": 827.08,
-        "max": 970.92
+        "max": 900
       },
       "requiredNutrientGroups": [
         "vitamins",

@@ -27,7 +27,10 @@ for (const product of seedProducts) {
     allowedSources: ["local", "catalog"],
     caloriesPer100: {
       min: Math.max(0, Number((product.calories - tolerance).toFixed(2))),
-      max: Number((product.calories + tolerance).toFixed(2)),
+      // Зажимаем верх окна физическим потолком 902 ккал/100 г (чистый жир ≈ 9 ккал/г).
+      // Без клампа ±8% для жирных продуктов (масло ~899) давало невозможные >902,
+      // что затем ловит validate-recognition-dataset.
+      max: Math.min(902, Number((product.calories + tolerance).toFixed(2))),
     },
     requiredNutrientGroups: ["vitamins", "minerals"],
   });

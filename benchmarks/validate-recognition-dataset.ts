@@ -23,6 +23,12 @@ function validRange(range: any) {
     && Number(range.max) >= Number(range.min);
 }
 
+// Физический потолок калорийности на 100 г — чистый жир ≈ 9 ккал/г = 902 ккал/100 г.
+// Тот же порог, что и в движке (validateNutritionPer100g, kcal>9/g). Дублируется намеренно:
+// benchmark:validate — офлайн CI-шаг без БД/сервера, и мы не хотим тянуть в него весь
+// server.ts (он бы поднял Express). Если правишь порог в движке — поправь и здесь.
+const MAX_KCAL_PER_100G = 902;
+
 validateUniqueIds(dataset.productSearch || [], "productSearch");
 validateUniqueIds(dataset.voice || [], "voice");
 
@@ -40,7 +46,18 @@ for (const product of dataset.productSearch || []) {
   if (product.referenceQuery && !/^[a-z0-9 ,%-]+$/i.test(String(product.referenceQuery))) errors.push(`${product.id}: invalid referenceQuery`);
   if (!Array.isArray(product.aliases) || product.aliases.length === 0) errors.push(`${product.id}: missing aliases`);
   if (!Array.isArray(product.allowedSources) || product.allowedSources.length === 0) errors.push(`${product.id}: missing allowedSources`);
-  if (!validRange(product.caloriesPer100)) errors.push(`${product.id}: invalid caloriesPer100 range`);
+  if (!validRange(product.caloriesPer100)) {
+    errors.push(`${product.id}: invalid caloriesPer100 range`);
+  } else {
+    // Правдоподобие эталона: диапазон не должен превышать физический потолок 902 ккал/100 г
+    // (класс бага, который мы вычищаем — эталон с невозможной калорийностью). Внутренний
+    // диапазон caloriesPer100 — это ОКНО ПРИЁМКИ вывода движка (широкое, покрывает варианты
+    // продукта: постная/жирная говядина и т.п.), поэтому не сверяем его с referenceDetails
+    // (это провенанс конкретного источника, он законно может отличаться) — только физпотолок.
+    if (Number(product.caloriesPer100.max) > MAX_KCAL_PER_100G) {
+      errors.push(`${product.id}: caloriesPer100.max ${product.caloriesPer100.max} > ${MAX_KCAL_PER_100G} kcal/100g (физически невозможно)`);
+    }
+  }
   if (!Array.isArray(product.requiredNutrientGroups) || product.requiredNutrientGroups.length === 0) {
     errors.push(`${product.id}: missing requiredNutrientGroups`);
   }

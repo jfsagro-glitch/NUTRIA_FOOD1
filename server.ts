@@ -2946,6 +2946,15 @@ async function resolveBarcodeProduct(candidates: string[]) {
 }
 
 // AI Helper: Unified AI Generation with Fallback (Gemini -> DeepSeek -> OpenAI)
+// Per-provider backstop таймаут. Все вызовы generateAI уже обёрнуты внешним withTimeout,
+// поэтому зависший провайдер не вешает запрос навсегда — но зависший ПЕРВЫЙ провайдер
+// съедал весь внешний бюджет и фоллбэк-цепочка (Gemini→DeepSeek→OpenAI) не срабатывала.
+// Ограничиваем каждый провайдер отдельно: зависший быстро падает, следующий получает шанс.
+// Значения — «умирающий провайдер», не «медленный ответ»: под типичными внешними бюджетами
+// (≤12с текст) рабочий ответ не режется. Переопределяется через env.
+const AI_PROVIDER_TIMEOUT_MS = Math.max(3000, Number(process.env.AI_PROVIDER_TIMEOUT_MS) || 9000);
+const AI_VISION_PROVIDER_TIMEOUT_MS = Math.max(5000, Number(process.env.AI_VISION_PROVIDER_TIMEOUT_MS) || 20000);
+
 async function generateAI(prompt: string, responseMimeType: string = "application/json", image?: { data: string, mimeType: string }) {
   // For image recognition quality: prioritize OpenAI Vision first, then Gemini fallback.
   if (image) {
@@ -2961,11 +2970,11 @@ async function generateAI(prompt: string, responseMimeType: string = "applicatio
           }
         ];
 
-        const response = await openai.chat.completions.create({
+        const response = await withTimeout(openai.chat.completions.create({
           model: OPENAI_VISION_MODEL,
           messages,
           response_format: responseMimeType === "application/json" ? { type: "json_object" } : undefined
-        });
+        }), AI_VISION_PROVIDER_TIMEOUT_MS, "OpenAI Vision");
         if (response.choices[0].message.content) return response.choices[0].message.content;
       } catch (e) {
         console.warn("OpenAI Vision Error, falling back to Gemini:", e);
@@ -2976,11 +2985,11 @@ async function generateAI(prompt: string, responseMimeType: string = "applicatio
       try {
         const contents = { parts: [{ text: prompt }, { inlineData: { data: image.data, mimeType: image.mimeType } }] };
 
-        const response = await ai.models.generateContent({
+        const response = await withTimeout(ai.models.generateContent({
           model: "gemini-3-flash-preview",
           contents: contents as any,
           config: { responseMimeType: responseMimeType as any }
-        });
+        }), AI_VISION_PROVIDER_TIMEOUT_MS, "Gemini Vision");
         if (response.text) return response.text;
       } catch (e) {
         console.warn("Gemini image fallback Error:", e);
@@ -2993,11 +3002,11 @@ async function generateAI(prompt: string, responseMimeType: string = "applicatio
   // 1. Try Gemini for text tasks
   if (ai) {
     try {
-      const response = await ai.models.generateContent({
+      const response = await withTimeout(ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: prompt,
         config: { responseMimeType: responseMimeType as any }
-      });
+      }), AI_PROVIDER_TIMEOUT_MS, "Gemini");
       if (response.text) return response.text;
     } catch (e) {
       console.warn("Gemini Error, falling back to DeepSeek:", e);
@@ -3009,11 +3018,11 @@ async function generateAI(prompt: string, responseMimeType: string = "applicatio
   // 2. Try DeepSeek (text only)
   if (deepseek && !image) {
     try {
-      const response = await deepseek.chat.completions.create({
+      const response = await withTimeout(deepseek.chat.completions.create({
         model: "deepseek-chat",
         messages: [{ role: "user", content: prompt }],
         response_format: responseMimeType === "application/json" ? { type: "json_object" } : undefined
-      });
+      }), AI_PROVIDER_TIMEOUT_MS, "DeepSeek");
       return response.choices[0].message.content;
     } catch (e) {
       console.warn("DeepSeek Error, falling back to OpenAI:", e);
@@ -3030,11 +3039,11 @@ async function generateAI(prompt: string, responseMimeType: string = "applicatio
         }
       ];
 
-      const response = await openai.chat.completions.create({
+      const response = await withTimeout(openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages,
         response_format: responseMimeType === "application/json" ? { type: "json_object" } : undefined
-      });
+      }), AI_PROVIDER_TIMEOUT_MS, "OpenAI");
       return response.choices[0].message.content;
     } catch (e) {
       logError("OpenAI Error:", e);
