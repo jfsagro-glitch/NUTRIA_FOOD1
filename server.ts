@@ -415,7 +415,7 @@ function textTokenSet(value: any) {
   );
 }
 
-function computeTextSimilarity(left: any, right: any) {
+export function computeTextSimilarity(left: any, right: any) {
   const a = normalizeComparableText(left);
   const b = normalizeComparableText(right);
   if (!a || !b) return 0;
@@ -460,7 +460,9 @@ export function isLexicallyCompatibleFood(query: any, candidateName: any) {
   ));
   const hasConflict = Object.entries(FOOD_CATEGORY_CONFLICTS).some(([queryPart, conflicts]) =>
     queryStems.some((token) => token.startsWith(queryPart) || queryPart.startsWith(token))
-      && candidateStems.some((token) => conflicts.some((conflict) => token.startsWith(conflict)))
+      // Двунаправленно: основа кандидата может быть короче конфликтного слова
+      // ("мук" от "мука" после стемминга), поэтому сверяем startsWith в обе стороны.
+      && candidateStems.some((token) => conflicts.some((conflict) => token.startsWith(conflict) || conflict.startsWith(token)))
   );
   return !hasConflict && (hasOverlap || computeTextSimilarity(query, candidateName) >= 0.6);
 }
@@ -483,11 +485,23 @@ const RUSSIAN_STEM_ENDINGS = [
   "а", "я", "ы", "и", "у", "ю", "е", "о", "ь", "й",
 ];
 
-function stemRussianToken(token: string): string | null {
+export function stemRussianToken(token: string): string | null {
   const value = String(token || "").toLowerCase().trim();
-  if (value.length < 5 || !/[а-яё]/.test(value)) return null;
+  // Порог 4 (а не 5): короткие формы множественного числа тоже должны находить
+  // единственное — "яйца"→"яйц"↔"яйцо"→"яйц", "рыбы"→"рыб"↔"рыба"→"рыб". Основа не
+  // короче 3 символов (иначе матч слишком общий).
+  if (value.length < 4 || !/[а-яё]/.test(value)) return null;
+
+  // Беглая гласная: у слов на -ец/-ок/-ек и т.п. гласная (е/о) выпадает в других
+  // формах ("огурец"→"огурцы", "кусок"→"куски"). Отдаём основу без беглой гласной,
+  // чтобы форма с гласной и без неё сходились: "огурец"→"огурц"↔"огурцы"→"огурц".
+  const fleeting = value.match(/^(.{2,})[ео]([цкн])$/);
+  if (fleeting && fleeting[1].length + 1 >= 3) {
+    return fleeting[1] + fleeting[2];
+  }
+
   for (const ending of RUSSIAN_STEM_ENDINGS) {
-    if (value.length - ending.length >= 4 && value.endsWith(ending)) {
+    if (value.length - ending.length >= 3 && value.endsWith(ending)) {
       return value.slice(0, value.length - ending.length);
     }
   }
@@ -497,12 +511,40 @@ function stemRussianToken(token: string): string | null {
 // Базовый/каноничный продукт из нашего каталога — без бренда конкретной фирмы
 // (seed помечает такие brand: "Базовый продукт"). У них обычно полные нутриенты, и
 // команда просит показывать их выше фирменных вариантов того же продукта.
-function isBaseProductCandidate(candidate: any): boolean {
+export function isBaseProductCandidate(candidate: any): boolean {
   if (!candidate) return false;
   const source = String(candidate.source || "");
   if (source && source !== "local" && source !== "catalog") return false; // не USDA/AI
   const brandText = String(candidate.brand || "").trim().toLowerCase();
   return brandText === "" || brandText === "базовый продукт";
+}
+
+// Единая проверка правдоподобия КБЖУ на 100 г. До этого физической проверки не было ни
+// на одном AI-пути, из-за чего проходили невозможные значения (реальный баг: "4 блинчика
+// с творогом" → 1295 ккал / 150 г = 8.6 ккал/г, что выше чистого жира 9 ккал/г). Проверяем:
+//  - сумма Б+Ж+У ≤ ~100 г на 100 г продукта (физический предел, +допуск на погрешность);
+//  - калорийность ≤ ~9 ккал/г (плотность не выше чистого жира);
+//  - согласованность с Атуотером (ккал ≈ 4·Б + 4·У + 9·Ж), расхождение > 30% подозрительно.
+// Если по макросам всё нормально, а расходится только заявленная калорийность — предлагаем
+// исправленное значение по Атуотеру (correctedCalories), это надёжнее «на глаз».
+export function validateNutritionPer100g(n: {
+  calories?: number; protein?: number; fat?: number; carbs?: number;
+}): { plausible: boolean; needsReview: boolean; reasons: string[]; correctedCalories?: number } {
+  const calories = numberOrZero(n.calories);
+  const protein = numberOrZero(n.protein);
+  const fat = numberOrZero(n.fat);
+  const carbs = numberOrZero(n.carbs);
+  const macroSum = protein + fat + carbs;
+  const atwater = protein * 4 + carbs * 4 + fat * 9;
+  const reasons: string[] = [];
+  if (macroSum > 105) reasons.push("macro-sum>105g/100g");
+  if (macroSum <= 0 && calories <= 0) reasons.push("all-zero");
+  if (calories > 902) reasons.push("kcal>9/g (выше чистого жира)");
+  const kcalMismatch = atwater > 0 && calories > 0 && Math.abs(calories - atwater) / atwater > 0.3;
+  if (kcalMismatch) reasons.push("kcal-vs-atwater>30%");
+  // Если макросы правдоподобны, а калорийность им противоречит — доверяем Атуотеру.
+  const correctedCalories = kcalMismatch && macroSum > 0 && macroSum <= 105 ? Math.round(atwater) : undefined;
+  return { plausible: reasons.length === 0, needsReview: reasons.length > 0, reasons, correctedCalories };
 }
 
 function uniqueStrings(values: any[], minLength: number = 1) {
@@ -1760,7 +1802,7 @@ function normalizeUnitName(unit: any) {
   return String(unit || "").trim().toLowerCase();
 }
 
-const MICRONUTRIENT_TEMPLATE = {
+export const MICRONUTRIENT_TEMPLATE = {
   vitamins: {
     BetaCarotene: 0,
     B1: 0,
@@ -1865,7 +1907,7 @@ function normalizeLegacyMicronutrientKeys(input: any) {
   return normalized;
 }
 
-function buildCompleteMicronutrients(raw: any, productFiber?: number | null) {
+export function buildCompleteMicronutrients(raw: any, productFiber?: number | null) {
   const legacy = normalizeLegacyMicronutrientKeys(raw || {});
   const merged = {
     vitamins: { ...MICRONUTRIENT_TEMPLATE.vitamins, ...(legacy.vitamins || {}) },
@@ -1993,7 +2035,7 @@ const KEY_MICRONUTRIENTS: Record<string, string[]> = {
   fattyAcids: ["Omega3", "Omega6"],
 };
 
-function hasMissingKeyMicronutrients(completeMicro: ReturnType<typeof buildCompleteMicronutrients>) {
+export function hasMissingKeyMicronutrients(completeMicro: ReturnType<typeof buildCompleteMicronutrients>) {
   return Object.entries(KEY_MICRONUTRIENTS).some(([group, keys]) => {
     const g = (completeMicro as any)[group] || {};
     // Пробел засчитываем только если в группе уже есть хоть какие-то данные (продукт
@@ -2389,7 +2431,7 @@ function pickUsdaNutrient(
   return convertNutrientUnit(raw, hit?.unitName, options.targetUnit);
 }
 
-function extractUsdaExtendedNutrients(food: any) {
+export function extractUsdaExtendedNutrients(food: any) {
   const vitamins: any = {};
   const minerals: any = {};
   const aminoAcids: any = {};
@@ -2546,7 +2588,7 @@ function extractUsdaExtendedNutrients(food: any) {
   };
 }
 
-function normalizeOpenFoodFactsProduct(rawProduct: any, barcode: string) {
+export function normalizeOpenFoodFactsProduct(rawProduct: any, barcode: string) {
   const nutr = rawProduct?.nutriments || {};
 
   const protein = numberOrZero(nutr["proteins_100g"]);
