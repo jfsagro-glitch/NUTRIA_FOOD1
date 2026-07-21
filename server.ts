@@ -997,7 +997,7 @@ async function estimateMicronutrientsByName(name: string): Promise<{ micronutrie
 
 function hydrateLocalProductForSearch(product: any) {
   const micro = buildCompleteMicronutrients(parseMicronutrients(product.micronutrients), product.fiber);
-  if (isMicronutrientDataEffectivelyEmpty(micro)) {
+  if (isMicronutrientDataEffectivelyEmpty(micro) || hasEmptyMicronutrientGroup(micro) || hasMissingKeyMicronutrients(micro)) {
     enrichProductMicronutrientsInBackground(product).catch(() => {});
   }
   return {
@@ -1983,6 +1983,26 @@ function hasEmptyMicronutrientGroup(completeMicro: ReturnType<typeof buildComple
   );
 }
 
+// «Ключевые» микроэлементы — те, что есть почти во всех продуктах и которые пользователи
+// реально смотрят. Точечные нули по ним выглядят как «пропала часть данных» (например: у
+// йогурта заполнены другие витамины, а B12 = 0, хотя в молоке он есть). Группа при этом не
+// пуста целиком, поэтому докомплектация по пустым группам такие пробелы не закрывала.
+const KEY_MICRONUTRIENTS: Record<string, string[]> = {
+  vitamins: ["A", "C", "D", "E", "K", "B1", "B2", "B3", "B5", "B6", "B9", "B12"],
+  minerals: ["Calcium", "Iron", "Magnesium", "Potassium", "Zinc", "Iodine", "Phosphorus", "Selenium", "Sodium"],
+  fattyAcids: ["Omega3", "Omega6"],
+};
+
+function hasMissingKeyMicronutrients(completeMicro: ReturnType<typeof buildCompleteMicronutrients>) {
+  return Object.entries(KEY_MICRONUTRIENTS).some(([group, keys]) => {
+    const g = (completeMicro as any)[group] || {};
+    // Пробел засчитываем только если в группе уже есть хоть какие-то данные (продукт
+    // распознан), иначе это «нет данных вообще» — покрывается другими проверками.
+    if (!hasAnyPositiveValue(g)) return false;
+    return keys.some((key) => numberOrZero(g[key]) <= 0);
+  });
+}
+
 function clampNutriScorePoints(value: number, max: number) {
   return Math.max(0, Math.min(max, Math.round(value)));
 }
@@ -2090,24 +2110,50 @@ async function enrichProductMicronutrients(product: { id: string; name: string; 
   if (usdaMicro) {
     const usdaComplete = buildCompleteMicronutrients(usdaMicro, product.fiber);
     for (const groupKey of Object.keys(merged)) {
+      // Целиком пустую группу заполняем полностью.
       if (!hasAnyPositiveValue(merged[groupKey]) && hasAnyPositiveValue((usdaComplete as any)[groupKey])) {
         merged[groupKey] = (usdaComplete as any)[groupKey];
         nutrientSources[groupKey] = "usda_fdc";
         changed = true;
+        continue;
+      }
+      // Точечная заливка: заполняем КАЖДЫЙ нулевой нутриент, для которого в USDA есть
+      // значение — так закрываются пробелы вроде отсутствующего B12 у продукта, где
+      // остальные витамины уже заполнены (USDA — точные данные, переписываем все нули).
+      const usdaGroup = (usdaComplete as any)[groupKey] || {};
+      for (const key of Object.keys(merged[groupKey])) {
+        if (numberOrZero(merged[groupKey][key]) <= 0 && numberOrZero(usdaGroup[key]) > 0) {
+          merged[groupKey][key] = usdaGroup[key];
+          nutrientSources[`${groupKey}.${key}`] = "usda_fdc";
+          changed = true;
+        }
       }
     }
   }
 
-  // Группы, для которых и в USDA ничего не нашлось, добираем AI-оценкой —
-  // менее точно, но лучше нулей.
-  if (hasEmptyMicronutrientGroup(merged as any)) {
+  // Что не покрыл USDA, добираем AI-оценкой (менее точно, но лучше нулей) — если осталась
+  // пустая группа целиком ИЛИ пробел по ключевым нутриентам (напр. B12).
+  if (hasEmptyMicronutrientGroup(merged as any) || hasMissingKeyMicronutrients(merged as any)) {
     const estimatedMicro = await estimateMicronutrientsWithAI(product);
     if (estimatedMicro) {
+      // Целиком пустые группы заполняем полностью.
       for (const groupKey of Object.keys(merged)) {
         if (!hasAnyPositiveValue(merged[groupKey]) && hasAnyPositiveValue((estimatedMicro as any)[groupKey])) {
           merged[groupKey] = (estimatedMicro as any)[groupKey];
           nutrientSources[groupKey] = "ai_estimate";
           changed = true;
+        }
+      }
+      // Точечные нули по ключевым нутриентам добираем из AI-оценки (не заливаем все нули
+      // подряд AI-догадками — только то, что пользователи реально смотрят).
+      for (const [groupKey, keys] of Object.entries(KEY_MICRONUTRIENTS)) {
+        const estGroup = (estimatedMicro as any)[groupKey] || {};
+        for (const key of keys) {
+          if (numberOrZero(merged[groupKey]?.[key]) <= 0 && numberOrZero(estGroup[key]) > 0) {
+            merged[groupKey][key] = estGroup[key];
+            nutrientSources[`${groupKey}.${key}`] = "ai_estimate";
+            changed = true;
+          }
         }
       }
     }
@@ -3082,7 +3128,20 @@ export async function createApp(): Promise<express.Express> {
         if (mine) return res.json(mine);
       }
       const { product } = await resolveBarcodeProduct(candidates);
-      if (product) return res.json(product);
+      if (product) {
+        // Продукты по штрих-коду (особенно из OpenFoodFacts) почти всегда приходят с
+        // пустой таблицей витаминов/минералов. Докомплектация раньше ставилась в очередь
+        // только из поиска — у отсканированных продуктов таблица оставалась нулевой.
+        // Ставим в ту же фоновую очередь и здесь: при следующем открытии продукт уже
+        // будет с заполненными микроэлементами.
+        if (isDatabaseConfigured() && (product as any).id && !isGeneratedProductId(String((product as any).id))) {
+          const micro = buildCompleteMicronutrients(parseMicronutrients((product as any).micronutrients), (product as any).fiber);
+          if (isMicronutrientDataEffectivelyEmpty(micro) || hasEmptyMicronutrientGroup(micro) || hasMissingKeyMicronutrients(micro)) {
+            enrichProductMicronutrientsInBackground(product as any).catch(() => {});
+          }
+        }
+        return res.json(product);
+      }
 
       return res.status(404).json({ error: "Not found" });
     } catch (e: any) {
