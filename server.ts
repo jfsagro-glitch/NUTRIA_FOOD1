@@ -380,11 +380,11 @@ function extractRecipeJsonLd(html: string): any | null {
   return null;
 }
 
-function unwrapAiItemsArray(payload: any): any[] {
+export function unwrapAiItemsArray(payload: any): any[] {
   if (Array.isArray(payload)) return payload;
   if (!payload || typeof payload !== "object") return [];
 
-  for (const key of ["items", "ingredients", "products", "components", "results"]) {
+  for (const key of ["items", "ingredients", "products", "components", "results", "indices", "order", "ranking"]) {
     if (Array.isArray(payload[key])) return payload[key];
   }
 
@@ -683,7 +683,7 @@ async function ensureProductExistsLocally(productId: string, productData?: any) 
   return product;
 }
 
-function buildDishEstimateProduct(dishEstimate: any) {
+export function buildDishEstimateProduct(dishEstimate: any) {
   if (!dishEstimate || typeof dishEstimate !== "object") return null;
 
   const amount = clampNumber(dishEstimate.amount ?? dishEstimate.totalWeight ?? dishEstimate.portionGrams, 1, 5000, 350);
@@ -696,20 +696,33 @@ function buildDishEstimateProduct(dishEstimate: any) {
 
   if (!amount || (!calories && !protein && !fat && !carbs)) return null;
 
-  return {
-    name: String(dishEstimate.name || "Блюдо по фото").trim() || "Блюдо по фото",
-    brand: "AI Dish Estimate",
+  // Приводим к 100 г и проверяем правдоподобие уже на этой базе (плотность ≤ 9 ккал/г,
+  // сумма Б+Ж+У ≤ 100 г, Атуотер). Это тот самый путь, где AI отдаёт «всю порцию»
+  // числом и деление могло дать физически невозможную плотность (класс «1295/150 г»).
+  const per100 = {
     calories: factor > 0 ? calories / factor : 0,
     protein: factor > 0 ? protein / factor : 0,
     fat: factor > 0 ? fat / factor : 0,
     carbs: factor > 0 ? carbs / factor : 0,
     fiber: factor > 0 ? fiber / factor : 0,
+  };
+  const check = validateNutritionPer100g(per100);
+
+  return {
+    name: String(dishEstimate.name || "Блюдо по фото").trim() || "Блюдо по фото",
+    brand: "AI Dish Estimate",
+    calories: check.correctedCalories ?? per100.calories,
+    protein: per100.protein,
+    fat: per100.fat,
+    carbs: per100.carbs,
+    fiber: per100.fiber,
     vitamins: dishEstimate.vitamins || {},
     minerals: dishEstimate.minerals || {},
     aminoAcids: dishEstimate.aminoAcids || {},
     fattyAcids: dishEstimate.fattyAcids || {},
     carbohydrateTypes: dishEstimate.carbohydrateTypes || {},
     isAiEstimated: true,
+    needsReview: check.needsReview,
     explanation: String(dishEstimate.explanation || "").trim(),
   };
 }
@@ -1060,8 +1073,14 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
   const allowAiEstimate = options.allowAiEstimate !== false;
   const fast = options.fast === true;
 
+  // Ключ кэша обязан включать режимы: раньше был только `запрос::limit`, из-за чего
+  // «быстрый» вызов (fast, без USDA/AI/реранка — напр. из фото/голоса) кэшировался и
+  // подменял собой полноценный вызов с тем же запросом и limit, отдавая ему обеднённый
+  // результат. Разводим по флагам fast/allowAiEstimate/localize.
+  const cacheKey = `${normalizedInput}::${limit}::f${fast ? 1 : 0}::e${allowAiEstimate ? 1 : 0}::l${localize ? 1 : 0}`;
+
   if (useCache) {
-    const cachedSearch = getCachedProductSearch(`${normalizedInput}::${limit}`);
+    const cachedSearch = getCachedProductSearch(cacheKey);
     if (cachedSearch) {
       return cachedSearch.slice(0, limit);
     }
@@ -1083,7 +1102,7 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
         ? await Promise.all(hydrated.map((product) => localizeProductForRussianAudience(product)))
         : hydrated;
       const responseResults = localized.map((product) => ({ ...product, nutriScore: calcNutriScore(product) }));
-      if (useCache) cacheProductSearch(`${normalizedInput}::${limit}`, responseResults);
+      if (useCache) cacheProductSearch(cacheKey, responseResults);
       return responseResults;
     }
   }
@@ -1245,11 +1264,16 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
   if (allowAiEstimate && (finalResults.length === 0 || numberOrZero(finalResults[0]?.matchScore) < 0.6)) {
     const estimateData = await aiEstimateNutrientsByName(normalizedInput);
     if (estimateData?.name) {
+      // Проверяем правдоподобие: AI иногда отдаёт физически невозможные значения
+      // (класс «1295 ккал / 150 г»). Если калорийность противоречит макросам, а сами
+      // макросы правдоподобны — берём калорийность по Атуотеру; при грубых нарушениях
+      // помечаем needsReview, чтобы приложение предложило сверить.
+      const check = validateNutritionPer100g(estimateData);
       finalResults.unshift({
         id: `ai-est-${Date.now()}`,
         name: `✨ ${estimateData.name} (AI Оценка)`,
         brand: "AI Nutria Engine",
-        calories: numberOrZero(estimateData.calories),
+        calories: check.correctedCalories ?? numberOrZero(estimateData.calories),
         protein: numberOrZero(estimateData.protein),
         fat: numberOrZero(estimateData.fat),
         carbs: numberOrZero(estimateData.carbs),
@@ -1260,6 +1284,7 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
         fattyAcids: estimateData.fattyAcids || {},
         carbohydrateTypes: estimateData.carbohydrateTypes || {},
         isAiEstimated: true,
+        needsReview: check.needsReview,
         explanation: estimateData.explanation,
         matchScore: 0.95,
         source: "ai",
@@ -1276,14 +1301,17 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
 ${finalResults.map((candidate, index) => `${index}: ${candidate.name} (${candidate.brand}) - Score: ${candidate.matchScore}`).join("\n")}
 
 Выбери лучшие совпадения.
-Верни только JSON с массивом индексов по убыванию релевантности.
-Полностью нерелевантные позиции исключи.
+Верни только JSON-объект вида {"indices": [2, 0, 1]} — массив 0-based индексов кандидатов по убыванию релевантности.
+Полностью нерелевантные позиции не включай.
 При прочих равных базовый/общий продукт (бренд "Базовый продукт" или без бренда фирмы) ставь выше фирменных вариантов того же продукта.
 Если есть AI-оценка и она выглядит корректно, можно поставить ее выше.`), 7000, "AI re-rank");
       const reRankData = parseAiJsonPayload(reRankResponseText || "{}");
-      const indices = Array.isArray(reRankData)
-        ? reRankData
-        : (Array.isArray(reRankData?.indices) ? reRankData.indices : []);
+      // Провайдеры с response_format=json_object (OpenAI/DeepSeek) не отдают top-level
+      // массив и оборачивают его в ключ по своему усмотрению (indices/order/ranking/…).
+      // unwrapAiItemsArray их разворачивает — иначе реранк молча превращался в no-op.
+      const indices = unwrapAiItemsArray(reRankData)
+        .map((v: any) => Number(v))
+        .filter((v: any) => Number.isInteger(v));
 
       if (indices.length > 0) {
         finalResults = indices.map((index: number) => finalResults[index]).filter(Boolean);
@@ -1338,7 +1366,7 @@ ${finalResults.map((candidate, index) => `${index}: ${candidate.name} (${candida
   const responseResults = localizedResults.map((item: any) => ({ ...item, nutriScore: calcNutriScore(item) }));
 
   if (useCache) {
-    cacheProductSearch(`${normalizedInput}::${limit}`, responseResults);
+    cacheProductSearch(cacheKey, responseResults);
   }
 
   return responseResults;

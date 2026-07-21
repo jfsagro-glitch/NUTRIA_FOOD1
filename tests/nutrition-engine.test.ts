@@ -16,6 +16,8 @@ import {
   hasMissingKeyMicronutrients,
   extractUsdaExtendedNutrients,
   normalizeOpenFoodFactsProduct,
+  unwrapAiItemsArray,
+  buildDishEstimateProduct,
 } from "../server.ts";
 
 describe("русский стемминг (единственное ↔ множественное)", () => {
@@ -141,6 +143,60 @@ describe("маппинг USDA → микроэлементы", () => {
     const complete = buildCompleteMicronutrients(extractUsdaExtendedNutrients(food));
     expect(complete.minerals.Silicon).toBe(0);
     expect(complete.vitamins.B12).toBeGreaterThan(0);
+  });
+});
+
+describe("разворачивание массива из AI-ответа (json_object-фоллбэк)", () => {
+  it("голый массив возвращается как есть", () => {
+    expect(unwrapAiItemsArray([2, 0, 1])).toEqual([2, 0, 1]);
+  });
+  it("объект-обёртка реранка {indices|order|ranking} разворачивается", () => {
+    // OpenAI/DeepSeek с response_format:json_object не отдают top-level массив —
+    // реранк обязан присылать {"indices":[...]}, иначе порядок кандидатов терялся.
+    expect(unwrapAiItemsArray({ indices: [2, 0, 1] })).toEqual([2, 0, 1]);
+    expect(unwrapAiItemsArray({ order: [1, 0] })).toEqual([1, 0]);
+    expect(unwrapAiItemsArray({ ranking: [0, 2, 1] })).toEqual([0, 2, 1]);
+    expect(unwrapAiItemsArray({ items: ["a", "b"] })).toEqual(["a", "b"]);
+  });
+  it("мусор без массива → пустой список (безопасный фоллбэк)", () => {
+    expect(unwrapAiItemsArray(null)).toEqual([]);
+    expect(unwrapAiItemsArray({ foo: 1 })).toEqual([]);
+    expect(unwrapAiItemsArray("строка")).toEqual([]);
+  });
+});
+
+describe("оценка блюда по фото: невозможная плотность порции", () => {
+  it("«вся порция» числом с невозможной плотностью → needsReview + коррекция по Атуотеру", () => {
+    // Класс бага «1295 ккал / 150 г»: AI отдаёт калорийность всей порции, деление
+    // на факторе даёт физически невозможную плотность (> 9 ккал/г).
+    const p = buildDishEstimateProduct({
+      name: "блины",
+      amount: 150,
+      totalCalories: 1500,
+      totalProtein: 15,
+      totalFat: 10,
+      totalCarbs: 20,
+    });
+    expect(p).not.toBeNull();
+    expect(p!.needsReview).toBe(true);
+    // protein 10, carbs 13.33, fat 6.67 на 100 г → Атуотер ≈ 153 ккал
+    expect(p!.calories).toBe(Math.round(10 * 4 + (20 / 1.5) * 4 + (10 / 1.5) * 9));
+  });
+  it("нормальная порция остаётся без пометки", () => {
+    const p = buildDishEstimateProduct({
+      name: "гречка отварная",
+      amount: 200,
+      totalCalories: 220,
+      totalProtein: 8,
+      totalFat: 2,
+      totalCarbs: 44,
+    });
+    expect(p).not.toBeNull();
+    expect(p!.needsReview).toBe(false);
+  });
+  it("пустой/бессмысленный ввод → null", () => {
+    expect(buildDishEstimateProduct(null)).toBeNull();
+    expect(buildDishEstimateProduct({ name: "x", amount: 100 })).toBeNull();
   });
 });
 
