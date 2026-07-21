@@ -156,12 +156,17 @@ export function withNutritionContract(product: any) {
 
 export function restoreExactCatalogMatch(query: string, scoredCandidates: any[], rankedCandidates: any[]) {
   const normalizedQuery = normalizeComparableText(query);
+  if (normalizedQuery.length < 3) return rankedCandidates;
+  const queryTokens = [...textTokenSet(normalizedQuery)];
   const exactCatalogMatch = scoredCandidates.find((candidate) => {
+    if (candidate.source !== "local" || numberOrZero(candidate.matchScore) < 0.6) return false;
     const normalizedCandidate = normalizeComparableText(candidate.name);
-    return candidate.source === "local"
-      && normalizedQuery.length >= 3
-      && normalizedCandidate.includes(normalizedQuery)
-      && numberOrZero(candidate.matchScore) >= 0.6;
+    if (normalizedCandidate.includes(normalizedQuery)) return true;
+    // Порядок слов не важен: "хлопья овсяные" ≡ "овсяные хлопья". Требуем, чтобы ВСЕ
+    // токены запроса (без учёта порядка) присутствовали в названии кандидата как отдельные
+    // слова. Без стемминга — это восстановление ТОЧНОГО каталожного совпадения, не фаззи.
+    const candidateTokens = textTokenSet(normalizedCandidate);
+    return queryTokens.length > 0 && queryTokens.every((token) => candidateTokens.has(token));
   });
   if (!exactCatalogMatch) return rankedCandidates;
   return [
@@ -1022,13 +1027,10 @@ async function aiEstimateNutrientsByName(name: string): Promise<any | null> {
   "fat": number,
   "carbs": number,
   "fiber": number,
-  "vitamins": { "BetaCarotene": number, "B1": number, "B2": number, "B5": number, "B6": number, "B9": number, "B12": number, "C": number, "A": number, "D": number, "E": number, "K": number, "B3": number, "Biotin": number, "Choline": number },
-  "minerals": { "Potassium": number, "Calcium": number, "Magnesium": number, "Sodium": number, "Phosphorus": number, "Iron": number, "Iodine": number, "Manganese": number, "Copper": number, "Selenium": number, "Chromium": number, "Zinc": number },
-  "fattyAcids": { "Omega3": number, "Omega6": number, "Omega9": number, "TransFats": number, "Cholesterol": number },
-  "carbohydrateTypes": { "Glucose": number, "Fructose": number, "Galactose": number, "Sucrose": number, "Lactose": number, "Maltose": number, "Starch": number, "Fiber": number },
-  "aminoAcids": { "Alanine": number, "Arginine": number, "Asparagine": number, "AsparticAcid": number, "Valine": number, "Histidine": number, "Glycine": number, "Glutamine": number, "GlutamicAcid": number, "Isoleucine": number, "Leucine": number, "Lysine": number, "Methionine": number, "Proline": number, "Serine": number, "Tyrosine": number, "Threonine": number, "Tryptophan": number, "Phenylalanine": number, "Cysteine": number },
+${micronutrientSchemaHint()},
   "explanation": "Коротко почему такие значения"
-}`), 8000, "AI estimate");
+}
+Единицы: витамины и минералы в mg/mcg как принято в таблицах состава продуктов, аминокислоты и жирные кислоты в mg. Если нутриента в продукте нет — поставь 0, не выдумывай следовые значения.`), 8000, "AI estimate");
     const estimateData = parseAiJsonPayload(estimateResponseText || "{}");
     return estimateData?.name ? estimateData : null;
   } catch (e) {
@@ -1253,11 +1255,16 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
     const candidateTokenCount = textTokenSet(candidate.name).size;
     const specificityPenalty = Math.min(0.2, Math.max(0, candidateTokenCount - queryTokenCount) * 0.035);
     const exactPhraseBoost = normalizeComparableText(candidate.name) === normalizeComparableText(normalizedInput) ? 0.2 : 0;
-    const finalScore = Math.max(0, Math.min(1, similarity + sourceBoost + baseBoost + exactPhraseBoost - specificityPenalty));
-    return { ...candidate, matchScore: finalScore };
+    // Сырой (незажатый) балл — для СОРТИРОВКИ. Отображаемый matchScore зажимаем в [0,1]
+    // для порогов/чипов. Иначе несколько сильных кандидатов (сходство ~1 + бонусы базового
+    // 0.15 + точной фразы 0.2 + источника 0.1) все упираются в потолок 1.0 и теряют порядок —
+    // приоритет базового/точного продукта «схлопывался». Сортируем по rankScore.
+    const rawScore = similarity + sourceBoost + baseBoost + exactPhraseBoost - specificityPenalty;
+    const finalScore = Math.max(0, Math.min(1, rawScore));
+    return { ...candidate, matchScore: finalScore, rankScore: Math.max(0, rawScore) };
   });
 
-  scoredCandidates.sort((left, right) => numberOrZero(right.matchScore) - numberOrZero(left.matchScore));
+  scoredCandidates.sort((left, right) => numberOrZero(right.rankScore) - numberOrZero(left.rankScore));
 
   let finalResults = scoredCandidates.slice(0, 15);
 
@@ -1287,12 +1294,13 @@ async function searchProductsEngine(query: string, options: ProductSearchOptions
         needsReview: check.needsReview,
         explanation: estimateData.explanation,
         matchScore: 0.95,
+        rankScore: 0.95,
         source: "ai",
       });
     }
   }
 
-  finalResults.sort((left, right) => numberOrZero(right.matchScore) - numberOrZero(left.matchScore));
+  finalResults.sort((left, right) => numberOrZero(right.rankScore ?? right.matchScore) - numberOrZero(left.rankScore ?? left.matchScore));
 
   if (!fast && finalResults.length > 1 && numberOrZero(finalResults[0]?.matchScore) < 0.95) {
     try {
@@ -1910,6 +1918,22 @@ export const MICRONUTRIENT_TEMPLATE = {
   },
 };
 
+// Единый источник правды для схемы микроэлементов в AI-промптах. Раньше промпт оценки
+// (aiEstimateNutrientsByName) просил 12 минералов, а промпт дозаполнения — 19, из-за чего
+// AI-оценённые продукты молча теряли 7 минералов (Silicon/Sulfur/Chlorine/Vanadium/Cobalt/
+// Molybdenum/Salt всегда 0). Генерируем фрагмент схемы прямо из MICRONUTRIENT_TEMPLATE —
+// расхождение больше структурно невозможно: добавили ключ в шаблон — он появился в обоих
+// промптах. Порядок групп повторяет исторический формат промптов.
+export function micronutrientSchemaHint(): string {
+  const line = (obj: Record<string, number>) =>
+    "{ " + Object.keys(obj).map((key) => `"${key}": number`).join(", ") + " }";
+  return `  "vitamins": ${line(MICRONUTRIENT_TEMPLATE.vitamins)},
+  "minerals": ${line(MICRONUTRIENT_TEMPLATE.minerals)},
+  "fattyAcids": ${line(MICRONUTRIENT_TEMPLATE.fattyAcids)},
+  "carbohydrateTypes": ${line(MICRONUTRIENT_TEMPLATE.carbohydrateTypes)},
+  "aminoAcids": ${line(MICRONUTRIENT_TEMPLATE.aminoAcids)}`;
+}
+
 function normalizeLegacyMicronutrientKeys(input: any) {
   const normalized = {
     ...input,
@@ -2335,11 +2359,7 @@ async function estimateMicronutrientsWithAI(product: { name: string; fiber?: num
     const estimateResponseText = await withTimeout(generateAI(`Оцени полный микроэлементный состав продукта "${product.name}" на 100 г.
 Верни только JSON со структурой:
 {
-  "vitamins": { "BetaCarotene": number, "B1": number, "B2": number, "B5": number, "B6": number, "B9": number, "B12": number, "C": number, "A": number, "D": number, "E": number, "K": number, "B3": number, "Biotin": number, "Choline": number },
-  "minerals": { "Potassium": number, "Calcium": number, "Silicon": number, "Magnesium": number, "Sodium": number, "Sulfur": number, "Phosphorus": number, "Chlorine": number, "Vanadium": number, "Iron": number, "Iodine": number, "Cobalt": number, "Manganese": number, "Copper": number, "Molybdenum": number, "Selenium": number, "Chromium": number, "Zinc": number, "Salt": number },
-  "fattyAcids": { "Omega3": number, "Omega6": number, "Omega9": number, "TransFats": number, "Cholesterol": number },
-  "carbohydrateTypes": { "Glucose": number, "Fructose": number, "Galactose": number, "Sucrose": number, "Lactose": number, "Maltose": number, "Starch": number, "Fiber": number },
-  "aminoAcids": { "Alanine": number, "Arginine": number, "Asparagine": number, "AsparticAcid": number, "Valine": number, "Histidine": number, "Glycine": number, "Glutamine": number, "GlutamicAcid": number, "Isoleucine": number, "Leucine": number, "Lysine": number, "Methionine": number, "Proline": number, "Serine": number, "Tyrosine": number, "Threonine": number, "Tryptophan": number, "Phenylalanine": number, "Cysteine": number }
+${micronutrientSchemaHint()}
 }
 Единицы: витамины и большинство минералов в mg/mcg как принято в таблицах состава продуктов, аминокислоты и жирные кислоты в mg. Если нутриент отсутствует в продукте — укажи 0.`), 12000, "AI micronutrient enrichment");
 

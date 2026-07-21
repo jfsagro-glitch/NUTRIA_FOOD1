@@ -18,6 +18,8 @@ import {
   normalizeOpenFoodFactsProduct,
   unwrapAiItemsArray,
   buildDishEstimateProduct,
+  restoreExactCatalogMatch,
+  micronutrientSchemaHint,
 } from "../server.ts";
 
 describe("русский стемминг (единственное ↔ множественное)", () => {
@@ -197,6 +199,45 @@ describe("оценка блюда по фото: невозможная плот
   it("пустой/бессмысленный ввод → null", () => {
     expect(buildDishEstimateProduct(null)).toBeNull();
     expect(buildDishEstimateProduct({ name: "x", amount: 100 })).toBeNull();
+  });
+});
+
+describe("восстановление точного каталожного совпадения (после AI-реранка)", () => {
+  const scored = [
+    { id: "a", name: "Овсяные хлопья сырые", source: "local", matchScore: 0.9 },
+    { id: "b", name: "Овсяное молоко", source: "local", matchScore: 0.7 },
+  ];
+  it("порядок слов в запросе не важен: «хлопья овсяные» находит «Овсяные хлопья»", () => {
+    // AI-реранк оставил только молоко — точное каталожное совпадение обязано вернуться наверх
+    const ranked = [{ id: "b", name: "Овсяное молоко", source: "local", matchScore: 0.7 }];
+    const restored = restoreExactCatalogMatch("хлопья овсяные", scored, ranked);
+    expect(restored[0].id).toBe("a");
+  });
+  it("подстрока в исходном порядке тоже восстанавливается", () => {
+    const ranked = [{ id: "b", name: "Овсяное молоко", source: "local", matchScore: 0.7 }];
+    const restored = restoreExactCatalogMatch("овсяные хлопья", scored, ranked);
+    expect(restored[0].id).toBe("a");
+  });
+  it("не притягивает нерелевантное (нет всех токенов) и слабые (< 0.6) совпадения", () => {
+    const weak = [{ id: "c", name: "Пищевой краситель красный", source: "local", matchScore: 0.4 }];
+    const ranked = [{ id: "z", name: "Что-то", source: "local", matchScore: 0.5 }];
+    expect(restoreExactCatalogMatch("красная фасоль", weak, ranked)).toBe(ranked);
+  });
+});
+
+describe("единая схема микроэлементов для AI-промптов", () => {
+  it("схема покрывает все 19 минералов и 15 витаминов из шаблона", () => {
+    const hint = micronutrientSchemaHint();
+    for (const mineral of Object.keys(MICRONUTRIENT_TEMPLATE.minerals)) {
+      expect(hint).toContain(`"${mineral}"`);
+    }
+    for (const vitamin of Object.keys(MICRONUTRIENT_TEMPLATE.vitamins)) {
+      expect(hint).toContain(`"${vitamin}"`);
+    }
+    // раньше промпт оценки терял эти минералы — фиксируем, что они теперь в схеме
+    expect(hint).toContain('"Silicon"');
+    expect(hint).toContain('"Cobalt"');
+    expect(hint).toContain('"Molybdenum"');
   });
 });
 
