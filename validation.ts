@@ -135,6 +135,13 @@ export const diaryAddSchema = z.object({
   date: z.string().optional(),
 });
 
+// «Повторить вчера»: копирование позиций одного приёма пищи с даты на дату.
+export const diaryCopySchema = z.object({
+  type: z.enum(["BREAKFAST", "LUNCH", "DINNER", "SNACK"]),
+  fromDate: z.string(),
+  toDate: z.string().optional(),
+});
+
 export const fastingNotifySchema = z.object({
   event: z.enum(["start", "end"]),
   fastingHours: z.coerce.number().min(0).max(48).optional(),

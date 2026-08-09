@@ -37,7 +37,8 @@ import {
   Download,
   Ban,
   LogOut,
-  KeyRound
+  KeyRound,
+  History
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -251,6 +252,76 @@ const toDateKey = (date: Date) => {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+};
+
+// Сдвиг ключа даты на N дней. Разбираем 'YYYY-MM-DD' вручную как ЛОКАЛЬНУЮ дату:
+// new Date('YYYY-MM-DD') трактует строку как UTC-полночь и в поясах восточнее UTC
+// «вчера» могло бы уехать на два дня.
+const shiftDateKey = (dateKey: string, deltaDays: number) => {
+  const [y, m, d] = String(dateKey || '').split('-').map(Number);
+  const base = Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)
+    ? new Date(y, m - 1, d)
+    : new Date();
+  base.setDate(base.getDate() + deltaDays);
+  return toDateKey(base);
+};
+
+// ─── Неблокирующие уведомления (замена системного alert) ─────────────────────
+// notifyToast() на мобильном — модальный системный диалог: перекрывает приложение, требует
+// нажатия «ОК», выглядит чужеродно. Тосты сообщают то же самое, не прерывая поток.
+// notifyToast — модульная функция (вызывается и вне React-компонентов); ToastHost
+// (в корне приложения) подписывается на неё. До монтирования хоста — фоллбэк в alert,
+// чтобы сообщение не потерялось.
+type ToastKind = 'success' | 'info' | 'error';
+type ToastEntry = { id: number; message: string; kind: ToastKind };
+let toastEmit: ((message: string, kind: ToastKind) => void) | null = null;
+
+const notifyToast = (message: string, kind?: ToastKind) => {
+  const text = String(message || '').trim();
+  if (!text) return;
+  // Большинство сообщений приложения — ошибки вида «Не удалось…»: чтобы не размечать
+  // каждый из десятков вызовов вручную, kind по умолчанию выводится из текста.
+  // Явно переданный kind всегда важнее эвристики.
+  const inferred: ToastKind = /^(не удалось|ошибка|сервер недоступен)/i.test(text) || /запрещен/i.test(text)
+    ? 'error'
+    : 'info';
+  if (toastEmit) toastEmit(text, kind || inferred);
+  else if (typeof window !== 'undefined') window.alert(text);
+};
+
+const ToastHost = () => {
+  const [toasts, setToasts] = useState<ToastEntry[]>([]);
+  const nextIdRef = useRef(1);
+
+  useEffect(() => {
+    toastEmit = (message, kind) => {
+      const id = nextIdRef.current++;
+      setToasts((prev) => [...prev.slice(-2), { id, message, kind }]);
+      // Ошибки держим дольше — их читают, а не просто замечают.
+      const ttl = kind === 'error' ? 5000 : 3200;
+      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), ttl);
+    };
+    return () => { toastEmit = null; };
+  }, []);
+
+  if (toasts.length === 0) return null;
+  return (
+    <div className="fixed left-4 right-4 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: 'calc(84px + env(safe-area-inset-bottom))' }}>
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
+          className="pointer-events-auto max-w-md w-fit px-4 py-3 rounded-2xl shadow-lg text-sm font-medium text-center"
+          style={{
+            background: t.kind === 'error' ? '#7f1d1d' : t.kind === 'success' ? '#065f46' : '#27272a',
+            color: '#fafafa',
+          }}
+        >
+          {t.message}
+        </div>
+      ))}
+    </div>
+  );
 };
 
 const readFileAsDataUrl = (file: File): Promise<string> =>
@@ -1374,7 +1445,7 @@ const computeNutrientTotals = (mealList: any[]): NutrientTotals => mealList.redu
   vitamins: {}, minerals: {}, aminoAcids: {}, fattyAcids: {}, carbohydrateTypes: {}
 });
 
-const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, onHintClick, onDeleteItem, onEditItem, onOpenComposition, onUpdateWater, onUpdateGrams, mealDistribution, activities, weightKg, onAddActivity, onDeleteActivity }: { data: any, selectedDate: string, onChangeDate: (dateKey: string) => void, onAddClick: (type: string) => void, hints: Hint[], onHintClick: (cta: string) => void, onDeleteItem: (id: string) => void, onEditItem: (item: any) => void, onOpenComposition: (item: any) => void, onUpdateWater: (amount: number) => void, onUpdateGrams: (itemId: string, amount: number) => Promise<boolean>, mealDistribution: Record<'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK', number>, activities: any[], weightKg: number, onAddActivity: (activityName: string, durationMinutes: number, caloriesBurned: number) => Promise<void>, onDeleteActivity: (id: string) => Promise<void> }) => {
+const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, onCopyYesterday, hints, onHintClick, onDeleteItem, onEditItem, onOpenComposition, onUpdateWater, onUpdateGrams, mealDistribution, activities, weightKg, onAddActivity, onDeleteActivity }: { data: any, selectedDate: string, onChangeDate: (dateKey: string) => void, onAddClick: (type: string) => void, onCopyYesterday: (type: string) => Promise<void>, hints: Hint[], onHintClick: (cta: string) => void, onDeleteItem: (id: string) => void, onEditItem: (item: any) => void, onOpenComposition: (item: any) => void, onUpdateWater: (amount: number) => void, onUpdateGrams: (itemId: string, amount: number) => Promise<boolean>, mealDistribution: Record<'BREAKFAST' | 'LUNCH' | 'DINNER' | 'SNACK', number>, activities: any[], weightKg: number, onAddActivity: (activityName: string, durationMinutes: number, caloriesBurned: number) => Promise<void>, onDeleteActivity: (id: string) => Promise<void> }) => {
   const { meals = [], waterIntake = 0 } = data;
   const goals = mergeGoals(data.goals);
   const waterGoal = 2500; // 2.5L in ml
@@ -1707,13 +1778,21 @@ const NutritionScreen = ({ data, selectedDate, onChangeDate, onAddClick, hints, 
               {expanded && (
                 <div style={{ borderTop: `1px solid ${PROTO.softDivider}` }}>
                   {isEmpty ? (
-                    <div className="p-4">
+                    <div className="p-4 space-y-2">
                       <button
                         onClick={() => onAddClick(type)}
                         className="w-full text-sm font-semibold active:scale-[0.98] transition-transform"
                         style={{ height: 52, borderRadius: 16, background: PROTO.primary, color: '#fff', boxShadow: PROTO.tactileRaise }}
                       >
                         + Добавить продукт
+                      </button>
+                      <button
+                        onClick={() => { void onCopyYesterday(type); }}
+                        className="w-full text-sm font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-1.5"
+                        style={{ height: 44, borderRadius: 14, background: PROTO.coolBlock, color: PROTO.primaryDk }}
+                      >
+                        <History size={15} />
+                        Повторить вчерашний {mealLabels[type].toLowerCase()}
                       </button>
                     </div>
                   ) : (
@@ -2226,7 +2305,7 @@ const SummaryScreen = ({
 
   const submitChangePassword = async () => {
     if (newPasswordInput.length < 6) {
-      alert('Новый пароль должен содержать минимум 6 символов');
+      notifyToast('Новый пароль должен содержать минимум 6 символов');
       return;
     }
     setIsSavingPassword(true);
@@ -2238,16 +2317,16 @@ const SummaryScreen = ({
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(err?.error || 'Не удалось сменить пароль');
+        notifyToast(err?.error || 'Не удалось сменить пароль');
         return;
       }
-      alert('Пароль изменён');
+      notifyToast('Пароль изменён', 'success');
       setIsChangingPassword(false);
       setCurrentPasswordInput('');
       setNewPasswordInput('');
     } catch (e) {
       console.error(e);
-      alert('Сервер недоступен. Попробуйте позже.');
+      notifyToast('Сервер недоступен. Попробуйте позже.');
     } finally {
       setIsSavingPassword(false);
     }
@@ -2668,10 +2747,10 @@ const SummaryScreen = ({
     try {
       await onSaveProfileGoals(settingsProfile, settingsGoals);
       setIsSettingsOpen(false);
-      alert('Профиль и нормы успешно обновлены.');
+      notifyToast('Профиль и нормы успешно обновлены.', 'success');
     } catch (e) {
       console.error(e);
-      alert('Не удалось сохранить настройки.');
+      notifyToast('Не удалось сохранить настройки.');
     } finally {
       setIsSavingSettings(false);
     }
@@ -3971,7 +4050,7 @@ export default function App() {
 
   const handleStartFasting = () => {
     if (fastingMode === 'OFF') {
-      alert('Выберите режим голодания.');
+      notifyToast('Выберите режим голодания.');
       return;
     }
 
@@ -4132,7 +4211,7 @@ export default function App() {
           setBlockedInfo(err.blockedBy || null);
           return;
         }
-        alert(err?.error || 'Не удалось выполнить вход. Проверьте настройки сервера.');
+        notifyToast(err?.error || 'Не удалось выполнить вход. Проверьте настройки сервера.');
         return;
       }
       const data = await res.json().catch(() => ({}));
@@ -4148,7 +4227,7 @@ export default function App() {
       fetchUnreadMessages();
     } catch (e) {
       console.error(e);
-      alert('Сервер недоступен. Попробуйте позже.');
+      notifyToast('Сервер недоступен. Попробуйте позже.');
     }
   };
 
@@ -4491,6 +4570,37 @@ export default function App() {
     }
   };
 
+  // «Повторить вчера»: копирует позиции того же приёма пищи со вчерашнего дня
+  // относительно открытой в дневнике даты. copied=0 — не ошибка, а «вчера пусто».
+  const copyYesterdayMeal = async (type: string) => {
+    try {
+      const res = await fetch('/api/diary/copy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type,
+          fromDate: shiftDateKey(selectedDiaryDate, -1),
+          toDate: selectedDiaryDate,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        notifyToast('Не удалось скопировать. Попробуйте ещё раз', 'error');
+        return;
+      }
+      if (Number(data.copied) > 0) {
+        notifyToast(`Скопировано из вчера — позиций: ${data.copied}`, 'success');
+        fetchDiary(selectedDiaryDate);
+        fetchHints();
+      } else {
+        notifyToast('Вчера этот приём был пустым', 'info');
+      }
+    } catch (e) {
+      console.error(e);
+      notifyToast('Не удалось скопировать. Попробуйте ещё раз', 'error');
+    }
+  };
+
   // --- «Проверьте результат»: единый черновик перед сохранением (см. прототип) ---
 
   const addToReviewDraft = (product: Product, amount: number, usdaData?: Product, dishIngredients?: DishIngredientDraft[]) => {
@@ -4543,7 +4653,7 @@ export default function App() {
       if (failedItems.length === 0) {
         setIsReviewSheetOpen(false);
       } else {
-        alert(`Не удалось сохранить: ${failedItems.map((it) => it.product.name).join(', ')}. Попробуйте ещё раз.`);
+        notifyToast(`Не удалось сохранить: ${failedItems.map((it) => it.product.name).join(', ')}. Попробуйте ещё раз.`);
       }
     } finally {
       setIsSavingReview(false);
@@ -4615,11 +4725,11 @@ export default function App() {
         fetchHints();
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(err?.error || 'Не удалось сохранить запись');
+        notifyToast(err?.error || 'Не удалось сохранить запись');
       }
     } catch (e) {
       console.error(e);
-      alert('Не удалось сохранить запись. Проверьте соединение.');
+      notifyToast('Не удалось сохранить запись. Проверьте соединение.');
     } finally {
       setIsSavingQuickAdd(false);
     }
@@ -4658,7 +4768,7 @@ export default function App() {
           }
         } else {
           const err = await res.json().catch(() => ({}));
-          alert(err?.error || 'Не удалось сохранить исправление');
+          notifyToast(err?.error || 'Не удалось сохранить исправление');
         }
         return;
       }
@@ -4690,11 +4800,11 @@ export default function App() {
         setEditingCustomProductId(null);
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(err?.error || 'Не удалось сохранить продукт');
+        notifyToast(err?.error || 'Не удалось сохранить продукт');
       }
     } catch (e) {
       console.error(e);
-      alert('Не удалось сохранить продукт. Проверьте соединение.');
+      notifyToast('Не удалось сохранить продукт. Проверьте соединение.');
     } finally {
       setIsSavingCustomProduct(false);
     }
@@ -4755,7 +4865,7 @@ export default function App() {
         fetchMine();
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(err?.error || 'Не удалось удалить продукт');
+        notifyToast(err?.error || 'Не удалось удалить продукт');
       }
     } catch (e) {
       console.error(e);
@@ -4825,15 +4935,15 @@ export default function App() {
         if (matched.length > 0) {
           setDishIngredients(matched);
         } else {
-          alert('Не удалось разобрать состав блюда. Попробуйте другое название или добавьте ингредиенты вручную.');
+          notifyToast('Не удалось разобрать состав блюда. Попробуйте другое название или добавьте ингредиенты вручную.');
         }
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(err?.error || 'Не удалось разобрать состав блюда');
+        notifyToast(err?.error || 'Не удалось разобрать состав блюда');
       }
     } catch (e) {
       console.error(e);
-      alert('Не удалось разобрать состав блюда. Проверьте соединение.');
+      notifyToast('Не удалось разобрать состав блюда. Проверьте соединение.');
     } finally {
       setIsAutoFillingDish(false);
     }
@@ -5060,11 +5170,11 @@ export default function App() {
         fetchMine();
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(err?.error || 'Не удалось удалить блюдо');
+        notifyToast(err?.error || 'Не удалось удалить блюдо');
       }
     } catch (e) {
       console.error(e);
-      alert('Сервер недоступен. Попробуйте позже.');
+      notifyToast('Сервер недоступен. Попробуйте позже.');
     }
   };
 
@@ -5103,7 +5213,7 @@ export default function App() {
           closeEditMineRecipe();
         } else {
           const err = await res.json().catch(() => ({}));
-          alert(err?.error || 'Не удалось сохранить изменения блюда');
+          notifyToast(err?.error || 'Не удалось сохранить изменения блюда');
         }
         return;
       }
@@ -5127,7 +5237,7 @@ export default function App() {
           closeMealItemComposition();
         } else {
           const err = await res.json().catch(() => ({}));
-          alert(err?.error || 'Не удалось сохранить изменения состава');
+          notifyToast(err?.error || 'Не удалось сохранить изменения состава');
         }
         return;
       }
@@ -5150,7 +5260,7 @@ export default function App() {
           closeEditDishIngredients();
         } else {
           const err = await res.json().catch(() => ({}));
-          alert(err?.error || 'Не удалось сохранить изменения состава');
+          notifyToast(err?.error || 'Не удалось сохранить изменения состава');
         }
         return;
       }
@@ -5167,11 +5277,11 @@ export default function App() {
         fetchMine();
       } else {
         const err = await res.json().catch(() => ({}));
-        alert(err?.error || 'Не удалось сохранить блюдо');
+        notifyToast(err?.error || 'Не удалось сохранить блюдо');
       }
     } catch (e) {
       console.error(e);
-      alert('Сервер недоступен. Попробуйте позже.');
+      notifyToast('Сервер недоступен. Попробуйте позже.');
     } finally {
       setIsSavingDish(false);
     }
@@ -5268,7 +5378,7 @@ export default function App() {
       setAmountEntryContext({ source: 'photo' });
     } catch (e) {
       console.error('Photo correction save error:', e);
-      alert('Не удалось сохранить исправление распознавания. Попробуйте ещё раз.');
+      notifyToast('Не удалось сохранить исправление распознавания. Попробуйте ещё раз.');
     } finally {
       setPhotoCorrectionTarget(null);
     }
@@ -5474,7 +5584,7 @@ export default function App() {
   const startListening = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Ваш браузер не поддерживает распознавание речи.');
+      notifyToast('Ваш браузер не поддерживает распознавание речи.');
       return;
     }
 
@@ -5506,9 +5616,9 @@ export default function App() {
     recognition.onerror = (event: any) => {
       console.error('Speech recognition error', event.error);
       if (event.error === 'not-allowed') {
-        alert('Доступ к микрофону запрещен. Пожалуйста, разрешите доступ в настройках браузера.');
+        notifyToast('Доступ к микрофону запрещен. Пожалуйста, разрешите доступ в настройках браузера.');
       } else if (event.error !== 'no-speech') {
-        // alert(`Ошибка распознавания: ${event.error}`);
+        // notifyToast(`Ошибка распознавания: ${event.error}`);
       }
       setIsListening(false);
     };
@@ -5539,7 +5649,7 @@ export default function App() {
   // листа кнопкой "Готово". Грамма после этого можно поправить в черновике.
   const handleVoiceParse = async () => {
     if (!voiceTranscript) {
-      alert('Сначала скажите что-нибудь!');
+      notifyToast('Сначала скажите что-нибудь!');
       return;
     }
     setIsParsingVoice(true);
@@ -5553,7 +5663,7 @@ export default function App() {
         const itemsRaw = await res.json();
         const items: { name: string; amount: number; product: Product | null }[] = Array.isArray(itemsRaw) ? itemsRaw : [];
         if (items.length === 0) {
-          alert('Не удалось распознать продукты. Попробуйте сказать иначе.');
+          notifyToast('Не удалось распознать продукты. Попробуйте сказать иначе.');
           return;
         }
 
@@ -5627,17 +5737,17 @@ export default function App() {
         setVoiceTranscript('');
 
         if (matched.length === 0) {
-          alert('Не нашли в базе ни один продукт. Попробуйте сказать иначе или добавьте вручную через поиск.');
+          notifyToast('Не нашли в базе ни один продукт. Попробуйте сказать иначе или добавьте вручную через поиск.');
         } else if (unmatched.length > 0) {
-          alert(`Не нашли в базе: ${unmatched.map((it) => it.name).join(', ')}. Добавьте их вручную через «Добавить ещё продукт».`);
+          notifyToast(`Не нашли в базе: ${unmatched.map((it) => it.name).join(', ')}. Добавьте их вручную через «Добавить ещё продукт».`);
         }
       } else {
         const err = await res.json();
-        alert(`Ошибка сервера: ${err.error || 'Неизвестная ошибка'}`);
+        notifyToast(`Ошибка сервера: ${err.error || 'Неизвестная ошибка'}`);
       }
     } catch (e) {
       console.error(e);
-      alert('Ошибка при разборе фразы. Проверьте интернет-соединение.');
+      notifyToast('Ошибка при разборе фразы. Проверьте интернет-соединение.');
     } finally {
       setIsParsingVoice(false);
     }
@@ -5646,6 +5756,9 @@ export default function App() {
   const openAddFood = (type: string) => {
     setSelectedMealType(type);
     setIsSearchSheetOpen(true);
+    // Недавние показываются сразу под пустым поиском («две касания до добавления»),
+    // поэтому подтягиваем их к моменту открытия, а не при переходе на вкладку.
+    if (recentFoods.length === 0) fetchRecentFoods();
   };
 
   const handleHintClick = (cta: string) => {
@@ -5686,7 +5799,7 @@ export default function App() {
     const handleLoginSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!loginEmail.trim() || !loginPassword) {
-        alert('Введите email и пароль');
+        notifyToast('Введите email и пароль');
         return;
       }
       setIsLoggingIn(true);
@@ -5791,6 +5904,7 @@ export default function App() {
               selectedDate={selectedDiaryDate}
               onChangeDate={changeDiaryDate}
               onAddClick={openAddFood}
+              onCopyYesterday={copyYesterdayMeal}
               hints={hints}
               onHintClick={handleHintClick}
               onDeleteItem={deleteMealItem}
@@ -5840,6 +5954,7 @@ export default function App() {
         }} />
       )}
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} unreadMessages={unreadMessages} />
+      <ToastHost />
 
       <input
         type="file"
@@ -6008,6 +6123,29 @@ export default function App() {
                   <AlertCircle size={48} className="mx-auto text-zinc-700 mb-4" />
                   <p className="text-zinc-500">Продукт не найден. Попробуйте другой запрос.</p>
                 </div>
+              ) : searchQuery.length < 2 && !photoCorrectionTarget && recentFoods.length > 0 ? (
+                // Пустой поиск — не пустой экран: сразу показываем недавние, чтобы
+                // типичное добавление занимало два касания без переключения вкладок.
+                <>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 px-1">Недавние</p>
+                  {recentFoods.slice(0, 8).map((product) => (
+                    <button
+                      key={product.id}
+                      onClick={() => {
+                        setSelectedProductForAmount(product);
+                        setFoodAmount(String(Math.max(1, Math.round(product.lastWeightGrams || 100))));
+                        setAmountEntryContext({ source: 'search' });
+                      }}
+                      className="w-full bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex justify-between items-center active:bg-zinc-800 transition-colors"
+                    >
+                      <div className="text-left">
+                        <p className="font-semibold text-zinc-200 text-[15px]">{product.name}</p>
+                        <p className="text-[11px] text-zinc-500">{product.brand ? `${product.brand} • ` : ''}{Math.round(product.calories)} ккал / 100 г</p>
+                      </div>
+                      <Plus size={20} className="text-emerald-500" />
+                    </button>
+                  ))}
+                </>
               ) : null}
             </div>
           </>
