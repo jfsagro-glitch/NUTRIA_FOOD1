@@ -32,6 +32,7 @@ import {
   activitySchema,
   weightSchema,
   diaryAddSchema,
+  diaryCopySchema,
   diaryItemAmountSchema,
   quickAddSchema,
   voiceParseSchema,
@@ -287,6 +288,27 @@ function dayRangeFromDate(base: Date) {
   const end = new Date(base);
   end.setHours(23, 59, 59, 999);
   return { start, end };
+}
+
+// Склеивает дубли Meal одного типа за день в один приём (items конкатенируются).
+// Пока на Meal нет @@unique([userId, type, date]) (см. TODO в schema.prisma), гонка
+// findFirst→create при параллельных клиентах создаёт два BREAKFAST за день; клиент же
+// рендерит через meals.find(type) — «лишний» приём просто исчезал из карточки, при этом
+// дневные итоги считали всё → кольцо и карточки расходились, дневник «врал». Склейка на
+// отдаче чинит это разом для всех клиентов (веб, Telegram). Порядок типов сохраняется
+// по первому вхождению; identity (id/даты) — от первого приёма.
+export function mergeMealsByType(meals: any[]): any[] {
+  const byType = new Map<string, any>();
+  for (const meal of Array.isArray(meals) ? meals : []) {
+    const key = String(meal?.type || "");
+    const existing = byType.get(key);
+    if (!existing) {
+      byType.set(key, { ...meal, items: [...(Array.isArray(meal?.items) ? meal.items : [])] });
+      continue;
+    }
+    existing.items.push(...(Array.isArray(meal?.items) ? meal.items : []));
+  }
+  return [...byType.values()];
 }
 
 function getMealDateKey(meal: any) {
@@ -4175,19 +4197,22 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
     try {
       const { start: startOfDay, end: endOfDay } = dayRangeFromDate(targetDate);
 
-      const meals = await prisma.meal.findMany({
-        where: {
-          userId,
-          date: { gte: startOfDay, lte: endOfDay }
-        },
-        include: {
-          items: {
-            include: { product: true }
+      const [rawMeals, goals] = await Promise.all([
+        prisma.meal.findMany({
+          where: {
+            userId,
+            date: { gte: startOfDay, lte: endOfDay }
+          },
+          include: {
+            items: {
+              include: { product: true }
+            }
           }
-        }
-      });
+        }),
+        prisma.nutrientGoal.findUnique({ where: { userId } }),
+      ]);
 
-      const goals = await prisma.nutrientGoal.findUnique({ where: { userId } });
+      const meals = mergeMealsByType(rawMeals);
 
       const waterMeal = meals.find(m => m.type === 'WATER');
       const waterIntake = waterMeal ? waterMeal.items.reduce((sum, item) => sum + item.amount, 0) : 0;
@@ -4756,6 +4781,82 @@ ${rawIngredients.map((s, i) => `${i + 1}. ${s}`).join("\n")}
       res.json(mealItem);
     } catch (e: any) {
       logError("Diary Add Error:", e);
+      res.status(500).json({ error: "Internal Server Error", message: e.message });
+    }
+  });
+
+  // «Повторить вчера»: копирует позиции приёма (type) с fromDate на toDate (по умолчанию
+  // сегодня). Возвращает { copied } — 0 означает «в источнике этот приём пуст», клиент
+  // показывает это как подсказку, а не как ошибку.
+  app.post("/api/diary/copy", validateBody(diaryCopySchema), async (req, res) => {
+    const userId = req.signedCookies.token;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const { type, fromDate, toDate } = req.body;
+    const sourceDate = dateFromQuery(fromDate);
+    const targetDate = dateFromQuery(toDate);
+    const sourceDateKey = toDateKey(sourceDate);
+    const targetDateKey = toDateKey(targetDate);
+    if (sourceDateKey === targetDateKey) {
+      return res.status(400).json({ error: "Source and target dates match" });
+    }
+
+    if (!isDatabaseConfigured()) {
+      const memoryDiary = getOrCreateInMemoryDiary(userId);
+      const sourceItems = memoryDiary.meals
+        .filter((m: any) => m.type === type && getMealDateKey(m) === sourceDateKey)
+        .flatMap((m: any) => (Array.isArray(m.items) ? m.items : []));
+      if (sourceItems.length === 0) {
+        return res.json({ copied: 0, date: targetDateKey, type, mode: "memory" });
+      }
+      const mealId = `${type}-${targetDateKey}`;
+      let meal = memoryDiary.meals.find((m: any) => m.id === mealId && getMealDateKey(m) === targetDateKey);
+      if (!meal) {
+        meal = { id: mealId, type, dateKey: targetDateKey, items: [] };
+        memoryDiary.meals.push(meal);
+      }
+      for (const item of sourceItems) {
+        meal.items.push({
+          id: `mi-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          amount: numberOrZero(item.amount),
+          product: item.product,
+        });
+      }
+      return res.json({ copied: sourceItems.length, date: targetDateKey, type, mode: "memory" });
+    }
+
+    try {
+      const sourceRange = dayRangeFromDate(sourceDate);
+      const sourceMeals = await prisma.meal.findMany({
+        where: { userId, type, date: { gte: sourceRange.start, lte: sourceRange.end } },
+        include: { items: true },
+      });
+      const sourceItems = sourceMeals.flatMap((m) => m.items);
+      if (sourceItems.length === 0) {
+        return res.json({ copied: 0, date: targetDateKey, type });
+      }
+
+      const targetRange = dayRangeFromDate(targetDate);
+      let targetMeal = await prisma.meal.findFirst({
+        where: { userId, type, date: { gte: targetRange.start, lte: targetRange.end } },
+      });
+      if (!targetMeal) {
+        targetMeal = await prisma.meal.create({
+          data: { userId, type, date: targetRange.start },
+        });
+      }
+
+      await prisma.mealItem.createMany({
+        data: sourceItems.map((item) => ({
+          mealId: targetMeal!.id,
+          productId: item.productId,
+          amount: item.amount,
+        })),
+      });
+
+      res.json({ copied: sourceItems.length, date: targetDateKey, type });
+    } catch (e: any) {
+      logError("Diary Copy Error:", e);
       res.status(500).json({ error: "Internal Server Error", message: e.message });
     }
   });

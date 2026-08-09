@@ -21,6 +21,7 @@ import {
   restoreExactCatalogMatch,
   micronutrientSchemaHint,
   dedupeSearchCandidatesByName,
+  mergeMealsByType,
 } from "../server.ts";
 
 describe("русский стемминг (единственное ↔ множественное)", () => {
@@ -223,6 +224,37 @@ describe("восстановление точного каталожного с�
     const weak = [{ id: "c", name: "Пищевой краситель красный", source: "local", matchScore: 0.4 }];
     const ranked = [{ id: "z", name: "Что-то", source: "local", matchScore: 0.5 }];
     expect(restoreExactCatalogMatch("красная фасоль", weak, ranked)).toBe(ranked);
+  });
+});
+
+describe("склейка дублей приёмов пищи при отдаче дневника", () => {
+  it("два BREAKFAST за день (гонка параллельных клиентов) сливаются в один со всеми позициями", () => {
+    // Класс бага «дневник врёт»: клиент рендерит meals.find(type) — второй дубль
+    // выпадал из карточки, но учитывался в итогах дня; кольцо ≠ сумма карточек.
+    const merged = mergeMealsByType([
+      { id: "m1", type: "BREAKFAST", items: [{ id: "a", amount: 100 }] },
+      { id: "m2", type: "BREAKFAST", items: [{ id: "b", amount: 50 }] },
+      { id: "m3", type: "LUNCH", items: [{ id: "c", amount: 200 }] },
+    ]);
+    expect(merged).toHaveLength(2);
+    const breakfast = merged.find((m: any) => m.type === "BREAKFAST");
+    expect(breakfast.items.map((i: any) => i.id)).toEqual(["a", "b"]);
+    expect(breakfast.id).toBe("m1");
+  });
+  it("дубли WATER тоже сливаются (вода считалась только по первому)", () => {
+    const merged = mergeMealsByType([
+      { id: "w1", type: "WATER", items: [{ amount: 250 }] },
+      { id: "w2", type: "WATER", items: [{ amount: 500 }] },
+    ]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].items.reduce((s: number, i: any) => s + i.amount, 0)).toBe(750);
+  });
+  it("без дублей список не меняется, исходные объекты не мутируются", () => {
+    const source = [{ id: "m1", type: "LUNCH", items: [{ id: "x" }] }];
+    const merged = mergeMealsByType(source);
+    expect(merged).toHaveLength(1);
+    merged[0].items.push({ id: "y" });
+    expect(source[0].items).toHaveLength(1);
   });
 });
 
